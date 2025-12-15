@@ -1,8 +1,8 @@
-# my-better-t-app
+# Hifi Flow
 
-This project was created with [Better-T-Stack](https://github.com/AmanVarshney01/create-better-t-stack), a modern TypeScript stack.
+## Description
 
-## Features
+## Tech Stack
 
 - **TypeScript** - For type safety and improved developer experience
 - **React Native** - Build mobile apps using React
@@ -19,7 +19,6 @@ First, install the dependencies:
 pnpm install
 ```
 
-
 Then, run the development server:
 
 ```bash
@@ -27,12 +26,6 @@ pnpm run dev
 ```
 
 Use the Expo Go app to run the mobile application.
-
-
-
-
-
-
 
 ## Project Structure
 
