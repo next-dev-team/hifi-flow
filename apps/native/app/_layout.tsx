@@ -3,18 +3,21 @@ import "@/global.css";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Stack } from "expo-router";
 import { HeroUINativeProvider } from "heroui-native";
+import { LogBox, View } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { KeyboardProvider } from "react-native-keyboard-controller";
+import { PlayerBar } from "@/components/player-bar";
 import { AppThemeProvider } from "@/contexts/app-theme-context";
+import { PlayerProvider } from "@/contexts/player-context";
 
 export const unstable_settings = {
-  initialRouteName: "(drawer)",
+  initialRouteName: "(tabs)",
 };
 
 function StackLayout() {
   return (
     <Stack screenOptions={{}}>
-      <Stack.Screen name="(drawer)" options={{ headerShown: false }} />
+      <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
       <Stack.Screen
         name="modal"
         options={{ title: "Modal", presentation: "modal" }}
@@ -32,7 +35,12 @@ export default function Layout() {
         <QueryClientProvider client={queryClient}>
           <AppThemeProvider>
             <HeroUINativeProvider>
-              <StackLayout />
+              <PlayerProvider>
+                <View style={{ flex: 1 }}>
+                  <StackLayout />
+                  <PlayerBar />
+                </View>
+              </PlayerProvider>
             </HeroUINativeProvider>
           </AppThemeProvider>
         </QueryClientProvider>

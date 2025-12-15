@@ -33,7 +33,7 @@ export default function TabLayout() {
 				}}
 			/>
 			<Tabs.Screen
-				name="two"
+				name="explore"
 				options={{
 					title: "Explore",
 					tabBarIcon: ({ color, size }: { color: string; size: number }) => (
@@ -41,6 +41,16 @@ export default function TabLayout() {
 					),
 				}}
 			/>
+			<Tabs.Screen
+				name="library"
+				options={{
+					title: "Library",
+					tabBarIcon: ({ color, size }: { color: string; size: number }) => (
+						<Ionicons name="library" size={size} color={color} />
+					),
+				}}
+			/>
 		</Tabs>
 	);
 }
+

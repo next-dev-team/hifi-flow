@@ -12,6 +12,14 @@
 		"experiments": {
 			"typedRoutes": true,
 			"reactCompiler": true
+		},
+		"ios": {
+			"infoPlist": {
+				"UIBackgroundModes": ["audio"]
+			}
+		},
+		"android": {
+			"permissions": []
 		}
 	}
 }
