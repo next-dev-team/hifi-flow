@@ -8,7 +8,7 @@ import type { GetInfoInfoGetQueryResponse, GetInfoInfoGetQueryParams, GetInfoInf
 import type { RequestConfig, ResponseErrorConfig } from "@kubb/plugin-client/clients/axios";
 
 function getGetInfoInfoGetUrl() {
-  const res = { method: 'GET', url: `/info/` as const }  
+  const res = { method: 'GET', url: `https://triton.squid.wtf/info/` as const }  
   return res
 }
 

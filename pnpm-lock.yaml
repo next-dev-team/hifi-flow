@@ -81,6 +81,9 @@ importers:
       '@tanstack/react-query':
         specifier: ^5.90.12
         version: 5.90.12(react@19.1.0)
+      api-hifi:
+        specifier: workspace:*
+        version: link:../../packages/api-hifi
       dotenv:
         specifier: 'catalog:'
         version: 17.2.3

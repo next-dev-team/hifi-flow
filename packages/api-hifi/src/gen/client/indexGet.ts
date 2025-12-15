@@ -8,7 +8,7 @@ import type { IndexGetQueryResponse } from "../types/IndexGet.ts";
 import type { RequestConfig, ResponseErrorConfig } from "@kubb/plugin-client/clients/axios";
 
 function getIndexGetUrl() {
-  const res = { method: 'GET', url: `/` as const }  
+  const res = { method: 'GET', url: `https://triton.squid.wtf/` as const }  
   return res
 }
 

@@ -8,7 +8,7 @@ import type { GetCoverCoverGetQueryResponse, GetCoverCoverGetQueryParams, GetCov
 import type { RequestConfig, ResponseErrorConfig } from "@kubb/plugin-client/clients/axios";
 
 function getGetCoverCoverGetUrl() {
-  const res = { method: 'GET', url: `/cover/` as const }  
+  const res = { method: 'GET', url: `https://triton.squid.wtf/cover/` as const }  
   return res
 }
 

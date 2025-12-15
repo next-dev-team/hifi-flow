@@ -8,7 +8,7 @@ import type { GetAlbumAlbumGetQueryResponse, GetAlbumAlbumGetQueryParams, GetAlb
 import type { RequestConfig, ResponseErrorConfig } from "@kubb/plugin-client/clients/axios";
 
 function getGetAlbumAlbumGetUrl() {
-  const res = { method: 'GET', url: `/album/` as const }  
+  const res = { method: 'GET', url: `https://triton.squid.wtf/album/` as const }  
   return res
 }
 

@@ -43,7 +43,8 @@
     "uniwind": "^1.0.4",
     "@tanstack/react-query": "^5.90.12",
     "dotenv": "catalog:",
-    "zod": "catalog:"
+    "zod": "catalog:",
+    "api-hifi": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "^24.10.0",

@@ -8,7 +8,7 @@ import type { GetArtistArtistGetQueryResponse, GetArtistArtistGetQueryParams, Ge
 import type { RequestConfig, ResponseErrorConfig } from "@kubb/plugin-client/clients/axios";
 
 function getGetArtistArtistGetUrl() {
-  const res = { method: 'GET', url: `/artist/` as const }  
+  const res = { method: 'GET', url: `https://triton.squid.wtf/artist/` as const }  
   return res
 }
 

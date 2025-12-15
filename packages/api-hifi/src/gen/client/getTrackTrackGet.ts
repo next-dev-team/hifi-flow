@@ -8,7 +8,7 @@ import type { GetTrackTrackGetQueryResponse, GetTrackTrackGetQueryParams, GetTra
 import type { RequestConfig, ResponseErrorConfig } from "@kubb/plugin-client/clients/axios";
 
 function getGetTrackTrackGetUrl() {
-  const res = { method: 'GET', url: `/track/` as const }  
+  const res = { method: 'GET', url: `https://triton.squid.wtf/track/` as const }  
   return res
 }
 

@@ -8,7 +8,7 @@ import type { GetPlaylistPlaylistGetQueryResponse, GetPlaylistPlaylistGetQueryPa
 import type { RequestConfig, ResponseErrorConfig } from "@kubb/plugin-client/clients/axios";
 
 function getGetPlaylistPlaylistGetUrl() {
-  const res = { method: 'GET', url: `/playlist/` as const }  
+  const res = { method: 'GET', url: `https://triton.squid.wtf/playlist/` as const }  
   return res
 }
 

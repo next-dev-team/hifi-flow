@@ -8,7 +8,7 @@ import type { SearchSearchGetQueryResponse, SearchSearchGetQueryParams, SearchSe
 import type { RequestConfig, ResponseErrorConfig } from "@kubb/plugin-client/clients/axios";
 
 function getSearchSearchGetUrl() {
-  const res = { method: 'GET', url: `/search/` as const }  
+  const res = { method: 'GET', url: `https://triton.squid.wtf/search/` as const }  
   return res
 }
 
