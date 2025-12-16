@@ -1,13 +1,26 @@
 import { useGetPlaylistPlaylistGet } from "api-hifi/src/gen/hooks";
 import { useLocalSearchParams } from "expo-router";
-import React from "react";
+import { useMemo } from "react";
 import { ActivityIndicator, FlatList, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { withUniwind } from "uniwind";
 import { ApiDebug } from "@/components/api-debug";
 import { type Track, TrackItem } from "@/components/track-item";
+import { usePlayer } from "@/contexts/player-context";
+
+const StyledSafeAreaView = withUniwind(SafeAreaView);
+const StyledView = withUniwind(View);
+const StyledText = withUniwind(Text);
+
+const resolveName = (value?: { name?: string } | string) => {
+  if (!value) return undefined;
+  if (typeof value === "string") return value;
+  return value.name;
+};
 
 export default function PlaylistScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
+  const { playQueue } = usePlayer();
 
   const { data, isLoading, error } = useGetPlaylistPlaylistGet({
     id: String(id),
@@ -44,32 +57,43 @@ export default function PlaylistScreen() {
     };
   };
 
-  const resolveName = (value?: { name?: string } | string) => {
-    if (!value) return undefined;
-    if (typeof value === "string") return value;
-    return value.name;
-  };
-
   const playlist = data as PlaylistResponse | undefined;
-  const items: PlaylistTrackItem[] =
-    playlist?.data?.items ??
-    playlist?.data?.tracks ??
-    playlist?.items ??
-    playlist?.tracks ??
-    [];
 
-  const renderItem = ({ item }: { item: PlaylistTrackItem }) => {
-    const track: Track = {
-      id: item.id || item.videoId || Math.random().toString(),
-      title: item.title || item.name || "Unknown Title",
-      artist:
-        resolveName(item.artist) ||
-        resolveName(item.author) ||
-        "Unknown Artist",
-      artwork: item.thumbnail?.url || item.thumbnails?.[0]?.url || item.image,
-      url: item.url || `https://www.youtube.com/watch?v=${item.id}`,
-    };
-    return <TrackItem track={track} />;
+  const items = useMemo<PlaylistTrackItem[]>(() => {
+    return (
+      playlist?.data?.items ??
+      playlist?.data?.tracks ??
+      playlist?.items ??
+      playlist?.tracks ??
+      []
+    );
+  }, [playlist]);
+
+  const tracks = useMemo<Track[]>(() => {
+    return items.map((item, index) => {
+      const resolvedId = item.id || item.videoId || `playlist-${String(id)}-${index}`;
+      return {
+        id: resolvedId,
+        title: item.title || item.name || "Unknown Title",
+        artist:
+          resolveName(item.artist) ||
+          resolveName(item.author) ||
+          "Unknown Artist",
+        artwork: item.thumbnail?.url || item.thumbnails?.[0]?.url || item.image,
+        url: item.url || `https://www.youtube.com/watch?v=${resolvedId}`,
+      };
+    });
+  }, [items, id]);
+
+  const renderItem = ({ item, index }: { item: Track; index: number }) => {
+    return (
+      <TrackItem
+        track={item}
+        onPress={() => {
+          void playQueue(tracks, index);
+        }}
+      />
+    );
   };
 
   const title =
@@ -86,34 +110,37 @@ export default function PlaylistScreen() {
     "";
 
   return (
-    <SafeAreaView className="flex-1 bg-background" edges={["top"]}>
-      <View className="px-4 py-4 mb-2">
-        <Text className="text-2xl font-bold text-foreground" numberOfLines={2}>
+    <StyledSafeAreaView className="flex-1 bg-background" edges={["top"]}>
+      <StyledView className="px-4 py-4 mb-2">
+        <StyledText
+          className="text-2xl font-bold text-foreground"
+          numberOfLines={2}
+        >
           {title}
-        </Text>
+        </StyledText>
         {description ? (
-          <Text className="text-default-500" numberOfLines={2}>
+          <StyledText className="text-default-500" numberOfLines={2}>
             {description}
-          </Text>
+          </StyledText>
         ) : null}
-      </View>
+      </StyledView>
 
       <ApiDebug title="Playlist details" data={data} error={error} />
 
       {isLoading ? (
-        <View className="flex-1 justify-center items-center">
+        <StyledView className="flex-1 justify-center items-center">
           <ActivityIndicator size="large" color="#fff" />
-        </View>
+        </StyledView>
       ) : error ? (
-        <View className="flex-1 justify-center items-center px-4">
-          <Text className="text-default-500 text-center">
+        <StyledView className="flex-1 justify-center items-center px-4">
+          <StyledText className="text-default-500 text-center">
             Unable to load playlist.
-          </Text>
-        </View>
+          </StyledText>
+        </StyledView>
       ) : (
         <FlatList
-          data={items}
-          keyExtractor={(item, index) => (item.id || index).toString()}
+          data={tracks}
+          keyExtractor={(item) => item.id}
           renderItem={renderItem}
           contentContainerStyle={{
             paddingHorizontal: 16,
@@ -121,6 +148,6 @@ export default function PlaylistScreen() {
           }}
         />
       )}
-    </SafeAreaView>
+    </StyledSafeAreaView>
   );
 }

@@ -14,13 +14,15 @@ export interface Track {
 
 interface TrackItemProps {
 	track: Track;
+	onPress?: () => void;
 }
 
-export const TrackItem: React.FC<TrackItemProps> = ({ track }) => {
+export const TrackItem: React.FC<TrackItemProps> = ({ track, onPress }) => {
   const { playTrack } = usePlayer();
+  const handlePress = onPress ?? (() => playTrack(track));
 
   return (
-    <TouchableOpacity onPress={() => playTrack(track)}>
+    <TouchableOpacity onPress={handlePress}>
       <Card className="flex-row items-center p-3 mb-2 bg-content2 border-none shadow-sm">
         {track.artwork ? (
           <Image

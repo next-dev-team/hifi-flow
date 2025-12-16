@@ -7,6 +7,7 @@ import { HeroUINativeProvider } from "heroui-native";
 import { View } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { KeyboardProvider } from "react-native-keyboard-controller";
+import type {} from "uniwind/types";
 import { PlayerBar } from "@/components/player-bar";
 import { AppThemeProvider } from "@/contexts/app-theme-context";
 import { PlayerProvider } from "@/contexts/player-context";

@@ -1,11 +1,24 @@
 import { useSearchSearchGet } from "api-hifi/src/gen/hooks";
-import React from "react";
+import { useMemo } from "react";
 import { ActivityIndicator, FlatList, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { withUniwind } from "uniwind";
 import { ApiDebug } from "@/components/api-debug";
 import { type Track, TrackItem } from "@/components/track-item";
+import { usePlayer } from "@/contexts/player-context";
+
+const StyledSafeAreaView = withUniwind(SafeAreaView);
+const StyledView = withUniwind(View);
+const StyledText = withUniwind(Text);
+
+const resolveName = (value?: { name?: string } | string) => {
+  if (!value) return undefined;
+  if (typeof value === "string") return value;
+  return value.name;
+};
 
 export default function Explore() {
+  const { playQueue } = usePlayer();
   const { data, isLoading, error } = useSearchSearchGet({ s: "trending" });
 
   type SearchResultItem = {
@@ -19,26 +32,6 @@ export default function Explore() {
     thumbnails?: { url?: string }[];
     image?: string;
     url?: string;
-  };
-
-  const resolveName = (value?: { name?: string } | string) => {
-    if (!value) return undefined;
-    if (typeof value === "string") return value;
-    return value.name;
-  };
-
-  const renderItem = ({ item }: { item: SearchResultItem }) => {
-    const track: Track = {
-      id: item.id || item.videoId || Math.random().toString(),
-      title: item.title || item.name || "Unknown Title",
-      artist:
-        resolveName(item.artist) ||
-        resolveName(item.author) ||
-        "Unknown Artist",
-      artwork: item.thumbnail?.url || item.thumbnails?.[0]?.url || item.image,
-      url: item.url || `https://www.youtube.com/watch?v=${item.id}`,
-    };
-    return <TrackItem track={track} />;
   };
 
   const listData: SearchResultItem[] = (() => {
@@ -58,25 +51,59 @@ export default function Explore() {
     );
   })();
 
+  const tracks = useMemo(() => {
+    return listData.map((item, index): Track => {
+      const id = item.id || item.videoId || `result-${index}`;
+      return {
+        id,
+        title: item.title || item.name || "Unknown Title",
+        artist:
+          resolveName(item.artist) ||
+          resolveName(item.author) ||
+          "Unknown Artist",
+        artwork: item.thumbnail?.url || item.thumbnails?.[0]?.url || item.image,
+        url: item.url || `https://www.youtube.com/watch?v=${id}`,
+      };
+    });
+  }, [listData]);
+
+  const renderItem = ({ index }: { item: SearchResultItem; index: number }) => {
+    const track = tracks[index];
+    if (!track) return null;
+
+    return (
+      <TrackItem
+        track={track}
+        onPress={() => {
+          void playQueue(tracks, index);
+        }}
+      />
+    );
+  };
+
   return (
-    <SafeAreaView className="flex-1 bg-background" edges={["top"]}>
-      <View className="px-4 py-4 mb-2">
-        <Text className="text-2xl font-bold text-foreground">Explore</Text>
-        <Text className="text-default-500">Discover new music and trends</Text>
-      </View>
+    <StyledSafeAreaView className="flex-1 bg-background" edges={["top"]}>
+      <StyledView className="px-4 py-4 mb-2">
+        <StyledText className="text-2xl font-bold text-foreground">
+          Explore
+        </StyledText>
+        <StyledText className="text-default-500">
+          Discover new music and trends
+        </StyledText>
+      </StyledView>
 
       <ApiDebug title="Explore search" data={data} error={error} />
 
       {isLoading ? (
-        <View className="flex-1 justify-center items-center">
+        <StyledView className="flex-1 justify-center items-center">
           <ActivityIndicator size="large" color="#fff" />
-        </View>
+        </StyledView>
       ) : error ? (
-        <View className="flex-1 justify-center items-center px-4">
-          <Text className="text-default-500 text-center">
+        <StyledView className="flex-1 justify-center items-center px-4">
+          <StyledText className="text-default-500 text-center">
             Unable to load explore content.
-          </Text>
-        </View>
+          </StyledText>
+        </StyledView>
       ) : (
         <FlatList
           data={listData}
@@ -88,6 +115,6 @@ export default function Explore() {
           }}
         />
       )}
-    </SafeAreaView>
+    </StyledSafeAreaView>
   );
 }

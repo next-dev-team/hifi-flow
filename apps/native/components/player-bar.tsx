@@ -4,8 +4,9 @@ import {
   type BottomSheetBackdropProps,
   BottomSheetModal,
   BottomSheetView,
+  useBottomSheetTimingConfigs,
 } from "@gorhom/bottom-sheet";
-import { Card, Chip, useThemeColor } from "heroui-native";
+import { Card, useThemeColor } from "heroui-native";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   BackHandler,
@@ -16,6 +17,7 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
+import { Easing } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { withUniwind } from "uniwind";
 import { usePlayer } from "@/contexts/player-context";
@@ -31,8 +33,10 @@ export const PlayerBar = () => {
     resumeTrack,
     playNext,
     playPrevious,
-    quality,
-    setQuality,
+    positionMillis,
+    durationMillis,
+    seekToMillis,
+    seekByMillis,
   } = usePlayer();
   const insets = useSafeAreaInsets();
   const bottomSheetRef = useRef<BottomSheetModal | null>(null);
@@ -44,17 +48,29 @@ export const PlayerBar = () => {
   );
   const [isSheetOpen, setIsSheetOpen] = useState(false);
 
-  const cycleQuality = () => {
-    const order: (typeof quality)[] = [
-      "LOW",
-      "HIGH",
-      "LOSSLESS",
-      "HIRES_LOSSLESS",
-    ];
-    const index = order.indexOf(quality);
-    const next = order[(index + 1) % order.length];
-    setQuality(next);
+  const progressRatio =
+    durationMillis > 0
+      ? Math.min(1, Math.max(0, positionMillis / durationMillis))
+      : 0;
+  const [progressBarWidth, setProgressBarWidth] = useState(0);
+
+  const formatMillis = (value: number) => {
+    const seconds = Math.max(0, Math.floor(value / 1000));
+    return losslessAPI.formatDuration(seconds);
   };
+
+  const handleProgressBarPress = (event: any) => {
+    if (durationMillis <= 0 || progressBarWidth <= 0) return;
+    const locationX = event?.nativeEvent?.locationX;
+    if (typeof locationX !== "number") return;
+    const ratio = Math.min(1, Math.max(0, locationX / progressBarWidth));
+    seekToMillis(Math.floor(durationMillis * ratio));
+  };
+
+  const animationConfigs = useBottomSheetTimingConfigs({
+    duration: 320,
+    easing: Easing.bezier(0.2, 0.9, 0.2, 1),
+  });
 
   const handleOpenFullPlayer = () => {
     bottomSheetRef.current?.present();
@@ -166,13 +182,11 @@ export const PlayerBar = () => {
               <TouchableOpacity
                 onPress={(e) => {
                   e.stopPropagation();
-                  cycleQuality();
+                  playPrevious();
                 }}
-                className="mr-1"
+                className="p-2"
               >
-                <Chip variant="secondary" size="sm" className="px-2 h-7">
-                  <Text className="text-[11px]">{quality}</Text>
-                </Chip>
+                <Ionicons name="play-skip-back" size={20} color="#fff" />
               </TouchableOpacity>
 
               <TouchableOpacity
@@ -188,6 +202,16 @@ export const PlayerBar = () => {
                   color="#fff"
                 />
               </TouchableOpacity>
+
+              <TouchableOpacity
+                onPress={(e) => {
+                  e.stopPropagation();
+                  playNext();
+                }}
+                className="p-2"
+              >
+                <Ionicons name="play-skip-forward" size={20} color="#fff" />
+              </TouchableOpacity>
             </Card>
           </Pressable>
         </View>
@@ -199,6 +223,7 @@ export const PlayerBar = () => {
         enablePanDownToClose
         enableDismissOnClose
         backdropComponent={renderBackdrop}
+        animationConfigs={animationConfigs}
         onChange={(index) => setIsSheetOpen(index >= 0)}
         onDismiss={() => setIsSheetOpen(false)}
         handleIndicatorStyle={{ backgroundColor: themeColorForeground }}
@@ -232,9 +257,7 @@ export const PlayerBar = () => {
                     color={themeColorForeground}
                   />
                 </TouchableOpacity>
-                <Chip variant="secondary" size="sm" className="px-2 h-7">
-                  <Text className="text-[11px]">{quality}</Text>
-                </Chip>
+                <View className="w-7" />
                 <View className="w-7" />
               </View>
 
@@ -270,11 +293,40 @@ export const PlayerBar = () => {
 
                 <View className="w-full px-10 mt-4">
                   <View className="flex-row justify-between mb-1">
-                    <Text className="text-[11px] text-default-500">--:--</Text>
-                    <Text className="text-[11px] text-default-500">--:--</Text>
+                    <Text className="text-[11px] text-default-500">
+                      {formatMillis(positionMillis)}
+                    </Text>
+                    <Text className="text-[11px] text-default-500">
+                      {durationMillis > 0
+                        ? formatMillis(durationMillis)
+                        : "--:--"}
+                    </Text>
                   </View>
-                  <View className="h-1.5 rounded-full overflow-hidden bg-content2">
-                    <View className="h-full w-1/3 bg-cyan-400" />
+                  <Pressable
+                    onPress={handleProgressBarPress}
+                    onLayout={(e) =>
+                      setProgressBarWidth(e.nativeEvent.layout.width)
+                    }
+                    className="h-1.5 rounded-full overflow-hidden bg-content2"
+                  >
+                    <View
+                      className="h-full bg-cyan-400"
+                      style={{ width: `${progressRatio * 100}%` }}
+                    />
+                  </Pressable>
+                  <View className="flex-row items-center justify-between mt-4">
+                    <TouchableOpacity
+                      className="px-3 py-2 rounded-full bg-white/10"
+                      onPress={() => seekByMillis(-10_000)}
+                    >
+                      <Text className="text-xs text-foreground">-10s</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      className="px-3 py-2 rounded-full bg-white/10"
+                      onPress={() => seekByMillis(10_000)}
+                    >
+                      <Text className="text-xs text-foreground">+10s</Text>
+                    </TouchableOpacity>
                   </View>
                 </View>
               </View>
@@ -285,7 +337,7 @@ export const PlayerBar = () => {
                   onPress={playPrevious}
                 >
                   <Ionicons
-                    name="play-back"
+                    name="play-skip-back"
                     size={18}
                     color={themeColorForeground}
                   />
@@ -305,7 +357,7 @@ export const PlayerBar = () => {
                   onPress={playNext}
                 >
                   <Ionicons
-                    name="play-forward"
+                    name="play-skip-forward"
                     size={18}
                     color={themeColorForeground}
                   />

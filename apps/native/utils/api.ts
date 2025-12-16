@@ -1,5 +1,6 @@
 // API service for HIFI API
 
+import { Pollinations } from "./ai";
 import { deriveTrackQuality } from "./audioQuality";
 import { API_CONFIG, fetchWithCORS, selectApiTargetForRegion } from "./config";
 import type {
@@ -17,6 +18,39 @@ import type {
   TrackLookup,
 } from "./types";
 import { parseTidalUrl, type TidalUrlParseResult } from "./urlParser";
+
+export const getSuggestedArtists = async () => {
+  try {
+    const client = new Pollinations();
+    const response = await client.chat.completions.create({
+      model: "openai",
+      messages: [
+        {
+          role: "user",
+          content: `Generate a list of exactly 30 randomly selected popular Cambodian music artists from different eras and genres. Include a mix of:
+    - Classic artists (1950s-1980s)
+    - Modern artists (1990s-2000s)
+    - Contemporary artists (2010s-present)
+    - Various genres: pop, rock, hip-hop, R&B, country, electronic, jazz, soul, etc.
+
+    Format the response as a valid JSON array with this structure:
+    [
+      {"name": "Artist Name", "genre": "Primary Genre", "era": "Decade/Era"},
+      ...
+    ]
+
+    Ensure the list is diverse, includes both solo artists and bands, and represents global music (not just Western artists). Return ONLY the JSON array, no additional text.`,
+        },
+      ],
+    });
+    const content = response?.choices?.[0]?.message?.content;
+    const res = JSON.parse(content);
+    // console.log(res);
+    return res;
+  } catch (error) {
+    // console.error("Failed to fetch artist list:", error);
+  }
+};
 
 /**
  * Formats an array of artists into a readable string for UI display.
