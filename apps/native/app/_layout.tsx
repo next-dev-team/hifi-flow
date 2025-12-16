@@ -1,9 +1,10 @@
 import "@/global.css";
 
+import { BottomSheetModalProvider } from "@gorhom/bottom-sheet";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Stack } from "expo-router";
 import { HeroUINativeProvider } from "heroui-native";
-import { LogBox, View } from "react-native";
+import { View } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { KeyboardProvider } from "react-native-keyboard-controller";
 import { PlayerBar } from "@/components/player-bar";
@@ -35,12 +36,14 @@ export default function Layout() {
         <QueryClientProvider client={queryClient}>
           <AppThemeProvider>
             <HeroUINativeProvider>
-              <PlayerProvider>
-                <View style={{ flex: 1 }}>
-                  <StackLayout />
-                  <PlayerBar />
-                </View>
-              </PlayerProvider>
+              <BottomSheetModalProvider>
+                <PlayerProvider>
+                  <View style={{ flex: 1 }}>
+                    <StackLayout />
+                    <PlayerBar />
+                  </View>
+                </PlayerProvider>
+              </BottomSheetModalProvider>
             </HeroUINativeProvider>
           </AppThemeProvider>
         </QueryClientProvider>
