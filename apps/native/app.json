@@ -6,7 +6,7 @@
     "web": {
       "bundler": "metro"
     },
-    "name": "my-better-t-app",
+    "name": "hifi-flow",
     "slug": "hifi-flow",
     "plugins": ["expo-font"],
     "experiments": {

@@ -43,6 +43,10 @@ interface PlayerContextType {
   positionMillis: number;
   durationMillis: number;
   currentStreamUrl: string | null;
+  sleepTimerEndsAt: number | null;
+  sleepTimerRemainingMs: number;
+  startSleepTimer: (minutes: number) => void;
+  cancelSleepTimer: () => void;
   playTrack: (track: Track) => Promise<void>;
   playQueue: (tracks: Track[], startIndex?: number) => Promise<void>;
   pauseTrack: () => Promise<void>;
@@ -113,6 +117,8 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
   const [durationMillis, setDurationMillis] = useState(0);
   const [currentStreamUrl, setCurrentStreamUrl] = useState<string | null>(null);
   const [favorites, setFavorites] = useState<SavedTrack[]>([]);
+  const [sleepTimerEndsAt, setSleepTimerEndsAt] = useState<number | null>(null);
+  const [sleepTimerRemainingMs, setSleepTimerRemainingMs] = useState(0);
 
   const soundRef = useRef<Audio.Sound | null>(null);
   const currentTrackRef = useRef<Track | null>(null);
@@ -121,6 +127,24 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
   const playNextRef = useRef<() => Promise<void>>(async () => {});
   const playRequestIdRef = useRef(0);
   const currentStreamUrlRef = useRef<string | null>(null);
+
+  const sleepTimerTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null
+  );
+  const sleepTimerIntervalRef = useRef<ReturnType<typeof setInterval> | null>(
+    null
+  );
+
+  const clearSleepTimerHandles = useCallback(() => {
+    if (sleepTimerTimeoutRef.current) {
+      clearTimeout(sleepTimerTimeoutRef.current);
+      sleepTimerTimeoutRef.current = null;
+    }
+    if (sleepTimerIntervalRef.current) {
+      clearInterval(sleepTimerIntervalRef.current);
+      sleepTimerIntervalRef.current = null;
+    }
+  }, []);
 
   useEffect(() => {
     currentTrackRef.current = currentTrack;
@@ -345,6 +369,41 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
     setIsPlaying(false);
   }, []);
 
+  const cancelSleepTimer = useCallback(() => {
+    clearSleepTimerHandles();
+    setSleepTimerEndsAt(null);
+    setSleepTimerRemainingMs(0);
+  }, [clearSleepTimerHandles]);
+
+  const startSleepTimer = useCallback(
+    (minutes: number) => {
+      const ms = Math.max(0, Math.floor(minutes * 60 * 1000));
+      clearSleepTimerHandles();
+      if (ms <= 0) {
+        setSleepTimerEndsAt(null);
+        setSleepTimerRemainingMs(0);
+        return;
+      }
+
+      const endsAt = Date.now() + ms;
+      setSleepTimerEndsAt(endsAt);
+      setSleepTimerRemainingMs(ms);
+
+      sleepTimerIntervalRef.current = setInterval(() => {
+        const remaining = Math.max(0, endsAt - Date.now());
+        setSleepTimerRemainingMs(remaining);
+      }, 1000);
+
+      sleepTimerTimeoutRef.current = setTimeout(() => {
+        void pauseTrack();
+        clearSleepTimerHandles();
+        setSleepTimerEndsAt(null);
+        setSleepTimerRemainingMs(0);
+      }, ms);
+    },
+    [clearSleepTimerHandles, pauseTrack]
+  );
+
   const resumeTrack = useCallback(async () => {
     const sound = soundRef.current;
     if (!sound) return;
@@ -490,8 +549,9 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
   useEffect(() => {
     return () => {
       unloadSound();
+      clearSleepTimerHandles();
     };
-  }, [unloadSound]);
+  }, [clearSleepTimerHandles, unloadSound]);
 
   return (
     <PlayerContext.Provider
@@ -505,6 +565,10 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
         positionMillis,
         durationMillis,
         currentStreamUrl,
+        sleepTimerEndsAt,
+        sleepTimerRemainingMs,
+        startSleepTimer,
+        cancelSleepTimer,
         playTrack,
         playQueue,
         pauseTrack,

@@ -10,13 +10,14 @@ import {
 import { useQuery } from "@tanstack/react-query";
 import { useSearchSearchGet } from "api-hifi/src/gen/hooks";
 import type { SearchSearchGetQueryParams } from "api-hifi/src/gen/types/SearchSearchGet";
-import { Card, Chip } from "heroui-native";
+import { Card, Chip, useThemeColor } from "heroui-native";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   FlatList,
   Image,
   ScrollView,
+  Switch,
   Text,
   TextInput,
   TouchableOpacity,
@@ -28,6 +29,7 @@ import { withUniwind } from "uniwind";
 import type {} from "uniwind/types";
 import { ApiDebug } from "@/components/api-debug";
 import { type Track, TrackItem } from "@/components/track-item";
+import { useAppTheme } from "@/contexts/app-theme-context";
 import { type SavedTrack, usePlayer } from "@/contexts/player-context";
 import { getSuggestedArtists } from "@/utils/api";
 
@@ -54,13 +56,25 @@ const StyledTouchableOpacity = withUniwind(TouchableOpacity);
 const StyledBottomSheetView = withUniwind(BottomSheetView);
 
 export default function Home() {
-  const { playQueue, favorites } = usePlayer();
+  const {
+    playQueue,
+    favorites,
+    sleepTimerEndsAt,
+    sleepTimerRemainingMs,
+    startSleepTimer,
+    cancelSleepTimer,
+  } = usePlayer();
+  const { isDark, setTheme } = useAppTheme();
+  const themeColorBackground = useThemeColor("background");
+  const themeColorForeground = useThemeColor("foreground");
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<SearchFilter>("songs");
   const [debouncedQuery, setDebouncedQuery] = useState("");
 
   const favoritesSheetRef = useRef<BottomSheetModal | null>(null);
+  const settingsSheetRef = useRef<BottomSheetModal | null>(null);
   const favoritesSnapPoints = useMemo(() => ["100%"], []);
+  const settingsSnapPoints = useMemo(() => ["55%"], []);
   const favoritesAnimationConfigs = useBottomSheetTimingConfigs({
     duration: 320,
     easing: Easing.bezier(0.2, 0.9, 0.2, 1),
@@ -77,6 +91,14 @@ export default function Home() {
       />
     );
   }, []);
+
+  const formattedSleepRemaining = useMemo(() => {
+    if (!sleepTimerEndsAt || sleepTimerRemainingMs <= 0) return "Off";
+    const totalSeconds = Math.ceil(sleepTimerRemainingMs / 1000);
+    const minutes = Math.floor(totalSeconds / 60);
+    const seconds = totalSeconds % 60;
+    return `${minutes}:${String(seconds).padStart(2, "0")}`;
+  }, [sleepTimerEndsAt, sleepTimerRemainingMs]);
 
   const { data: suggestedArtists } = useQuery({
     queryKey: ["suggested-artists"],
@@ -284,16 +306,28 @@ export default function Home() {
               HiFi Flow
             </StyledText>
           </TouchableOpacity>
-          <TouchableOpacity
-            className="p-2"
-            onPress={() => favoritesSheetRef.current?.present()}
-          >
-            <Ionicons
-              name={favorites.length > 0 ? "heart" : "heart-outline"}
-              size={22}
-              color="red"
-            />
-          </TouchableOpacity>
+          <View className="flex-row items-center">
+            <TouchableOpacity
+              className="p-2"
+              onPress={() => settingsSheetRef.current?.present()}
+            >
+              <Ionicons
+                name="settings"
+                size={22}
+                color={themeColorForeground}
+              />
+            </TouchableOpacity>
+            <TouchableOpacity
+              className="p-2"
+              onPress={() => favoritesSheetRef.current?.present()}
+            >
+              <Ionicons
+                name={favorites.length > 0 ? "heart" : "heart-outline"}
+                size={22}
+                color="red"
+              />
+            </TouchableOpacity>
+          </View>
         </View>
         <StyledText className="text-default-500 mb-4">
           Search across songs, artists, albums and playlists.
@@ -422,7 +456,7 @@ export default function Home() {
         backdropComponent={favoritesBackdrop}
         animationConfigs={favoritesAnimationConfigs}
         handleIndicatorStyle={{ backgroundColor: "#ccc" }}
-        backgroundStyle={{ backgroundColor: "#fff" }}
+        backgroundStyle={{ backgroundColor: themeColorBackground }}
       >
         <StyledBottomSheetView className="flex-1 bg-background">
           <View className="px-4 pt-3 pb-2 flex-row items-center justify-between">
@@ -431,7 +465,7 @@ export default function Home() {
               className="p-2"
               onPress={() => favoritesSheetRef.current?.dismiss()}
             >
-              <Ionicons name="close" size={22} color="#111" />
+              <Ionicons name="close" size={22} color={themeColorForeground} />
             </TouchableOpacity>
           </View>
 
@@ -455,6 +489,88 @@ export default function Home() {
               }}
             />
           )}
+        </StyledBottomSheetView>
+      </BottomSheetModal>
+
+      <BottomSheetModal
+        ref={settingsSheetRef}
+        snapPoints={settingsSnapPoints}
+        index={0}
+        enablePanDownToClose
+        enableDismissOnClose
+        backdropComponent={favoritesBackdrop}
+        animationConfigs={favoritesAnimationConfigs}
+        handleIndicatorStyle={{ backgroundColor: "#ccc" }}
+        backgroundStyle={{ backgroundColor: themeColorBackground }}
+      >
+        <StyledBottomSheetView className="flex-1 bg-background">
+          <View className="px-4 pt-3 pb-2 flex-row items-center justify-between">
+            <Text className="text-xl font-bold text-foreground">Settings</Text>
+            <TouchableOpacity
+              className="p-2"
+              onPress={() => settingsSheetRef.current?.dismiss()}
+            >
+              <Ionicons name="close" size={22} color={themeColorForeground} />
+            </TouchableOpacity>
+          </View>
+
+          <View className="px-4 pt-2">
+            <View className="flex-row items-center justify-between py-3 border-b border-default-200">
+              <Text className="text-base text-foreground font-medium">
+                Dark mode
+              </Text>
+              <Switch
+                value={isDark}
+                onValueChange={(next) => setTheme(next ? "dark" : "light")}
+              />
+            </View>
+
+            <View className="py-4">
+              <View className="flex-row items-center justify-between mb-3">
+                <Text className="text-base text-foreground font-medium">
+                  Sleep timer
+                </Text>
+                <Text className="text-default-500">
+                  {formattedSleepRemaining}
+                </Text>
+              </View>
+
+              <View className="flex-row flex-wrap">
+                <Chip
+                  onPress={() => startSleepTimer(10)}
+                  className="mr-2 mb-2 bg-default-200"
+                >
+                  <Text className="text-foreground">10m</Text>
+                </Chip>
+                <Chip
+                  onPress={() => startSleepTimer(20)}
+                  className="mr-2 mb-2 bg-default-200"
+                >
+                  <Text className="text-foreground">20m</Text>
+                </Chip>
+                <Chip
+                  onPress={() => startSleepTimer(30)}
+                  className="mr-2 mb-2 bg-default-200"
+                >
+                  <Text className="text-foreground">30m</Text>
+                </Chip>
+                <Chip
+                  onPress={() => startSleepTimer(60)}
+                  className="mr-2 mb-2 bg-default-200"
+                >
+                  <Text className="text-foreground">1h</Text>
+                </Chip>
+                {sleepTimerEndsAt ? (
+                  <Chip
+                    onPress={cancelSleepTimer}
+                    className="mr-2 mb-2 bg-default-200"
+                  >
+                    <Text className="text-foreground">Off</Text>
+                  </Chip>
+                ) : null}
+              </View>
+            </View>
+          </View>
         </StyledBottomSheetView>
       </BottomSheetModal>
     </StyledSafeAreaView>
