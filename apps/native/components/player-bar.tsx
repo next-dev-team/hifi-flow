@@ -31,6 +31,8 @@ export const PlayerBar = () => {
     currentTrack,
     isPlaying,
     isLoading,
+    isCurrentFavorited,
+    toggleCurrentFavorite,
     pauseTrack,
     resumeTrack,
     playNext,
@@ -219,6 +221,20 @@ export const PlayerBar = () => {
               >
                 <Ionicons name="play-skip-forward" size={20} color="#fff" />
               </TouchableOpacity>
+
+              <TouchableOpacity
+                onPress={(e) => {
+                  e.stopPropagation();
+                  void toggleCurrentFavorite(resolvedArtwork);
+                }}
+                className="p-2"
+              >
+                <Ionicons
+                  name={isCurrentFavorited ? "heart" : "heart-outline"}
+                  size={20}
+                  color="#fff"
+                />
+              </TouchableOpacity>
             </Card>
           </Pressable>
         </View>
@@ -263,7 +279,16 @@ export const PlayerBar = () => {
                   <Ionicons name="chevron-down" size={28} color="#fff" />
                 </TouchableOpacity>
                 <View className="w-7" />
-                <View className="w-7" />
+                <TouchableOpacity
+                  className="w-7 items-end"
+                  onPress={() => void toggleCurrentFavorite(resolvedArtwork)}
+                >
+                  <Ionicons
+                    name={isCurrentFavorited ? "heart" : "heart-outline"}
+                    size={22}
+                    color="#fff"
+                  />
+                </TouchableOpacity>
               </View>
 
               <View className="items-center px-8">
@@ -284,7 +309,7 @@ export const PlayerBar = () => {
                   {resolvedArtwork ? (
                     <Image
                       source={{ uri: resolvedArtwork }}
-                      className="w-full h-full"
+                      className="w-full h-full rounded-full"
                       resizeMode="cover"
                     />
                   ) : (

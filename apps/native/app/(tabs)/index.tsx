@@ -1,24 +1,34 @@
 import { Ionicons } from "@expo/vector-icons";
+import {
+  BottomSheetBackdrop,
+  type BottomSheetBackdropProps,
+  BottomSheetFlatList,
+  BottomSheetModal,
+  BottomSheetView,
+  useBottomSheetTimingConfigs,
+} from "@gorhom/bottom-sheet";
 import { useQuery } from "@tanstack/react-query";
 import { useSearchSearchGet } from "api-hifi/src/gen/hooks";
 import type { SearchSearchGetQueryParams } from "api-hifi/src/gen/types/SearchSearchGet";
 import { Card, Chip } from "heroui-native";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   FlatList,
+  Image,
   ScrollView,
   Text,
   TextInput,
   TouchableOpacity,
   View,
 } from "react-native";
+import { Easing } from "react-native-reanimated";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { withUniwind } from "uniwind";
 import type {} from "uniwind/types";
 import { ApiDebug } from "@/components/api-debug";
 import { type Track, TrackItem } from "@/components/track-item";
-import { usePlayer } from "@/contexts/player-context";
+import { type SavedTrack, usePlayer } from "@/contexts/player-context";
 import { getSuggestedArtists } from "@/utils/api";
 
 type SearchFilter = "songs" | "artists" | "albums" | "playlists";
@@ -41,12 +51,32 @@ const StyledText = withUniwind(Text);
 const StyledTextInput = withUniwind(TextInput);
 const StyledScrollView = withUniwind(ScrollView);
 const StyledTouchableOpacity = withUniwind(TouchableOpacity);
+const StyledBottomSheetView = withUniwind(BottomSheetView);
 
 export default function Home() {
-  const { playQueue } = usePlayer();
+  const { playQueue, favorites } = usePlayer();
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<SearchFilter>("songs");
   const [debouncedQuery, setDebouncedQuery] = useState("");
+
+  const favoritesSheetRef = useRef<BottomSheetModal | null>(null);
+  const favoritesSnapPoints = useMemo(() => ["100%"], []);
+  const favoritesAnimationConfigs = useBottomSheetTimingConfigs({
+    duration: 320,
+    easing: Easing.bezier(0.2, 0.9, 0.2, 1),
+  });
+
+  const favoritesBackdrop = useMemo(() => {
+    return (props: BottomSheetBackdropProps) => (
+      <BottomSheetBackdrop
+        {...props}
+        opacity={0.6}
+        appearsOnIndex={0}
+        disappearsOnIndex={-1}
+        pressBehavior="close"
+      />
+    );
+  }, []);
 
   const { data: suggestedArtists } = useQuery({
     queryKey: ["suggested-artists"],
@@ -174,6 +204,18 @@ export default function Home() {
     });
   }, [listData]);
 
+  const favoriteQueue = useMemo<Track[]>(() => {
+    return favorites.map((saved) => {
+      return {
+        id: `saved:${saved.id}`,
+        title: saved.title,
+        artist: saved.artist,
+        artwork: saved.artwork,
+        url: saved.streamUrl,
+      };
+    });
+  }, [favorites]);
+
   const renderItem = ({ index }: { index: number }) => {
     const track = tracks[index];
     if (!track) return null;
@@ -188,12 +230,71 @@ export default function Home() {
     );
   };
 
+  const renderSavedItem = ({
+    item,
+    index,
+  }: {
+    item: SavedTrack;
+    index: number;
+  }) => {
+    return (
+      <TouchableOpacity
+        onPress={() => {
+          void playQueue(favoriteQueue, index);
+          favoritesSheetRef.current?.dismiss();
+        }}
+      >
+        <Card className="flex-row items-center p-3 mb-2 bg-content2 border-none shadow-sm">
+          <View className="w-14 h-14 rounded-full overflow-hidden mr-4 bg-default-300 items-center justify-center">
+            {item.artwork ? (
+              <Image
+                source={{ uri: item.artwork }}
+                className="w-full h-full"
+                resizeMode="cover"
+              />
+            ) : (
+              <Text className="text-xl">🎵</Text>
+            )}
+          </View>
+          <View className="flex-1 justify-center">
+            <Text
+              className="font-semibold text-base text-foreground"
+              numberOfLines={1}
+            >
+              {item.title}
+            </Text>
+            <Text className="text-default-500 text-sm" numberOfLines={1}>
+              {item.artist}
+            </Text>
+          </View>
+        </Card>
+      </TouchableOpacity>
+    );
+  };
+
   return (
     <StyledSafeAreaView className="flex-1 bg-background" edges={["top"]}>
       <StyledView className="px-4 pt-3 pb-2">
-        <StyledText className="text-2xl font-bold text-foreground mb-2">
-          HiFi Flow
-        </StyledText>
+        <View className="flex-row items-center justify-between mb-2">
+          <TouchableOpacity
+            activeOpacity={0.8}
+            onPress={() => favoritesSheetRef.current?.present()}
+          >
+            <StyledText className="text-2xl font-bold text-foreground">
+              HiFi Flow
+            </StyledText>
+          </TouchableOpacity>
+          <TouchableOpacity
+            className="p-2"
+            onPress={() => favoritesSheetRef.current?.present()}
+          >
+            <Ionicons
+              name={favorites.length > 0 ? "heart" : "heart-outline"}
+              size={22}
+              color="red"
+            />
+          </TouchableOpacity>
+        </View>
         <StyledText className="text-default-500 mb-4">
           Search across songs, artists, albums and playlists.
         </StyledText>
@@ -311,6 +412,51 @@ export default function Home() {
           }
         />
       )}
+
+      <BottomSheetModal
+        ref={favoritesSheetRef}
+        snapPoints={favoritesSnapPoints}
+        index={0}
+        enablePanDownToClose
+        enableDismissOnClose
+        backdropComponent={favoritesBackdrop}
+        animationConfigs={favoritesAnimationConfigs}
+        handleIndicatorStyle={{ backgroundColor: "#ccc" }}
+        backgroundStyle={{ backgroundColor: "#fff" }}
+      >
+        <StyledBottomSheetView className="flex-1 bg-background">
+          <View className="px-4 pt-3 pb-2 flex-row items-center justify-between">
+            <Text className="text-xl font-bold text-foreground">Favorites</Text>
+            <TouchableOpacity
+              className="p-2"
+              onPress={() => favoritesSheetRef.current?.dismiss()}
+            >
+              <Ionicons name="close" size={22} color="#111" />
+            </TouchableOpacity>
+          </View>
+
+          {favorites.length === 0 ? (
+            <View className="flex-1 items-center justify-center px-6">
+              <Text className="text-default-500 text-center">
+                No favorites yet.
+              </Text>
+              <Text className="text-default-500 text-center mt-2">
+                Tap the heart in the player to save tracks.
+              </Text>
+            </View>
+          ) : (
+            <BottomSheetFlatList
+              data={favorites}
+              keyExtractor={(item: SavedTrack) => item.id}
+              renderItem={renderSavedItem}
+              contentContainerStyle={{
+                paddingHorizontal: 16,
+                paddingBottom: 24,
+              }}
+            />
+          )}
+        </StyledBottomSheetView>
+      </BottomSheetModal>
     </StyledSafeAreaView>
   );
 }

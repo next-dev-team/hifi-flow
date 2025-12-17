@@ -1,25 +1,21 @@
 {
   "expo": {
-    "scheme": "my-better-t-app",
-    "userInterfaceStyle": "automatic",
+    "scheme": "hifi-flow",
+    "userInterfaceStyle": "light",
     "orientation": "default",
     "web": {
       "bundler": "metro"
     },
     "name": "my-better-t-app",
     "slug": "hifi-flow",
-    "plugins": [
-      "expo-font"
-    ],
+    "plugins": ["expo-font"],
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
     },
     "ios": {
       "infoPlist": {
-        "UIBackgroundModes": [
-          "audio"
-        ]
+        "UIBackgroundModes": ["audio"]
       }
     },
     "android": {

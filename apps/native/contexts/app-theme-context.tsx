@@ -1,6 +1,6 @@
 import type React from "react";
-import { createContext, useCallback, useContext, useMemo } from "react";
-import { Uniwind, useUniwind } from "uniwind";
+import { createContext, useCallback, useContext, useEffect, useMemo } from "react";
+import { Uniwind } from "uniwind";
 
 type ThemeName = "light" | "dark";
 
@@ -21,33 +21,28 @@ export const AppThemeProvider = ({
 }: {
   children: React.ReactNode;
 }) => {
-  const { theme } = useUniwind();
-
-  const isLight = useMemo(() => {
-    return theme === "light";
-  }, [theme]);
-
-  const isDark = useMemo(() => {
-    return theme === "dark";
-  }, [theme]);
+  useEffect(() => {
+    Uniwind.setTheme("light");
+  }, []);
 
   const setTheme = useCallback((newTheme: ThemeName) => {
-    Uniwind.setTheme(newTheme);
+    void newTheme;
+    Uniwind.setTheme("light");
   }, []);
 
   const toggleTheme = useCallback(() => {
-    Uniwind.setTheme(theme === "light" ? "dark" : "light");
-  }, [theme]);
+    Uniwind.setTheme("light");
+  }, []);
 
   const value = useMemo(
     () => ({
-      currentTheme: theme,
-      isLight,
-      isDark,
+      currentTheme: "light",
+      isLight: true,
+      isDark: false,
       setTheme,
       toggleTheme,
     }),
-    [theme, isLight, isDark, setTheme, toggleTheme]
+    [setTheme, toggleTheme]
   );
 
   return (

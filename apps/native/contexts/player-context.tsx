@@ -1,4 +1,5 @@
 import { Audio, type AVPlaybackStatus } from "expo-av";
+import * as SecureStore from "expo-secure-store";
 import type React from "react";
 import {
   createContext,
@@ -8,19 +9,29 @@ import {
   useRef,
   useState,
 } from "react";
+import { Platform } from "react-native";
 import { losslessAPI } from "@/utils/api";
 import type { AudioQuality as ApiAudioQuality } from "@/utils/types";
 
 type AudioQuality = ApiAudioQuality;
 
 interface Track {
-  id: string;
+  id: string | number;
   title: string;
   artist: string;
   artwork?: string;
   url: string;
   duration?: number;
 }
+
+export type SavedTrack = {
+  id: string;
+  title: string;
+  artist: string;
+  artwork?: string;
+  streamUrl: string;
+  addedAt: number;
+};
 
 interface PlayerContextType {
   currentTrack: Track | null;
@@ -31,6 +42,7 @@ interface PlayerContextType {
   setQuality: (quality: AudioQuality) => void;
   positionMillis: number;
   durationMillis: number;
+  currentStreamUrl: string | null;
   playTrack: (track: Track) => Promise<void>;
   playQueue: (tracks: Track[], startIndex?: number) => Promise<void>;
   pauseTrack: () => Promise<void>;
@@ -40,9 +52,54 @@ interface PlayerContextType {
   addToQueue: (track: Track) => void;
   playNext: () => Promise<void>;
   playPrevious: () => Promise<void>;
+  favorites: SavedTrack[];
+  isCurrentFavorited: boolean;
+  toggleCurrentFavorite: (artwork?: string) => Promise<void>;
+  playSaved: (saved: SavedTrack) => Promise<void>;
 }
 
 const PlayerContext = createContext<PlayerContextType | undefined>(undefined);
+
+const FAVORITES_STORAGE_KEY = "hififlow:favorites:v1";
+
+async function readPersistentValue(key: string): Promise<string | null> {
+  if (Platform.OS === "web") {
+    try {
+      return localStorage.getItem(key);
+    } catch {
+      return null;
+    }
+  }
+
+  try {
+    return await SecureStore.getItemAsync(key);
+  } catch {
+    return null;
+  }
+}
+
+async function writePersistentValue(key: string, value: string): Promise<void> {
+  if (Platform.OS === "web") {
+    try {
+      localStorage.setItem(key, value);
+    } catch {
+      return;
+    }
+    return;
+  }
+
+  try {
+    await SecureStore.setItemAsync(key, value);
+  } catch {
+    return;
+  }
+}
+
+function normalizeFavoriteId(id: unknown): string {
+  const raw = typeof id === "string" ? id : String(id ?? "");
+  if (raw.startsWith("saved:")) return raw.slice("saved:".length);
+  return raw;
+}
 
 export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
   children,
@@ -54,16 +111,24 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
   const [quality, setQuality] = useState<AudioQuality>("LOSSLESS");
   const [positionMillis, setPositionMillis] = useState(0);
   const [durationMillis, setDurationMillis] = useState(0);
+  const [currentStreamUrl, setCurrentStreamUrl] = useState<string | null>(null);
+  const [favorites, setFavorites] = useState<SavedTrack[]>([]);
 
   const soundRef = useRef<Audio.Sound | null>(null);
   const currentTrackRef = useRef<Track | null>(null);
   const queueRef = useRef<Track[]>([]);
   const qualityRef = useRef<AudioQuality>(quality);
   const playNextRef = useRef<() => Promise<void>>(async () => {});
+  const playRequestIdRef = useRef(0);
+  const currentStreamUrlRef = useRef<string | null>(null);
 
   useEffect(() => {
     currentTrackRef.current = currentTrack;
   }, [currentTrack]);
+
+  useEffect(() => {
+    currentStreamUrlRef.current = currentStreamUrl;
+  }, [currentStreamUrl]);
 
   useEffect(() => {
     queueRef.current = queue;
@@ -89,10 +154,39 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
     setupAudio();
   }, []);
 
+  useEffect(() => {
+    readPersistentValue(FAVORITES_STORAGE_KEY)
+      .then((value) => {
+        if (!value) return;
+        const parsed = JSON.parse(value) as unknown;
+        if (!Array.isArray(parsed)) return;
+        const loaded = parsed
+          .filter((entry): entry is SavedTrack => {
+            if (!entry || typeof entry !== "object") return false;
+            const record = entry as Record<string, unknown>;
+            return (
+              typeof record.id === "string" &&
+              typeof record.title === "string" &&
+              typeof record.artist === "string" &&
+              typeof record.streamUrl === "string" &&
+              typeof record.addedAt === "number" &&
+              (record.artwork === undefined ||
+                typeof record.artwork === "string")
+            );
+          })
+          .slice(0, 500);
+        setFavorites(loaded);
+      })
+      .catch(() => {
+        return;
+      });
+  }, []);
+
   const unloadSound = useCallback(async () => {
     const sound = soundRef.current;
     if (sound) {
       try {
+        sound.setOnPlaybackStatusUpdate(null);
         await sound.unloadAsync();
       } catch {
         // ignore
@@ -100,84 +194,117 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
     }
   }, []);
 
-  const playSound = useCallback(
-    async (track: Track) => {
-      setIsLoading(true);
-      // Unload previous sound first
-      if (soundRef.current) {
-        try {
-          await soundRef.current.unloadAsync();
-        } catch {
-          // ignore
-        }
-        soundRef.current = null;
+  const playSound = useCallback(async (track: Track) => {
+    playRequestIdRef.current += 1;
+    const requestId = playRequestIdRef.current;
+
+    setIsLoading(true);
+    setIsPlaying(false);
+
+    // Unload previous sound first
+    if (soundRef.current) {
+      const previous = soundRef.current;
+      try {
+        previous.setOnPlaybackStatusUpdate(null);
+        await previous.unloadAsync();
+      } catch {
+        // ignore
       }
+      soundRef.current = null;
+    }
 
-      setPositionMillis(0);
-      setDurationMillis(0);
+    if (playRequestIdRef.current !== requestId) {
+      return;
+    }
 
-      const trackId = Number(track.id);
-      let streamUrl: string | null = null;
+    setPositionMillis(0);
+    setDurationMillis(0);
+    setCurrentStreamUrl(null);
 
-      if (Number.isFinite(trackId)) {
-        try {
-          streamUrl = await losslessAPI.getTrackStreamUrl(
-            trackId,
-            qualityRef.current
-          );
-        } catch {
-          streamUrl = null;
-        }
+    const trackId = Number(track.id);
+    let streamUrl: string | null = null;
+
+    if (Number.isFinite(trackId)) {
+      try {
+        streamUrl = await losslessAPI.getTrackStreamUrl(
+          trackId,
+          qualityRef.current
+        );
+      } catch {
+        streamUrl = null;
       }
+    }
 
-      if (!streamUrl && track.url) {
-        streamUrl = track.url;
-      }
+    if (playRequestIdRef.current !== requestId) {
+      return;
+    }
 
-      if (!streamUrl) {
+    if (!streamUrl && track.url) {
+      streamUrl = track.url;
+    }
+
+    if (!streamUrl) {
+      if (playRequestIdRef.current === requestId) {
         setIsPlaying(false);
         setIsLoading(false);
+        setCurrentStreamUrl(null);
+      }
+      return;
+    }
+
+    // Create new sound instance
+    const sound = new Audio.Sound();
+    soundRef.current = sound;
+
+    try {
+      sound.setOnPlaybackStatusUpdate((status: AVPlaybackStatus) => {
+        if (playRequestIdRef.current !== requestId) return;
+        if (!status.isLoaded) return;
+        setIsPlaying(status.isPlaying);
+        setPositionMillis(status.positionMillis);
+        setDurationMillis(status.durationMillis ?? 0);
+        if (status.didJustFinish) {
+          void playNextRef.current();
+        }
+      });
+
+      await sound.loadAsync(
+        { uri: streamUrl },
+        { shouldPlay: false, progressUpdateIntervalMillis: 500 }
+      );
+
+      // Check if we were interrupted
+      if (soundRef.current !== sound) {
+        await sound.unloadAsync();
         return;
       }
 
-      // Create new sound instance
-      const sound = new Audio.Sound();
-      soundRef.current = sound;
+      if (playRequestIdRef.current !== requestId) {
+        await sound.unloadAsync();
+        return;
+      }
 
-      try {
-        sound.setOnPlaybackStatusUpdate((status: AVPlaybackStatus) => {
-          if (!status.isLoaded) return;
-          setIsPlaying(status.isPlaying);
-          setPositionMillis(status.positionMillis);
-          setDurationMillis(status.durationMillis ?? 0);
-          if (status.didJustFinish) {
-            void playNextRef.current();
-          }
-        });
+      setCurrentStreamUrl(streamUrl);
+      await sound.playAsync();
 
-        await sound.loadAsync(
-          { uri: streamUrl },
-          { shouldPlay: true, progressUpdateIntervalMillis: 500 }
-        );
+      if (playRequestIdRef.current !== requestId) {
+        await sound.unloadAsync();
+        return;
+      }
 
-        // Check if we were interrupted
-        if (soundRef.current !== sound) {
-          await sound.unloadAsync();
-          return;
-        }
-        
-        setIsLoading(false);
-      } catch (error) {
-        console.error("Error loading sound", error);
+      setIsLoading(false);
+    } catch (error) {
+      console.error("Error loading sound", error);
+      if (playRequestIdRef.current === requestId) {
         if (soundRef.current === sound) {
-           soundRef.current = null;
-           setIsPlaying(false);
+          soundRef.current = null;
+          setIsPlaying(false);
+          setCurrentStreamUrl(null);
         }
         setIsLoading(false);
       }
-    },
-    []
-  );
+    }
+  }, []);
 
   const playTrack = useCallback(
     async (track: Track) => {
@@ -192,9 +319,8 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
 
   const playQueue = useCallback(
     async (tracks: Track[], startIndex: number = 0) => {
-      const nextQueue = tracks.filter(
-        (candidate): candidate is Track =>
-          Boolean(candidate && candidate.id && candidate.title)
+      const nextQueue = tracks.filter((candidate): candidate is Track =>
+        Boolean(candidate && candidate.id && candidate.title)
       );
       setQueue(nextQueue);
       queueRef.current = nextQueue;
@@ -226,16 +352,74 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
     setIsPlaying(true);
   }, []);
 
-  const seekToMillis = useCallback(async (nextPositionMillis: number) => {
-    const sound = soundRef.current;
-    if (!sound) return;
-    const clamped = Math.min(
-      Math.max(0, Math.floor(nextPositionMillis)),
-      durationMillis > 0 ? durationMillis : Number.MAX_SAFE_INTEGER
-    );
-    await sound.setPositionAsync(clamped);
-    setPositionMillis(clamped);
-  }, [durationMillis]);
+  const persistFavorites = useCallback(async (next: SavedTrack[]) => {
+    setFavorites(next);
+    await writePersistentValue(FAVORITES_STORAGE_KEY, JSON.stringify(next));
+  }, []);
+
+  const toggleCurrentFavorite = useCallback(
+    async (artwork?: string) => {
+      const active = currentTrackRef.current;
+      const streamUrl = currentStreamUrlRef.current;
+      if (!active || !streamUrl) return;
+      const favoriteId = normalizeFavoriteId(active.id);
+
+      const existing = favorites.some((entry) => entry.id === favoriteId);
+      if (existing) {
+        const next = favorites.filter((entry) => entry.id !== favoriteId);
+        await persistFavorites(next);
+        return;
+      }
+
+      const next: SavedTrack[] = [
+        {
+          id: favoriteId,
+          title: active.title,
+          artist: active.artist,
+          artwork: artwork ?? active.artwork,
+          streamUrl,
+          addedAt: Date.now(),
+        },
+        ...favorites,
+      ].slice(0, 200);
+
+      await persistFavorites(next);
+    },
+    [favorites, persistFavorites]
+  );
+
+  const playSaved = useCallback(
+    async (saved: SavedTrack) => {
+      const track: Track = {
+        id: `saved:${saved.id}`,
+        title: saved.title,
+        artist: saved.artist,
+        artwork: saved.artwork,
+        url: saved.streamUrl,
+      };
+
+      setQueue([track]);
+      queueRef.current = [track];
+      setCurrentTrack(track);
+      currentTrackRef.current = track;
+      await playSound(track);
+    },
+    [playSound]
+  );
+
+  const seekToMillis = useCallback(
+    async (nextPositionMillis: number) => {
+      const sound = soundRef.current;
+      if (!sound) return;
+      const clamped = Math.min(
+        Math.max(0, Math.floor(nextPositionMillis)),
+        durationMillis > 0 ? durationMillis : Number.MAX_SAFE_INTEGER
+      );
+      await sound.setPositionAsync(clamped);
+      setPositionMillis(clamped);
+    },
+    [durationMillis]
+  );
 
   const seekByMillis = useCallback(
     async (deltaMillis: number) => {
@@ -320,6 +504,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
         setQuality,
         positionMillis,
         durationMillis,
+        currentStreamUrl,
         playTrack,
         playQueue,
         pauseTrack,
@@ -329,6 +514,15 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
         addToQueue,
         playNext,
         playPrevious,
+        favorites,
+        isCurrentFavorited: Boolean(
+          currentTrack &&
+            favorites.some(
+              (entry) => entry.id === normalizeFavoriteId(currentTrack.id)
+            )
+        ),
+        toggleCurrentFavorite,
+        playSaved,
       }}
     >
       {children}
