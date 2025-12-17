@@ -1,6 +1,16 @@
 # Hifi Flow
 
-## Description
+Music player app with uniwind for Android, iOS and web
+
+## Feature
+
+- Simple with Hifi audio quality
+- Daily favorite tracks
+
+## Screenshots
+
+![Bottom Sheet Modal](./resources/modal-player.jpg)
+![Player Bar](./resources/bar.jpg)
 
 ## Tech Stack
 

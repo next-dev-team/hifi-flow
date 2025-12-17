@@ -9,6 +9,7 @@ import {
 import { Card, useThemeColor } from "heroui-native";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
+  ActivityIndicator,
   BackHandler,
   Image,
   ImageBackground,
@@ -29,6 +30,7 @@ export const PlayerBar = () => {
   const {
     currentTrack,
     isPlaying,
+    isLoading,
     pauseTrack,
     resumeTrack,
     playNext,
@@ -195,12 +197,17 @@ export const PlayerBar = () => {
                   (isPlaying ? pauseTrack : resumeTrack)();
                 }}
                 className="p-2"
+                disabled={isLoading}
               >
-                <Ionicons
-                  name={isPlaying ? "pause" : "play"}
-                  size={24}
-                  color="#fff"
-                />
+                {isLoading ? (
+                  <ActivityIndicator size="small" color="#fff" />
+                ) : (
+                  <Ionicons
+                    name={isPlaying ? "pause" : "play"}
+                    size={24}
+                    color="#fff"
+                  />
+                )}
               </TouchableOpacity>
 
               <TouchableOpacity
@@ -226,10 +233,10 @@ export const PlayerBar = () => {
         animationConfigs={animationConfigs}
         onChange={(index) => setIsSheetOpen(index >= 0)}
         onDismiss={() => setIsSheetOpen(false)}
-        handleIndicatorStyle={{ backgroundColor: themeColorForeground }}
-        backgroundStyle={{ backgroundColor: themeColorBackground }}
+        handleIndicatorStyle={{ backgroundColor: "#ccc" }}
+        backgroundStyle={{ backgroundColor: "#18181b" }}
       >
-        <StyledBottomSheetView className="flex-1">
+        <StyledBottomSheetView className="flex-1 bg-black">
           <View style={{ flex: 1 }}>
             {resolvedArtwork ? (
               <ImageBackground
@@ -242,8 +249,10 @@ export const PlayerBar = () => {
                   left: 0,
                 }}
                 resizeMode="cover"
-                blurRadius={60}
-              />
+                blurRadius={50}
+              >
+                <View className="absolute inset-0 bg-black/50" />
+              </ImageBackground>
             ) : null}
             <View
               className="flex-1 items-center justify-between pb-10"
@@ -251,116 +260,110 @@ export const PlayerBar = () => {
             >
               <View className="w-full px-5 flex-row items-center justify-between">
                 <TouchableOpacity onPress={handleCloseFullPlayer}>
-                  <Ionicons
-                    name="chevron-down"
-                    size={28}
-                    color={themeColorForeground}
-                  />
+                  <Ionicons name="chevron-down" size={28} color="#fff" />
                 </TouchableOpacity>
                 <View className="w-7" />
                 <View className="w-7" />
               </View>
 
               <View className="items-center px-8">
-                <Text className="text-xs text-default-500 mb-2">
-                  Now Playing
-                </Text>
+                <Text className="text-xs text-gray-300 mb-2">Now Playing</Text>
                 <Text
-                  className="text-2xl font-bold text-foreground mb-1"
+                  className="text-2xl font-bold text-white mb-1"
                   numberOfLines={1}
                 >
                   {currentTrack.title}
                 </Text>
-                <Text className="text-default-500" numberOfLines={1}>
+                <Text className="text-gray-300" numberOfLines={1}>
                   {currentTrack.artist}
                 </Text>
               </View>
 
               <View className="items-center">
-                <View className="w-56 h-56 rounded-full bg-black/70 items-center justify-center shadow-2xl mb-8">
+                <View className="w-64 h-64 rounded-full bg-black/20 items-center justify-center mb-10 overflow-hidden">
                   {resolvedArtwork ? (
                     <Image
                       source={{ uri: resolvedArtwork }}
-                      className="w-44 h-44 rounded-full"
+                      className="w-full h-full"
                       resizeMode="cover"
                     />
                   ) : (
-                    <View className="w-32 h-32 rounded-full bg-default-300 items-center justify-center">
-                      <Text className="text-4xl">🎵</Text>
+                    <View className="w-full h-full bg-neutral-800 items-center justify-center">
+                      <Text className="text-6xl">🎵</Text>
                     </View>
                   )}
                 </View>
 
                 <View className="w-full px-10 mt-4">
                   <View className="flex-row justify-between mb-1">
-                    <Text className="text-[11px] text-default-500">
+                    <Text className="text-[11px] text-gray-400">
                       {formatMillis(positionMillis)}
                     </Text>
-                    <Text className="text-[11px] text-default-500">
+                    <Text className="text-[11px] text-gray-400">
                       {durationMillis > 0
                         ? formatMillis(durationMillis)
                         : "--:--"}
                     </Text>
                   </View>
-                  <Pressable
-                    onPress={handleProgressBarPress}
-                    onLayout={(e) =>
-                      setProgressBarWidth(e.nativeEvent.layout.width)
-                    }
-                    className="h-1.5 rounded-full overflow-hidden bg-content2"
-                  >
-                    <View
-                      className="h-full bg-cyan-400"
-                      style={{ width: `${progressRatio * 100}%` }}
-                    />
-                  </Pressable>
+                  <View className="h-10 justify-center">
+                    <Pressable
+                      onPress={handleProgressBarPress}
+                      onLayout={(e) =>
+                        setProgressBarWidth(e.nativeEvent.layout.width)
+                      }
+                      hitSlop={{ top: 10, bottom: 10 }}
+                      className="h-2 rounded-full overflow-hidden bg-white/20"
+                    >
+                      <View
+                        className="h-full bg-white"
+                        style={{ width: `${progressRatio * 100}%` }}
+                      />
+                    </Pressable>
+                  </View>
                   <View className="flex-row items-center justify-between mt-4">
                     <TouchableOpacity
                       className="px-3 py-2 rounded-full bg-white/10"
                       onPress={() => seekByMillis(-10_000)}
                     >
-                      <Text className="text-xs text-foreground">-10s</Text>
+                      <Text className="text-xs text-white">-10s</Text>
                     </TouchableOpacity>
                     <TouchableOpacity
                       className="px-3 py-2 rounded-full bg-white/10"
                       onPress={() => seekByMillis(10_000)}
                     >
-                      <Text className="text-xs text-foreground">+10s</Text>
+                      <Text className="text-xs text-white">+10s</Text>
                     </TouchableOpacity>
                   </View>
                 </View>
               </View>
 
-              <View className="w-full flex-row items-center justify-center gap-6 mt-6">
+              <View className="w-full flex-row items-center justify-center gap-8 mt-6">
                 <TouchableOpacity
-                  className="w-12 h-12 rounded-full bg-white/10 items-center justify-center shadow-lg"
+                  className="w-14 h-14 rounded-full items-center justify-center"
                   onPress={playPrevious}
                 >
-                  <Ionicons
-                    name="play-skip-back"
-                    size={18}
-                    color={themeColorForeground}
-                  />
+                  <Ionicons name="play-skip-back" size={28} color="#fff" />
                 </TouchableOpacity>
                 <TouchableOpacity
-                  className="w-16 h-16 rounded-full bg-white/10 items-center justify-center shadow-xl"
+                  className="w-20 h-20 rounded-full bg-white items-center justify-center shadow-xl"
                   onPress={isPlaying ? pauseTrack : resumeTrack}
+                  disabled={isLoading}
                 >
-                  <Ionicons
-                    name={isPlaying ? "pause" : "play"}
-                    size={22}
-                    color={themeColorForeground}
-                  />
+                  {isLoading ? (
+                    <ActivityIndicator size="small" color="#000" />
+                  ) : (
+                    <Ionicons
+                      name={isPlaying ? "pause" : "play"}
+                      size={32}
+                      color="#000"
+                    />
+                  )}
                 </TouchableOpacity>
                 <TouchableOpacity
-                  className="w-12 h-12 rounded-full bg-white/10 items-center justify-center shadow-lg"
+                  className="w-14 h-14 rounded-full items-center justify-center"
                   onPress={playNext}
                 >
-                  <Ionicons
-                    name="play-skip-forward"
-                    size={18}
-                    color={themeColorForeground}
-                  />
+                  <Ionicons name="play-skip-forward" size={28} color="#fff" />
                 </TouchableOpacity>
               </View>
             </View>

@@ -25,6 +25,7 @@ interface Track {
 interface PlayerContextType {
   currentTrack: Track | null;
   isPlaying: boolean;
+  isLoading: boolean;
   queue: Track[];
   quality: AudioQuality;
   setQuality: (quality: AudioQuality) => void;
@@ -48,6 +49,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
 }) => {
   const [currentTrack, setCurrentTrack] = useState<Track | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
   const [queue, setQueue] = useState<Track[]>([]);
   const [quality, setQuality] = useState<AudioQuality>("LOSSLESS");
   const [positionMillis, setPositionMillis] = useState(0);
@@ -89,18 +91,28 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
 
   const unloadSound = useCallback(async () => {
     const sound = soundRef.current;
-    soundRef.current = null;
-    if (!sound) return;
-    try {
-      await sound.unloadAsync();
-    } catch {
-      // ignore
+    if (sound) {
+      try {
+        await sound.unloadAsync();
+      } catch {
+        // ignore
+      }
     }
   }, []);
 
   const playSound = useCallback(
     async (track: Track) => {
-      await unloadSound();
+      setIsLoading(true);
+      // Unload previous sound first
+      if (soundRef.current) {
+        try {
+          await soundRef.current.unloadAsync();
+        } catch {
+          // ignore
+        }
+        soundRef.current = null;
+      }
+
       setPositionMillis(0);
       setDurationMillis(0);
 
@@ -124,11 +136,16 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
 
       if (!streamUrl) {
         setIsPlaying(false);
+        setIsLoading(false);
         return;
       }
 
+      // Create new sound instance
+      const sound = new Audio.Sound();
+      soundRef.current = sound;
+
       try {
-        const { sound: newSound } = await Audio.Sound.createAsync(
+        await sound.loadAsync(
           { uri: streamUrl },
           { shouldPlay: true, progressUpdateIntervalMillis: 500 },
           (status: AVPlaybackStatus) => {
@@ -141,12 +158,24 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
             }
           }
         );
-        soundRef.current = newSound;
-      } catch {
-        setIsPlaying(false);
+
+        // Check if we were interrupted
+        if (soundRef.current !== sound) {
+          await sound.unloadAsync();
+          return;
+        }
+        
+        setIsLoading(false);
+      } catch (error) {
+        console.error("Error loading sound", error);
+        if (soundRef.current === sound) {
+           soundRef.current = null;
+           setIsPlaying(false);
+        }
+        setIsLoading(false);
       }
     },
-    [unloadSound]
+    []
   );
 
   const playTrack = useCallback(
@@ -284,6 +313,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
       value={{
         currentTrack,
         isPlaying,
+        isLoading,
         queue,
         quality,
         setQuality,
