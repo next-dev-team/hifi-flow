@@ -9,8 +9,8 @@ Music player app with uniwind for Android, iOS and web
 
 ## Screenshots
 
-![Bottom Sheet Modal](./resources/modal-player.jpg)
-![Player Bar](./resources/bar.jpg)
+<img src="./resources/modal-player.jpg" width="250" alt="Bottom Sheet Modal">
+<img src="./resources/bar.jpg" width="250" alt="Player Bar">
 
 ## Tech Stack
 

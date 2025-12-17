@@ -145,18 +145,19 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
       soundRef.current = sound;
 
       try {
+        sound.setOnPlaybackStatusUpdate((status: AVPlaybackStatus) => {
+          if (!status.isLoaded) return;
+          setIsPlaying(status.isPlaying);
+          setPositionMillis(status.positionMillis);
+          setDurationMillis(status.durationMillis ?? 0);
+          if (status.didJustFinish) {
+            void playNextRef.current();
+          }
+        });
+
         await sound.loadAsync(
           { uri: streamUrl },
-          { shouldPlay: true, progressUpdateIntervalMillis: 500 },
-          (status: AVPlaybackStatus) => {
-            if (!status.isLoaded) return;
-            setIsPlaying(status.isPlaying);
-            setPositionMillis(status.positionMillis);
-            setDurationMillis(status.durationMillis ?? 0);
-            if (status.didJustFinish) {
-              void playNextRef.current();
-            }
-          }
+          { shouldPlay: true, progressUpdateIntervalMillis: 500 }
         );
 
         // Check if we were interrupted

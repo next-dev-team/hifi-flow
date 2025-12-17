@@ -4,7 +4,7 @@ import { BottomSheetModalProvider } from "@gorhom/bottom-sheet";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Stack } from "expo-router";
 import { HeroUINativeProvider } from "heroui-native";
-import { View } from "react-native";
+import { Platform, View } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { KeyboardProvider } from "react-native-keyboard-controller";
 import type {} from "uniwind/types";
@@ -30,21 +30,35 @@ function StackLayout() {
 
 const queryClient = new QueryClient();
 
+const APP_WEB_MAX_WIDTH = 480;
+
 export default function Layout() {
+  const appShellStyle =
+    Platform.OS === "web"
+      ? ({
+          flex: 1,
+          width: "100%",
+          maxWidth: APP_WEB_MAX_WIDTH,
+          alignSelf: "center",
+        } as const)
+      : ({ flex: 1 } as const);
+
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <KeyboardProvider>
         <QueryClientProvider client={queryClient}>
           <AppThemeProvider>
             <HeroUINativeProvider>
-              <BottomSheetModalProvider>
-                <PlayerProvider>
-                  <View style={{ flex: 1 }}>
-                    <StackLayout />
-                    <PlayerBar />
-                  </View>
-                </PlayerProvider>
-              </BottomSheetModalProvider>
+              <View className="flex-1 bg-background">
+                <BottomSheetModalProvider>
+                  <PlayerProvider>
+                    <View style={appShellStyle}>
+                      <StackLayout />
+                      <PlayerBar />
+                    </View>
+                  </PlayerProvider>
+                </BottomSheetModalProvider>
+              </View>
             </HeroUINativeProvider>
           </AppThemeProvider>
         </QueryClientProvider>
