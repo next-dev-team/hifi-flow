@@ -7,24 +7,331 @@ import {
   useBottomSheetTimingConfigs,
 } from "@gorhom/bottom-sheet";
 import { Card, useThemeColor } from "heroui-native";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   BackHandler,
   Image,
   ImageBackground,
+  PanResponder,
   Pressable,
   Text,
   TouchableOpacity,
   View,
 } from "react-native";
-import { Easing } from "react-native-reanimated";
+import Animated, {
+  cancelAnimation,
+  Easing,
+  type SharedValue,
+  useAnimatedStyle,
+  useSharedValue,
+  withRepeat,
+  withTiming,
+} from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { withUniwind } from "uniwind";
 import { usePlayer } from "@/contexts/player-context";
 import { losslessAPI } from "@/utils/api";
 
 const StyledBottomSheetView = withUniwind(BottomSheetView);
+
+const clamp = (value: number, min: number, max: number) => {
+  return Math.min(max, Math.max(min, value));
+};
+
+const SPECTRUM_BARS = Array.from({ length: 22 }, (_, index) => {
+  return { id: `spectrum-${index}`, index };
+});
+
+const SpectrumBar = ({
+  index,
+  phase,
+  active,
+}: {
+  index: number;
+  phase: SharedValue<number>;
+  active: boolean;
+}) => {
+  const animatedStyle = useAnimatedStyle(() => {
+    const base = active ? 0.25 : 0.06;
+    const amp = active ? 0.75 : 0.12;
+    const value = Math.abs(Math.sin(phase.value + index * 0.55));
+    const height = 3 + (base + amp * value) * 14;
+    return {
+      height,
+      opacity: active ? 0.7 : 0.25,
+    };
+  }, [active, index, phase]);
+
+  return (
+    <Animated.View
+      style={[
+        {
+          width: 3,
+          borderRadius: 999,
+          backgroundColor: "rgba(255,255,255,0.9)",
+        },
+        animatedStyle,
+      ]}
+    />
+  );
+};
+
+const SpinningCover = ({
+  uri,
+  size,
+  isPlaying,
+}: {
+  uri: string;
+  size: number;
+  isPlaying: boolean;
+}) => {
+  const spin = useSharedValue(0);
+
+  useEffect(() => {
+    if (!isPlaying) {
+      cancelAnimation(spin);
+      return;
+    }
+    spin.value = withRepeat(
+      withTiming(spin.value + 1, {
+        duration: 8000,
+        easing: Easing.linear,
+      }),
+      -1,
+      false
+    );
+  }, [isPlaying, spin]);
+
+  const animatedStyle = useAnimatedStyle(() => {
+    const degrees = (spin.value % 1) * 360;
+    return { transform: [{ rotate: `${degrees}deg` }] };
+  }, [spin]);
+
+  return (
+    <View
+      style={{
+        width: size + 12,
+        height: size + 12,
+        borderRadius: (size + 12) / 2,
+        padding: 6,
+        backgroundColor: isPlaying
+          ? "rgba(255,255,255,0.14)"
+          : "rgba(255,255,255,0.06)",
+      }}
+    >
+      <Animated.View
+        style={[
+          {
+            width: size,
+            height: size,
+            borderRadius: size / 2,
+            overflow: "hidden",
+          },
+          animatedStyle,
+        ]}
+      >
+        <Image
+          source={{ uri }}
+          style={{ width: "100%", height: "100%" }}
+          resizeMode="cover"
+        />
+      </Animated.View>
+    </View>
+  );
+};
+
+const SeekBar = ({
+  positionMillis,
+  durationMillis,
+  isPlaying,
+  onSeekToMillis,
+  onScrubMillisChange,
+  onScrubStateChange,
+}: {
+  positionMillis: number;
+  durationMillis: number;
+  isPlaying: boolean;
+  onSeekToMillis: (value: number) => void;
+  onScrubMillisChange?: (value: number) => void;
+  onScrubStateChange?: (value: boolean) => void;
+}) => {
+  const barRef = useRef<View | null>(null);
+  const barXRef = useRef(0);
+  const scrubRatioRef = useRef(0);
+  const [barWidth, setBarWidth] = useState(0);
+  const [scrubRatio, setScrubRatio] = useState(0);
+  const [isScrubbing, setIsScrubbing] = useState(false);
+
+  const phase = useSharedValue(0);
+
+  useEffect(() => {
+    if (!isPlaying) {
+      cancelAnimation(phase);
+      phase.value = 0;
+      return;
+    }
+    phase.value = withRepeat(
+      withTiming(Math.PI * 2, {
+        duration: 1400,
+        easing: Easing.linear,
+      }),
+      -1,
+      false
+    );
+  }, [isPlaying, phase]);
+
+  const progressRatio =
+    durationMillis > 0 ? clamp(positionMillis / durationMillis, 0, 1) : 0;
+  const visualRatio = isScrubbing ? scrubRatio : progressRatio;
+
+  const setScrub = useCallback(
+    (nextRatio: number) => {
+      const ratio = clamp(nextRatio, 0, 1);
+      scrubRatioRef.current = ratio;
+      setScrubRatio(ratio);
+      onScrubMillisChange?.(
+        durationMillis > 0 ? Math.floor(durationMillis * ratio) : 0
+      );
+    },
+    [durationMillis, onScrubMillisChange]
+  );
+
+  const finishScrub = useCallback(() => {
+    const ratio = scrubRatioRef.current;
+    setIsScrubbing(false);
+    onScrubStateChange?.(false);
+    if (durationMillis > 0) {
+      onSeekToMillis(Math.floor(durationMillis * ratio));
+    }
+  }, [durationMillis, onScrubStateChange, onSeekToMillis]);
+
+  const panResponder = useMemo(() => {
+    return PanResponder.create({
+      onStartShouldSetPanResponder: () => true,
+      onMoveShouldSetPanResponder: () => true,
+      onPanResponderGrant: (evt) => {
+        barRef.current?.measureInWindow((x) => {
+          barXRef.current = x;
+          const pageX = evt?.nativeEvent?.pageX;
+          if (typeof pageX === "number" && barWidth > 0 && durationMillis > 0) {
+            setScrub((pageX - x) / barWidth);
+          } else {
+            setScrub(progressRatio);
+          }
+        });
+        setIsScrubbing(true);
+        onScrubStateChange?.(true);
+      },
+      onPanResponderMove: (_evt, gestureState) => {
+        if (barWidth <= 0 || durationMillis <= 0) return;
+        const relativeX = gestureState.moveX - barXRef.current;
+        setScrub(relativeX / barWidth);
+      },
+      onPanResponderRelease: () => {
+        finishScrub();
+      },
+      onPanResponderTerminate: () => {
+        finishScrub();
+      },
+    });
+  }, [
+    barWidth,
+    durationMillis,
+    finishScrub,
+    onScrubStateChange,
+    progressRatio,
+    setScrub,
+  ]);
+
+  const knobSize = isScrubbing ? 18 : 14;
+  const knobX = barWidth * visualRatio;
+  const knobLeft = clamp(
+    knobX - knobSize / 2,
+    -2,
+    Math.max(-2, barWidth - knobSize + 2)
+  );
+
+  return (
+    <View className="h-12 justify-center">
+      <View
+        ref={(node) => {
+          barRef.current = node;
+        }}
+        onLayout={(e) => {
+          setBarWidth(e.nativeEvent.layout.width);
+          barRef.current?.measureInWindow((x) => {
+            barXRef.current = x;
+          });
+        }}
+        style={{ height: 30, justifyContent: "center" }}
+        hitSlop={{ top: 18, bottom: 18, left: 18, right: 18 }}
+        {...panResponder.panHandlers}
+      >
+        <View
+          pointerEvents="none"
+          style={{
+            position: "absolute",
+            left: 0,
+            right: 0,
+            bottom: 0,
+            top: 0,
+            flexDirection: "row",
+            alignItems: "flex-end",
+            justifyContent: "space-between",
+            paddingHorizontal: 2,
+            opacity: 0.5,
+          }}
+        >
+          {SPECTRUM_BARS.map((bar) => (
+            <SpectrumBar
+              key={bar.id}
+              index={bar.index}
+              phase={phase}
+              active={isPlaying}
+            />
+          ))}
+        </View>
+
+        <View
+          style={{
+            height: 8,
+            borderRadius: 999,
+            overflow: "hidden",
+            backgroundColor: "rgba(255,255,255,0.18)",
+          }}
+        >
+          <View
+            style={{
+              height: "100%",
+              width: `${visualRatio * 100}%`,
+              backgroundColor: "#fff",
+            }}
+          />
+        </View>
+
+        {durationMillis > 0 ? (
+          <View
+            pointerEvents="none"
+            style={{
+              position: "absolute",
+              left: knobLeft,
+              width: knobSize,
+              height: knobSize,
+              borderRadius: knobSize / 2,
+              backgroundColor: "#fff",
+              shadowColor: "#000",
+              shadowOpacity: 0.35,
+              shadowRadius: 10,
+              shadowOffset: { width: 0, height: 4 },
+              elevation: 10,
+            }}
+          />
+        ) : null}
+      </View>
+    </View>
+  );
+};
 
 export const PlayerBar = () => {
   const {
@@ -37,6 +344,10 @@ export const PlayerBar = () => {
     resumeTrack,
     playNext,
     playPrevious,
+    shuffleEnabled,
+    toggleShuffle,
+    repeatMode,
+    cycleRepeatMode,
     positionMillis,
     durationMillis,
     seekToMillis,
@@ -51,25 +362,18 @@ export const PlayerBar = () => {
     undefined
   );
   const [isSheetOpen, setIsSheetOpen] = useState(false);
-
-  const progressRatio =
-    durationMillis > 0
-      ? Math.min(1, Math.max(0, positionMillis / durationMillis))
-      : 0;
-  const [progressBarWidth, setProgressBarWidth] = useState(0);
+  const [scrubMillis, setScrubMillis] = useState<number | null>(null);
+  const [isScrubbing, setIsScrubbing] = useState(false);
 
   const formatMillis = (value: number) => {
     const seconds = Math.max(0, Math.floor(value / 1000));
     return losslessAPI.formatDuration(seconds);
   };
 
-  const handleProgressBarPress = (event: any) => {
-    if (durationMillis <= 0 || progressBarWidth <= 0) return;
-    const locationX = event?.nativeEvent?.locationX;
-    if (typeof locationX !== "number") return;
-    const ratio = Math.min(1, Math.max(0, locationX / progressBarWidth));
-    seekToMillis(Math.floor(durationMillis * ratio));
-  };
+  const miniProgressRatio =
+    durationMillis > 0
+      ? Math.min(1, Math.max(0, positionMillis / durationMillis))
+      : 0;
 
   const animationConfigs = useBottomSheetTimingConfigs({
     duration: 320,
@@ -158,13 +462,35 @@ export const PlayerBar = () => {
           style={{ bottom: insets.bottom + 56 }}
         >
           <Pressable onPress={handleOpenFullPlayer}>
-            <Card className="flex-row items-center px-3 py-2 bg-black border border-blue-300 rounded-full shadow-lg">
+            <Card className="flex-row items-center px-3 py-2 bg-black border border-blue-300 rounded-full shadow-lg relative overflow-hidden">
+              <View
+                style={{
+                  position: "absolute",
+                  left: 0,
+                  right: 0,
+                  bottom: 0,
+                  height: 2,
+                  backgroundColor: "rgba(255,255,255,0.15)",
+                }}
+              />
+              <View
+                style={{
+                  position: "absolute",
+                  left: 0,
+                  bottom: 0,
+                  height: 2,
+                  width: `${miniProgressRatio * 100}%`,
+                  backgroundColor: "#60a5fa",
+                }}
+              />
               {resolvedArtwork ? (
-                <Image
-                  source={{ uri: resolvedArtwork }}
-                  className="w-10 h-10 rounded-full mr-3"
-                  resizeMode="cover"
-                />
+                <View className="mr-3">
+                  <SpinningCover
+                    uri={resolvedArtwork}
+                    size={34}
+                    isPlaying={isPlaying}
+                  />
+                </View>
               ) : (
                 <View className="w-10 h-10 rounded-full mr-3 bg-default-300 items-center justify-center">
                   <Text>🎵</Text>
@@ -305,15 +631,24 @@ export const PlayerBar = () => {
               </View>
 
               <View className="items-center">
-                <View className="w-64 h-64 rounded-full bg-black/20 items-center justify-center mb-10 overflow-hidden">
+                <View className="items-center justify-center mb-10">
                   {resolvedArtwork ? (
-                    <Image
-                      source={{ uri: resolvedArtwork }}
-                      className="w-full h-full rounded-full"
-                      resizeMode="cover"
+                    <SpinningCover
+                      uri={resolvedArtwork}
+                      size={256}
+                      isPlaying={isPlaying}
                     />
                   ) : (
-                    <View className="w-full h-full bg-neutral-800 items-center justify-center">
+                    <View
+                      style={{
+                        width: 268,
+                        height: 268,
+                        borderRadius: 134,
+                        backgroundColor: "rgba(0,0,0,0.2)",
+                        alignItems: "center",
+                        justifyContent: "center",
+                      }}
+                    >
                       <Text className="text-6xl">🎵</Text>
                     </View>
                   )}
@@ -322,7 +657,11 @@ export const PlayerBar = () => {
                 <View className="w-full px-10 mt-4">
                   <View className="flex-row justify-between mb-1">
                     <Text className="text-[11px] text-gray-400">
-                      {formatMillis(positionMillis)}
+                      {formatMillis(
+                        isScrubbing
+                          ? scrubMillis ?? positionMillis
+                          : positionMillis
+                      )}
                     </Text>
                     <Text className="text-[11px] text-gray-400">
                       {durationMillis > 0
@@ -330,33 +669,93 @@ export const PlayerBar = () => {
                         : "--:--"}
                     </Text>
                   </View>
-                  <View className="h-10 justify-center">
-                    <Pressable
-                      onPress={handleProgressBarPress}
-                      onLayout={(e) =>
-                        setProgressBarWidth(e.nativeEvent.layout.width)
+                  <SeekBar
+                    positionMillis={positionMillis}
+                    durationMillis={durationMillis}
+                    isPlaying={isPlaying}
+                    onSeekToMillis={(value) => {
+                      void seekToMillis(value);
+                    }}
+                    onScrubMillisChange={(value) => setScrubMillis(value)}
+                    onScrubStateChange={(value) => {
+                      setIsScrubbing(value);
+                      if (!value) {
+                        setScrubMillis(null);
                       }
-                      hitSlop={{ top: 10, bottom: 10 }}
-                      className="h-2 rounded-full overflow-hidden bg-white/20"
+                    }}
+                  />
+
+                  <View className="flex-row items-center justify-between mt-2">
+                    <TouchableOpacity
+                      className="w-10 h-10 rounded-full items-center justify-center"
+                      onPress={toggleShuffle}
                     >
-                      <View
-                        className="h-full bg-white"
-                        style={{ width: `${progressRatio * 100}%` }}
+                      <Ionicons
+                        name="shuffle"
+                        size={22}
+                        color={
+                          shuffleEnabled ? "#fff" : "rgba(255,255,255,0.45)"
+                        }
                       />
-                    </Pressable>
-                  </View>
-                  <View className="flex-row items-center justify-between mt-4">
-                    <TouchableOpacity
-                      className="px-3 py-2 rounded-full bg-white/10"
-                      onPress={() => seekByMillis(-10_000)}
-                    >
-                      <Text className="text-xs text-white">-10s</Text>
                     </TouchableOpacity>
+
+                    <View className="flex-row items-center gap-3">
+                      <TouchableOpacity
+                        className="px-3 py-2 rounded-full bg-white/10"
+                        onPress={() => seekByMillis(-10_000)}
+                      >
+                        <Text className="text-xs text-white">-10s</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        className="px-3 py-2 rounded-full bg-white/10"
+                        onPress={() => seekByMillis(10_000)}
+                      >
+                        <Text className="text-xs text-white">+10s</Text>
+                      </TouchableOpacity>
+                    </View>
+
                     <TouchableOpacity
-                      className="px-3 py-2 rounded-full bg-white/10"
-                      onPress={() => seekByMillis(10_000)}
+                      className="w-10 h-10 rounded-full items-center justify-center"
+                      onPress={cycleRepeatMode}
                     >
-                      <Text className="text-xs text-white">+10s</Text>
+                      <View style={{ width: 26, height: 26 }}>
+                        <Ionicons
+                          name="repeat"
+                          size={22}
+                          color={
+                            repeatMode === "off"
+                              ? "rgba(255,255,255,0.45)"
+                              : "#fff"
+                          }
+                          style={{ position: "absolute", left: 0, top: 2 }}
+                        />
+                        {repeatMode === "one" ? (
+                          <View
+                            style={{
+                              position: "absolute",
+                              right: 0,
+                              top: 0,
+                              width: 12,
+                              height: 12,
+                              borderRadius: 6,
+                              backgroundColor: "#fff",
+                              alignItems: "center",
+                              justifyContent: "center",
+                            }}
+                          >
+                            <Text
+                              style={{
+                                fontSize: 9,
+                                lineHeight: 11,
+                                fontWeight: "700",
+                                color: "#000",
+                              }}
+                            >
+                              1
+                            </Text>
+                          </View>
+                        ) : null}
+                      </View>
                     </TouchableOpacity>
                   </View>
                 </View>

@@ -59,6 +59,8 @@ export default function Home() {
   const {
     playQueue,
     favorites,
+    quality,
+    setQuality,
     sleepTimerEndsAt,
     sleepTimerRemainingMs,
     startSleepTimer,
@@ -99,6 +101,17 @@ export default function Home() {
     const seconds = totalSeconds % 60;
     return `${minutes}:${String(seconds).padStart(2, "0")}`;
   }, [sleepTimerEndsAt, sleepTimerRemainingMs]);
+
+  const qualityOptions = useMemo(
+    () =>
+      [
+        { value: "HI_RES_LOSSLESS", label: "Hi-Res" },
+        { value: "LOSSLESS", label: "Lossless" },
+        { value: "HIGH", label: "High" },
+        { value: "LOW", label: "Low" },
+      ] as const,
+    []
+  );
 
   const { data: suggestedArtists } = useQuery({
     queryKey: ["suggested-artists"],
@@ -523,6 +536,39 @@ export default function Home() {
                 value={isDark}
                 onValueChange={(next) => setTheme(next ? "dark" : "light")}
               />
+            </View>
+
+            <View className="py-4 border-b border-default-200">
+              <View className="flex-row items-center justify-between mb-3">
+                <Text className="text-base text-foreground font-medium">
+                  Streaming quality
+                </Text>
+                <Text className="text-default-500">{quality}</Text>
+              </View>
+              <View className="flex-row flex-wrap">
+                {qualityOptions.map((option) => {
+                  const selected = option.value === quality;
+                  return (
+                    <Chip
+                      key={option.value}
+                      onPress={() => setQuality(option.value)}
+                      className={`mr-2 mb-2 ${
+                        selected ? "bg-primary" : "bg-default-200"
+                      }`}
+                    >
+                      <Text
+                        className={
+                          selected
+                            ? "text-primary-foreground"
+                            : "text-foreground"
+                        }
+                      >
+                        {option.label}
+                      </Text>
+                    </Chip>
+                  );
+                })}
+              </View>
             </View>
 
             <View className="py-4">

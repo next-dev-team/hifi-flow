@@ -3,8 +3,15 @@
     "scheme": "hifi-flow",
     "userInterfaceStyle": "light",
     "orientation": "default",
+    "icon": "./assets/images/icon.png",
+    "splash": {
+      "image": "./assets/images/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#000000"
+    },
     "web": {
-      "bundler": "metro"
+      "bundler": "metro",
+      "favicon": "./assets/images/favicon.png"
     },
     "name": "hifi-flow",
     "slug": "hifi-flow",
@@ -20,7 +27,12 @@
     },
     "android": {
       "permissions": [],
-      "package": "com.nextdevkh.hififlow"
+      "package": "com.nextdevkh.hififlow",
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/images/android-icon-foreground.png",
+        "backgroundImage": "./assets/images/android-icon-background.png",
+        "monochromeImage": "./assets/images/android-icon-monochrome.png"
+      }
     },
     "extra": {
       "eas": {

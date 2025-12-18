@@ -14,6 +14,7 @@ import { losslessAPI } from "@/utils/api";
 import type { AudioQuality as ApiAudioQuality } from "@/utils/types";
 
 type AudioQuality = ApiAudioQuality;
+type RepeatMode = "off" | "all" | "one";
 
 interface Track {
   id: string | number;
@@ -40,6 +41,10 @@ interface PlayerContextType {
   queue: Track[];
   quality: AudioQuality;
   setQuality: (quality: AudioQuality) => void;
+  shuffleEnabled: boolean;
+  toggleShuffle: () => void;
+  repeatMode: RepeatMode;
+  cycleRepeatMode: () => void;
   positionMillis: number;
   durationMillis: number;
   currentStreamUrl: string | null;
@@ -113,6 +118,8 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
   const [isLoading, setIsLoading] = useState(false);
   const [queue, setQueue] = useState<Track[]>([]);
   const [quality, setQuality] = useState<AudioQuality>("LOSSLESS");
+  const [shuffleEnabled, setShuffleEnabled] = useState(false);
+  const [repeatMode, setRepeatMode] = useState<RepeatMode>("off");
   const [positionMillis, setPositionMillis] = useState(0);
   const [durationMillis, setDurationMillis] = useState(0);
   const [currentStreamUrl, setCurrentStreamUrl] = useState<string | null>(null);
@@ -124,6 +131,9 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
   const currentTrackRef = useRef<Track | null>(null);
   const queueRef = useRef<Track[]>([]);
   const qualityRef = useRef<AudioQuality>(quality);
+  const shuffleEnabledRef = useRef(false);
+  const repeatModeRef = useRef<RepeatMode>("off");
+  const shuffleHistoryRef = useRef<number[]>([]);
   const playNextRef = useRef<() => Promise<void>>(async () => {});
   const playRequestIdRef = useRef(0);
   const currentStreamUrlRef = useRef<string | null>(null);
@@ -161,6 +171,17 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
   useEffect(() => {
     qualityRef.current = quality;
   }, [quality]);
+
+  useEffect(() => {
+    shuffleEnabledRef.current = shuffleEnabled;
+    if (!shuffleEnabled) {
+      shuffleHistoryRef.current = [];
+    }
+  }, [shuffleEnabled]);
+
+  useEffect(() => {
+    repeatModeRef.current = repeatMode;
+  }, [repeatMode]);
 
   useEffect(() => {
     async function setupAudio() {
@@ -288,13 +309,24 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
         setPositionMillis(status.positionMillis);
         setDurationMillis(status.durationMillis ?? 0);
         if (status.didJustFinish) {
+          if (repeatModeRef.current === "one") {
+            void (async () => {
+              try {
+                await sound.setPositionAsync(0);
+                await sound.playAsync();
+              } catch {
+                return;
+              }
+            })();
+            return;
+          }
           void playNextRef.current();
         }
       });
 
       await sound.loadAsync(
         { uri: streamUrl },
-        { shouldPlay: false, progressUpdateIntervalMillis: 500 }
+        { shouldPlay: false, progressUpdateIntervalMillis: 250 }
       );
 
       // Check if we were interrupted
@@ -487,6 +519,24 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
     [positionMillis, seekToMillis]
   );
 
+  const toggleShuffle = useCallback(() => {
+    setShuffleEnabled((prev) => {
+      const next = !prev;
+      if (!next) {
+        shuffleHistoryRef.current = [];
+      }
+      return next;
+    });
+  }, []);
+
+  const cycleRepeatMode = useCallback(() => {
+    setRepeatMode((prev) => {
+      if (prev === "off") return "all";
+      if (prev === "all") return "one";
+      return "off";
+    });
+  }, []);
+
   const addToQueue = (track: Track) => {
     setQueue((prev) => {
       if (prev.some((entry) => entry.id === track.id)) return prev;
@@ -523,10 +573,31 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
       setIsPlaying(false);
       return;
     }
+
+    if (shuffleEnabledRef.current && nextQueue.length > 1) {
+      const available: number[] = [];
+      for (let i = 0; i < nextQueue.length; i += 1) {
+        if (i !== currentIndex) {
+          available.push(i);
+        }
+      }
+      const nextIndex =
+        available[Math.floor(Math.random() * available.length)] ?? currentIndex;
+      shuffleHistoryRef.current.push(currentIndex);
+      await playFromQueueIndex(nextIndex);
+      return;
+    }
+
     if (currentIndex < nextQueue.length - 1) {
       await playFromQueueIndex(currentIndex + 1);
       return;
     }
+
+    if (repeatModeRef.current === "all" && nextQueue.length > 0) {
+      await playFromQueueIndex(0);
+      return;
+    }
+
     setIsPlaying(false);
   }, [playFromQueueIndex]);
 
@@ -541,8 +612,23 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
       return;
     }
     const currentIndex = nextQueue.findIndex((t) => t.id === active.id);
+
+    if (shuffleEnabledRef.current) {
+      const history = shuffleHistoryRef.current;
+      const previousIndex = history.pop();
+      if (previousIndex !== undefined) {
+        await playFromQueueIndex(previousIndex);
+        return;
+      }
+    }
+
     if (currentIndex > 0) {
       await playFromQueueIndex(currentIndex - 1);
+      return;
+    }
+
+    if (repeatModeRef.current === "all" && nextQueue.length > 0) {
+      await playFromQueueIndex(nextQueue.length - 1);
     }
   }, [playFromQueueIndex]);
 
@@ -562,6 +648,10 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
         queue,
         quality,
         setQuality,
+        shuffleEnabled,
+        toggleShuffle,
+        repeatMode,
+        cycleRepeatMode,
         positionMillis,
         durationMillis,
         currentStreamUrl,
