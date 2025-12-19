@@ -1,9 +1,10 @@
+import { resolveArtwork, resolveName } from "@/utils/resolvers";
 import { Ionicons } from "@expo/vector-icons";
 import { useSearchSearchGet } from "api-hifi/src/gen/hooks";
 import { router } from "expo-router";
 import { Card } from "heroui-native";
 import React from "react";
-import { FlatList, Pressable, Text, View } from "react-native";
+import { FlatList, Image, Pressable, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { ApiDebug } from "@/components/api-debug";
 

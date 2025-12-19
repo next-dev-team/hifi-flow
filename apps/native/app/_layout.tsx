@@ -1,6 +1,7 @@
 import "@/global.css";
 
 import { BottomSheetModalProvider } from "@gorhom/bottom-sheet";
+import { PortalHost, PortalProvider } from "@gorhom/portal";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Stack } from "expo-router";
 import { HeroUINativeProvider } from "heroui-native";
@@ -45,24 +46,27 @@ export default function Layout() {
 
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
-      <KeyboardProvider>
-        <QueryClientProvider client={queryClient}>
-          <AppThemeProvider>
-            <HeroUINativeProvider>
-              <PlayerProvider>
-                <BottomSheetModalProvider>
-                  <View className="flex-1 bg-background">
-                    <View style={appShellStyle}>
-                      <StackLayout />
-                      <PlayerBar />
+      <PortalProvider>
+        <KeyboardProvider>
+          <QueryClientProvider client={queryClient}>
+            <AppThemeProvider>
+              <HeroUINativeProvider>
+                <PlayerProvider>
+                  <BottomSheetModalProvider>
+                    <View className="flex-1 bg-background">
+                      <View style={appShellStyle}>
+                        <StackLayout />
+                        <PlayerBar />
+                      </View>
                     </View>
-                  </View>
-                </BottomSheetModalProvider>
-              </PlayerProvider>
-            </HeroUINativeProvider>
-          </AppThemeProvider>
-        </QueryClientProvider>
-      </KeyboardProvider>
+                    <PortalHost name="PlayerBarHost" />
+                  </BottomSheetModalProvider>
+                </PlayerProvider>
+              </HeroUINativeProvider>
+            </AppThemeProvider>
+          </QueryClientProvider>
+        </KeyboardProvider>
+      </PortalProvider>
     </GestureHandlerRootView>
   );
 }

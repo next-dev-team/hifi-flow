@@ -11,11 +11,6 @@ const StyledSafeAreaView = withUniwind(SafeAreaView);
 const StyledView = withUniwind(View);
 const StyledText = withUniwind(Text);
 
-const resolveName = (value?: { name?: string } | string) => {
-  if (!value) return undefined;
-  if (typeof value === "string") return value;
-  return value.name;
-};
 
 export default function Explore() {
   const { playQueue } = usePlayer();

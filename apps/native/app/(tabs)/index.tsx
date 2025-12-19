@@ -36,6 +36,7 @@ import { type Track, TrackItem } from "@/components/track-item";
 import { useAppTheme } from "@/contexts/app-theme-context";
 import { type SavedTrack, usePlayer } from "@/contexts/player-context";
 import { getSuggestedArtists } from "@/utils/api";
+import { resolveArtwork, resolveName } from "@/utils/resolvers";
 
 type SearchFilter = "songs" | "artists" | "albums" | "playlists";
 
@@ -45,12 +46,6 @@ type SuggestedArtist = {
   era?: string;
 };
 
-const resolveName = (value?: { name?: string } | string) => {
-  if (!value) return undefined;
-  if (typeof value === "string") return value;
-  return value.name;
-};
-
 const StyledSafeAreaView = withUniwind(SafeAreaView);
 const StyledView = withUniwind(View);
 const StyledText = withUniwind(Text);
@@ -58,16 +53,6 @@ const StyledTextInput = withUniwind(TextInput);
 const StyledScrollView = withUniwind(ScrollView);
 const StyledTouchableOpacity = withUniwind(TouchableOpacity);
 const StyledBottomSheetView = withUniwind(BottomSheetView);
-
-const resolveArtwork = (item: any) => {
-  return (
-    item.thumbnail?.url ||
-    item.thumbnails?.[0]?.url ||
-    item.image ||
-    item.picture ||
-    (typeof item.thumbnails === "string" ? item.thumbnails : undefined)
-  );
-};
 
 export default function Home() {
   const {
