@@ -8,7 +8,10 @@ import {
   useBottomSheetTimingConfigs,
 } from "@gorhom/bottom-sheet";
 import { useQuery } from "@tanstack/react-query";
-import { useSearchSearchGet } from "api-hifi/src/gen/hooks";
+import {
+  useGetArtistArtistGet,
+  useSearchSearchGet,
+} from "api-hifi/src/gen/hooks";
 import type { SearchSearchGetQueryParams } from "api-hifi/src/gen/types/SearchSearchGet";
 import { Card, Chip, useThemeColor } from "heroui-native";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -28,6 +31,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { withUniwind } from "uniwind";
 import type {} from "uniwind/types";
 import { ApiDebug } from "@/components/api-debug";
+import { type Artist, ArtistItem } from "@/components/artist-item";
 import { type Track, TrackItem } from "@/components/track-item";
 import { useAppTheme } from "@/contexts/app-theme-context";
 import { type SavedTrack, usePlayer } from "@/contexts/player-context";
@@ -55,6 +59,16 @@ const StyledScrollView = withUniwind(ScrollView);
 const StyledTouchableOpacity = withUniwind(TouchableOpacity);
 const StyledBottomSheetView = withUniwind(BottomSheetView);
 
+const resolveArtwork = (item: any) => {
+  return (
+    item.thumbnail?.url ||
+    item.thumbnails?.[0]?.url ||
+    item.image ||
+    item.picture ||
+    (typeof item.thumbnails === "string" ? item.thumbnails : undefined)
+  );
+};
+
 export default function Home() {
   const {
     playQueue,
@@ -72,6 +86,60 @@ export default function Home() {
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<SearchFilter>("songs");
   const [debouncedQuery, setDebouncedQuery] = useState("");
+
+  const [selectedArtist, setSelectedArtist] = useState<Artist | null>(null);
+  const artistSheetRef = useRef<BottomSheetModal | null>(null);
+  const artistSnapPoints = useMemo(() => ["90%"], []);
+
+  const { data: artistDetails, isLoading: isArtistLoading } =
+    useGetArtistArtistGet(
+      selectedArtist
+        ? {
+            f:
+              parseInt(String(selectedArtist.id)) ||
+              parseInt(
+                String(selectedArtist.browseId).replace(/[^0-9]/g, "")
+              ) ||
+              0,
+          }
+        : undefined,
+      {
+        query: {
+          enabled: !!(selectedArtist?.id || selectedArtist?.browseId),
+        },
+      }
+    );
+
+  const artistTopTracks = useMemo(() => {
+    if (!artistDetails) return [] as Track[];
+
+    // The API might return tracks in a specific property, let's look for them
+    const response = artistDetails as any;
+    const items =
+      response.tracks?.items ||
+      response.tracks ||
+      response.data?.tracks?.items ||
+      response.data?.tracks ||
+      response.items ||
+      response.results ||
+      [];
+
+    return (Array.isArray(items) ? items : []).map(
+      (item: any, index: number): Track => {
+        const id = item.id || item.videoId || `artist-track-${index}`;
+        return {
+          id: String(id),
+          title: item.title || item.name || "Unknown Title",
+          artist:
+            resolveName(item.artist) ||
+            selectedArtist?.name ||
+            "Unknown Artist",
+          artwork: resolveArtwork(item) || selectedArtist?.artwork,
+          url: item.url || `https://www.youtube.com/watch?v=${id}`,
+        };
+      }
+    );
+  }, [artistDetails, selectedArtist]);
 
   const favoritesSheetRef = useRef<BottomSheetModal | null>(null);
   const settingsSheetRef = useRef<BottomSheetModal | null>(null);
@@ -162,30 +230,39 @@ export default function Home() {
 
   const params = useMemo(() => {
     const base: SearchSearchGetQueryParams = {};
-    if (!debouncedQuery) {
-      base.s = "new music";
-      return base;
+    const effectiveQuery = debouncedQuery || "trending";
+
+    if (filter === "songs") {
+      base.s = debouncedQuery || "new music";
+    } else if (filter === "artists") {
+      base.a = effectiveQuery;
+    } else if (filter === "albums") {
+      base.al = effectiveQuery;
+    } else if (filter === "playlists") {
+      base.p = effectiveQuery;
     }
-    if (filter === "songs") base.s = debouncedQuery;
-    if (filter === "artists") base.a = debouncedQuery;
-    if (filter === "albums") base.al = debouncedQuery;
-    if (filter === "playlists") base.p = debouncedQuery;
     return base;
   }, [debouncedQuery, filter]);
 
   const { data, isLoading, error } = useSearchSearchGet(params);
 
   type SearchResultItem = {
-    id?: string;
+    id?: string | number;
     videoId?: string;
+    browseId?: string;
     title?: string;
     name?: string;
     artist?: { name?: string } | string;
     author?: { name?: string } | string;
     thumbnail?: { url?: string };
-    thumbnails?: { url?: string }[];
+    thumbnails?: { url?: string }[] | string;
     image?: string;
+    picture?: string;
     url?: string;
+    subscribers?: string;
+    subscribersCountText?: string;
+    subscriberCountText?: string;
+    popularity?: number;
   };
 
   type SearchResponse =
@@ -194,9 +271,17 @@ export default function Home() {
         data?: {
           items?: SearchResultItem[];
           results?: SearchResultItem[];
+          tracks?: { items?: SearchResultItem[] };
+          artists?: { items?: SearchResultItem[] };
+          albums?: { items?: SearchResultItem[] };
+          playlists?: { items?: SearchResultItem[] };
         };
         items?: SearchResultItem[];
         results?: SearchResultItem[];
+        tracks?: { items?: SearchResultItem[] };
+        artists?: { items?: SearchResultItem[] };
+        albums?: { items?: SearchResultItem[] };
+        playlists?: { items?: SearchResultItem[] };
       };
 
   const filters: { key: SearchFilter; label: string }[] = [
@@ -209,35 +294,72 @@ export default function Home() {
   const listData: SearchResultItem[] = (() => {
     if (!data) return [];
     if (Array.isArray(data)) return data as SearchResultItem[];
-    const response = data as SearchResponse & {
-      data?: { items?: SearchResultItem[]; results?: SearchResultItem[] };
-      items?: SearchResultItem[];
-      results?: SearchResultItem[];
+
+    const response = data as any;
+
+    // Helper to find items in a potentially nested structure
+    const findItems = (obj: any): SearchResultItem[] | undefined => {
+      if (!obj || typeof obj !== "object") return undefined;
+
+      // 1. Check direct items/results
+      if (Array.isArray(obj.items)) return obj.items;
+      if (Array.isArray(obj.results)) return obj.results;
+
+      // 2. Check filter-specific keys (mapping "songs" to "tracks")
+      const apiKey = filter === "songs" ? "tracks" : filter;
+      if (obj[apiKey]) {
+        if (Array.isArray(obj[apiKey])) return obj[apiKey];
+        if (Array.isArray(obj[apiKey].items)) return obj[apiKey].items;
+        if (Array.isArray(obj[apiKey].results)) return obj[apiKey].results;
+      }
+
+      // 3. Check within "data" property
+      if (obj.data) {
+        return findItems(obj.data);
+      }
+
+      return undefined;
     };
-    return (
-      response.data?.items ??
-      response.data?.results ??
-      response.items ??
-      response.results ??
-      []
-    );
+
+    return findItems(response) ?? [];
   })();
 
   const tracks = useMemo(() => {
+    if (filter === "artists") return [];
+
     return listData.map((item, index): Track => {
-      const id = item.id || item.videoId || `result-${index}`;
+      const id = item.id || item.videoId || `track-${index}`;
       return {
-        id,
+        id: String(id),
         title: item.title || item.name || "Unknown Title",
-        artist:
-          resolveName(item.artist) ||
-          resolveName(item.author) ||
-          "Unknown Artist",
-        artwork: item.thumbnail?.url || item.thumbnails?.[0]?.url || item.image,
+        artist: resolveName(item.artist || item.author) || "Unknown Artist",
+        artwork: resolveArtwork(item),
         url: item.url || `https://www.youtube.com/watch?v=${id}`,
       };
     });
-  }, [listData]);
+  }, [listData, filter]);
+
+  const artists = useMemo(() => {
+    if (filter === "songs") return [];
+
+    return listData.map((item, index): Artist => {
+      const id = item.id || item.browseId || `artist-${index}`;
+      return {
+        id: String(id),
+        name: item.name || item.title || "Unknown Artist",
+        artwork: resolveArtwork(item),
+        subscribers:
+          item.subscribers ||
+          item.subscribersCountText ||
+          item.subscriberCountText ||
+          (item.popularity ? `${item.popularity} popularity` : undefined),
+        url: item.url,
+        browseId:
+          item.browseId ||
+          (typeof id === "string" && id.startsWith("UC") ? id : undefined),
+      };
+    });
+  }, [listData, filter]);
 
   const favoriteQueue = useMemo<Track[]>(() => {
     return favorites.map((saved) => {
@@ -252,6 +374,20 @@ export default function Home() {
   }, [favorites]);
 
   const renderItem = ({ index }: { index: number }) => {
+    if (filter === "artists") {
+      const artist = artists[index];
+      if (!artist) return null;
+      return (
+        <ArtistItem
+          artist={artist}
+          onPress={() => {
+            setSelectedArtist(artist);
+            artistSheetRef.current?.present();
+          }}
+        />
+      );
+    }
+
     const track = tracks[index];
     if (!track) return null;
 
@@ -359,13 +495,14 @@ export default function Home() {
                 <Chip
                   key={name}
                   onPress={() => {
-                    setFilter("songs");
+                    setFilter("artists");
                     setQuery(name);
                   }}
-                  color="accent"
-                  className="mr-2 bg-gray-300"
+                  variant="secondary"
+                  color="default"
+                  className="mr-2"
                 >
-                  <StyledText className="text-foreground">{name}</StyledText>
+                  <StyledText className="text-default-700">{name}</StyledText>
                 </Chip>
               ))}
             </StyledScrollView>
@@ -390,26 +527,23 @@ export default function Home() {
               style={{ maxHeight: 40 }}
             >
               {filters.map((f) => (
-                <StyledTouchableOpacity
+                <Chip
                   key={f.key}
                   onPress={() => setFilter(f.key)}
+                  color={filter === f.key ? "accent" : "default"}
+                  variant={filter === f.key ? "primary" : "secondary"}
+                  className="mr-2"
                 >
-                  <Chip
-                    className={`mr-2 ${
-                      filter === f.key ? "bg-primary" : "bg-default-200"
-                    }`}
+                  <StyledText
+                    className={
+                      filter === f.key
+                        ? "text-accent-foreground font-medium"
+                        : "text-default-600"
+                    }
                   >
-                    <StyledText
-                      className={
-                        filter === f.key
-                          ? "text-primary-foreground"
-                          : "text-foreground"
-                      }
-                    >
-                      {f.label}
-                    </StyledText>
-                  </Chip>
-                </StyledTouchableOpacity>
+                    {f.label}
+                  </StyledText>
+                </Chip>
               ))}
             </StyledScrollView>
           </Card.Body>
@@ -432,8 +566,10 @@ export default function Home() {
           data={listData}
           keyExtractor={(item, index) => (item.id || index).toString()}
           renderItem={renderItem}
+          numColumns={filter === "artists" ? 2 : 1}
+          key={filter === "artists" ? "grid" : "list"}
           contentContainerStyle={{
-            paddingHorizontal: 16,
+            paddingHorizontal: filter === "artists" ? 8 : 16,
             paddingBottom: 100,
           }}
           ListHeaderComponent={
@@ -459,6 +595,106 @@ export default function Home() {
           }
         />
       )}
+
+      <BottomSheetModal
+        ref={artistSheetRef}
+        snapPoints={artistSnapPoints}
+        index={0}
+        enablePanDownToClose
+        enableDismissOnClose
+        backdropComponent={favoritesBackdrop}
+        animationConfigs={favoritesAnimationConfigs}
+        handleIndicatorStyle={{ backgroundColor: "#ccc" }}
+        backgroundStyle={{ backgroundColor: themeColorBackground }}
+      >
+        <StyledBottomSheetView className="flex-1 bg-background">
+          <View className="px-4 pt-3 pb-2 flex-row items-center justify-between">
+            <Text className="text-xl font-bold text-foreground">
+              Artist Details
+            </Text>
+            <TouchableOpacity
+              className="p-2"
+              onPress={() => artistSheetRef.current?.dismiss()}
+            >
+              <Ionicons name="close" size={22} color={themeColorForeground} />
+            </TouchableOpacity>
+          </View>
+
+          {isArtistLoading ? (
+            <View className="flex-1 items-center justify-center">
+              <ActivityIndicator size="large" color="#fff" />
+            </View>
+          ) : (
+            <BottomSheetFlatList
+              ListHeaderComponent={
+                <View className="px-4 mb-6">
+                  <View className="flex-row items-center mb-6">
+                    <View className="w-24 h-24 rounded-full overflow-hidden mr-4 bg-content3 shadow-md">
+                      {selectedArtist?.artwork ? (
+                        <Image
+                          source={{ uri: selectedArtist.artwork }}
+                          className="w-full h-full"
+                          resizeMode="cover"
+                        />
+                      ) : (
+                        <View className="w-full h-full items-center justify-center">
+                          <Text className="text-3xl">👤</Text>
+                        </View>
+                      )}
+                    </View>
+                    <View className="flex-1">
+                      <Text className="text-2xl font-bold text-foreground">
+                        {selectedArtist?.name}
+                      </Text>
+                      <Text className="text-default-500">
+                        {selectedArtist?.subscribers || "Artist"}
+                      </Text>
+                    </View>
+                  </View>
+
+                  <View className="flex-row justify-between items-center mb-4">
+                    <View>
+                      <Text className="text-xl font-bold text-foreground">
+                        Top Tracks
+                      </Text>
+                      <Text className="text-default-500 text-sm">
+                        Best songs from {selectedArtist?.name}
+                      </Text>
+                    </View>
+                    <TouchableOpacity
+                      className="bg-primary px-4 py-2 rounded-full"
+                      onPress={() => {
+                        if (artistTopTracks.length > 0) {
+                          void playQueue(artistTopTracks, 0);
+                        }
+                      }}
+                    >
+                      <Text className="text-primary-foreground font-bold">
+                        Play All
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              }
+              data={artistTopTracks}
+              keyExtractor={(item: Track) => item.id}
+              renderItem={({ item, index }: { item: Track; index: number }) => (
+                <View className="px-4">
+                  <TrackItem
+                    track={item}
+                    onPress={() => {
+                      void playQueue(artistTopTracks, index);
+                    }}
+                  />
+                </View>
+              )}
+              contentContainerStyle={{
+                paddingBottom: 40,
+              }}
+            />
+          )}
+        </StyledBottomSheetView>
+      </BottomSheetModal>
 
       <BottomSheetModal
         ref={favoritesSheetRef}
@@ -552,19 +788,19 @@ export default function Home() {
                     <Chip
                       key={option.value}
                       onPress={() => setQuality(option.value)}
-                      className={`mr-2 mb-2 ${
-                        selected ? "bg-primary" : "bg-default-200"
-                      }`}
+                      color={selected ? "accent" : "default"}
+                      variant={selected ? "primary" : "secondary"}
+                      className="mr-2 mb-2"
                     >
-                      <Text
+                      <StyledText
                         className={
                           selected
-                            ? "text-primary-foreground"
-                            : "text-foreground"
+                            ? "text-accent-foreground font-medium"
+                            : "text-default-600"
                         }
                       >
                         {option.label}
-                      </Text>
+                      </StyledText>
                     </Chip>
                   );
                 })}

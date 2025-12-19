@@ -462,7 +462,7 @@ export const PlayerBar = () => {
           style={{ bottom: insets.bottom + 56 }}
         >
           <Pressable onPress={handleOpenFullPlayer}>
-            <Card className="flex-row items-center px-3 py-2 bg-black border border-blue-300 rounded-full shadow-lg relative overflow-hidden">
+            <Card className="flex-row items-center px-3 py-2 bg-black/95 border border-white/10 relative overflow-hidden rounded-full h-16 shadow-2xl">
               <View
                 style={{
                   position: "absolute",
@@ -484,15 +484,15 @@ export const PlayerBar = () => {
                 }}
               />
               {resolvedArtwork ? (
-                <View className="mr-3">
+                <View className="ml-1 mr-3">
                   <SpinningCover
                     uri={resolvedArtwork}
-                    size={34}
+                    size={38}
                     isPlaying={isPlaying}
                   />
                 </View>
               ) : (
-                <View className="w-10 h-10 rounded-full mr-3 bg-default-300 items-center justify-center">
+                <View className="w-10 h-10 rounded-full ml-1 mr-3 bg-default-300 items-center justify-center">
                   <Text>🎵</Text>
                 </View>
               )}
@@ -504,7 +504,7 @@ export const PlayerBar = () => {
                 >
                   {currentTrack.title}
                 </Text>
-                <Text className="text-white text-xs" numberOfLines={1}>
+                <Text className="text-white/70 text-xs" numberOfLines={1}>
                   {currentTrack.artist}
                 </Text>
               </View>
@@ -553,7 +553,7 @@ export const PlayerBar = () => {
                   e.stopPropagation();
                   void toggleCurrentFavorite(resolvedArtwork);
                 }}
-                className="p-2"
+                className="p-2 mr-1"
               >
                 <Ionicons
                   name={isCurrentFavorited ? "heart" : "heart-outline"}
@@ -617,7 +617,7 @@ export const PlayerBar = () => {
                 </TouchableOpacity>
               </View>
 
-              <View className="items-center px-8">
+              <View className="items-center px-8 mb-4">
                 <Text className="text-xs text-gray-300 mb-2">Now Playing</Text>
                 <Text
                   className="text-2xl font-bold text-white mb-1"
@@ -631,19 +631,19 @@ export const PlayerBar = () => {
               </View>
 
               <View className="items-center">
-                <View className="items-center justify-center mb-10">
+                <View className="items-center justify-center mt-2 mb-8">
                   {resolvedArtwork ? (
                     <SpinningCover
                       uri={resolvedArtwork}
-                      size={256}
+                      size={202}
                       isPlaying={isPlaying}
                     />
                   ) : (
                     <View
                       style={{
-                        width: 268,
-                        height: 268,
-                        borderRadius: 134,
+                        width: 214,
+                        height: 214,
+                        borderRadius: 107,
                         backgroundColor: "rgba(0,0,0,0.2)",
                         alignItems: "center",
                         justifyContent: "center",

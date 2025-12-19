@@ -49,16 +49,16 @@ export default function Layout() {
         <QueryClientProvider client={queryClient}>
           <AppThemeProvider>
             <HeroUINativeProvider>
-              <View className="flex-1 bg-background">
+              <PlayerProvider>
                 <BottomSheetModalProvider>
-                  <PlayerProvider>
+                  <View className="flex-1 bg-background">
                     <View style={appShellStyle}>
                       <StackLayout />
                       <PlayerBar />
                     </View>
-                  </PlayerProvider>
+                  </View>
                 </BottomSheetModalProvider>
-              </View>
+              </PlayerProvider>
             </HeroUINativeProvider>
           </AppThemeProvider>
         </QueryClientProvider>
