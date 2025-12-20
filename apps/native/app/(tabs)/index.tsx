@@ -761,24 +761,67 @@ export default function Home() {
                       </View>
                     </View>
                   ) : selectedPlaylist ? (
-                    <View className="flex-row items-center mb-6">
-                      <View className="w-24 h-24 rounded-lg overflow-hidden mr-4 bg-content3 shadow-md">
-                        <Image
-                          source={{ uri: resolveArtwork(selectedPlaylist) }}
-                          className="w-full h-full"
-                          resizeMode="cover"
-                        />
+                    <View>
+                      <View className="flex-row items-center mb-6">
+                        <View className="w-24 h-24 rounded-lg overflow-hidden mr-4 bg-content3 shadow-md">
+                          <Image
+                            source={{ uri: resolveArtwork(selectedPlaylist) }}
+                            className="w-full h-full"
+                            resizeMode="cover"
+                          />
+                        </View>
+                        <View className="flex-1">
+                          <Text className="text-2xl font-bold text-foreground">
+                            {selectedPlaylist.title}
+                          </Text>
+                          <Text className="text-default-500">
+                            {resolveName(
+                              selectedPlaylist.artist || selectedPlaylist.author
+                            ) || "Playlist"}
+                          </Text>
+                        </View>
                       </View>
-                      <View className="flex-1">
-                        <Text className="text-2xl font-bold text-foreground">
-                          {selectedPlaylist.title}
-                        </Text>
-                        <Text className="text-default-500">
-                          {resolveName(
-                            selectedPlaylist.artist || selectedPlaylist.author
-                          ) || "Playlist"}
-                        </Text>
-                      </View>
+
+                      {playlistDetails?.playlist?.promotedArtists &&
+                        playlistDetails.playlist.promotedArtists.length > 0 && (
+                          <View className="mb-4">
+                            <Text className="text-lg font-bold text-foreground mb-2">
+                              Promoted Artists
+                            </Text>
+                            <ScrollView
+                              horizontal
+                              showsHorizontalScrollIndicator={false}
+                            >
+                              {playlistDetails.playlist.promotedArtists.map(
+                                (artist: any) => (
+                                  <TouchableOpacity
+                                    key={artist.id}
+                                    className="mr-4 items-center"
+                                    onPress={() => {
+                                      setSelectedPlaylist(null);
+                                      setSelectedArtist(artist);
+                                    }}
+                                  >
+                                    <View className="w-16 h-16 rounded-full overflow-hidden bg-content3 mb-1">
+                                      <Image
+                                        source={{ uri: resolveArtwork(artist) }}
+                                        className="w-full h-full"
+                                        resizeMode="cover"
+                                      />
+                                    </View>
+                                    <Text
+                                      className="text-xs text-foreground text-center"
+                                      numberOfLines={1}
+                                      style={{ width: 64 }}
+                                    >
+                                      {artist.name}
+                                    </Text>
+                                  </TouchableOpacity>
+                                )
+                              )}
+                            </ScrollView>
+                          </View>
+                        )}
                     </View>
                   ) : (
                     <View className="flex-row items-center mb-6">
