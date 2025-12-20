@@ -453,7 +453,36 @@ export const PlayerBar = () => {
 
   const animatedArtworkContainerStyle = useAnimatedStyle(() => {
     return {
-      transform: [{ scale: 1 + collapseProgress.value * 0.1 }],
+      transform: [
+        { scale: interpolate(collapseProgress.value, [0, 1], [1, 1.2]) },
+      ],
+      marginLeft: interpolate(collapseProgress.value, [0, 1], [4, 0]),
+      marginRight: interpolate(collapseProgress.value, [0, 1], [12, 0]),
+    };
+  });
+
+  const animatedCardStyle = useAnimatedStyle(() => {
+    return {
+      paddingHorizontal: interpolate(collapseProgress.value, [0, 1], [12, 0]),
+      paddingVertical: interpolate(collapseProgress.value, [0, 1], [8, 0]),
+    };
+  });
+
+  const expandedIconStyle = useAnimatedStyle(() => {
+    return {
+      opacity: interpolate(collapseProgress.value, [0, 0.3], [1, 0]),
+      transform: [
+        { scale: interpolate(collapseProgress.value, [0, 0.3], [1, 0]) },
+      ],
+    };
+  });
+
+  const collapsedIconStyle = useAnimatedStyle(() => {
+    return {
+      opacity: interpolate(collapseProgress.value, [0.7, 1], [0, 1]),
+      transform: [
+        { scale: interpolate(collapseProgress.value, [0.7, 1], [0, 1]) },
+      ],
     };
   });
 
@@ -608,11 +637,9 @@ export const PlayerBar = () => {
               onLongPress={() => setIsCollapsed(!isCollapsed)}
               delayLongPress={300}
             >
-              <Card
-                className={`flex-row items-center bg-black/95 border border-white/10 relative overflow-hidden rounded-full shadow-2xl justify-center ${
-                  isCollapsed ? "p-0" : "px-3 py-2"
-                }`}
-                style={{ height: "100%" }}
+              <Animated.View
+                className="flex-row items-center bg-black/95 border border-white/10 relative overflow-hidden rounded-full shadow-2xl justify-center"
+                style={[animatedCardStyle, { height: "100%" }]}
               >
                 <BlurView
                   intensity={Platform.OS === "ios" ? 40 : 80}
@@ -625,171 +652,246 @@ export const PlayerBar = () => {
                     bottom: 0,
                   }}
                 />
-                {!isCollapsed && (
-                  <>
-                    <View
-                      style={{
-                        position: "absolute",
-                        left: 0,
-                        right: 0,
-                        bottom: 0,
-                        height: 2,
-                        backgroundColor: "rgba(255,255,255,0.15)",
-                      }}
-                    />
-                    <View
-                      style={{
-                        position: "absolute",
-                        left: 0,
-                        bottom: 0,
-                        height: 2,
-                        width: `${miniProgressRatio * 100}%`,
-                        backgroundColor: "#60a5fa",
-                      }}
-                    />
-                  </>
-                )}
-
                 <Animated.View
-                  className={isCollapsed ? "" : "ml-1 mr-3"}
-                  style={animatedArtworkContainerStyle}
+                  style={{
+                    position: "absolute",
+                    left: 0,
+                    right: 0,
+                    bottom: 0,
+                    opacity: expandedIconStyle.opacity,
+                  }}
+                  pointerEvents="none"
                 >
+                  <View
+                    style={{
+                      position: "absolute",
+                      left: 0,
+                      right: 0,
+                      bottom: 0,
+                      height: 2,
+                      backgroundColor: "rgba(255,255,255,0.15)",
+                    }}
+                  />
+                  <View
+                    style={{
+                      position: "absolute",
+                      left: 0,
+                      bottom: 0,
+                      height: 2,
+                      width: `${miniProgressRatio * 100}%`,
+                      backgroundColor: "#60a5fa",
+                    }}
+                  />
+                </Animated.View>
+
+                <Animated.View style={animatedArtworkContainerStyle}>
                   {resolvedArtwork ? (
                     <View>
                       <SpinningCover
                         uri={resolvedArtwork}
-                        size={isCollapsed ? 46 : 38}
+                        size={38}
                         isPlaying={isPlaying}
                       />
-                      {!isCollapsed && (
+                      <Animated.View
+                        style={[
+                          expandedIconStyle,
+                          {
+                            position: "absolute",
+                            left: -6,
+                            top: "50%",
+                            marginTop: -10,
+                          },
+                        ]}
+                      >
                         <Pressable
                           onPress={(e) => {
                             e.stopPropagation();
                             setIsCollapsed(!isCollapsed);
                           }}
-                          className="absolute left-1/2 -top-1 -translate-x-1/2 bg-blue-500 rounded-full w-5 h-5 items-center justify-center border-2 border-black"
+                          className="bg-blue-500 rounded-full w-5 h-5 items-center justify-center border-2 border-black"
                         >
-                          <Ionicons name="chevron-up" size={12} color="#fff" />
+                          <Ionicons
+                            name="chevron-back"
+                            size={12}
+                            color="#fff"
+                          />
                         </Pressable>
-                      )}
+                      </Animated.View>
+                      <Animated.View
+                        style={[
+                          collapsedIconStyle,
+                          {
+                            position: "absolute",
+                            left: -6,
+                            top: "50%",
+                            marginTop: -10,
+                          },
+                        ]}
+                      >
+                        <Pressable
+                          onPress={(e) => {
+                            e.stopPropagation();
+                            setIsCollapsed(!isCollapsed);
+                          }}
+                          className="bg-blue-500 rounded-full w-5 h-5 items-center justify-center border-2 border-black"
+                        >
+                          <Ionicons
+                            name="chevron-forward"
+                            size={12}
+                            color="#fff"
+                          />
+                        </Pressable>
+                      </Animated.View>
                     </View>
                   ) : (
-                    <View
-                      className={`${
-                        isCollapsed ? "w-14 h-14" : "w-10 h-10"
-                      } rounded-full bg-default-300 items-center justify-center`}
-                    >
-                      <Text style={{ fontSize: isCollapsed ? 20 : 16 }}>
-                        🎵
-                      </Text>
-                      {!isCollapsed && (
+                    <View className="w-10 h-10 rounded-full bg-default-300 items-center justify-center">
+                      <Text style={{ fontSize: 16 }}>🎵</Text>
+                      <Animated.View
+                        style={[
+                          expandedIconStyle,
+                          {
+                            position: "absolute",
+                            left: -6,
+                            top: "50%",
+                            marginTop: -10,
+                          },
+                        ]}
+                      >
                         <Pressable
                           onPress={(e) => {
                             e.stopPropagation();
                             setIsCollapsed(!isCollapsed);
                           }}
-                          className="absolute left-1/2 -top-1 -translate-x-1/2 bg-blue-500 rounded-full w-5 h-5 items-center justify-center border-2 border-black"
+                          className="bg-blue-500 rounded-full w-5 h-5 items-center justify-center border-2 border-black"
                         >
-                          <Ionicons name="chevron-up" size={12} color="#fff" />
+                          <Ionicons
+                            name="chevron-back"
+                            size={12}
+                            color="#fff"
+                          />
                         </Pressable>
-                      )}
+                      </Animated.View>
+                      <Animated.View
+                        style={[
+                          collapsedIconStyle,
+                          {
+                            position: "absolute",
+                            left: -6,
+                            top: "50%",
+                            marginTop: -10,
+                          },
+                        ]}
+                      >
+                        <Pressable
+                          onPress={(e) => {
+                            e.stopPropagation();
+                            setIsCollapsed(!isCollapsed);
+                          }}
+                          className="bg-blue-500 rounded-full w-5 h-5 items-center justify-center border-2 border-black"
+                        >
+                          <Ionicons
+                            name="chevron-forward"
+                            size={12}
+                            color="#fff"
+                          />
+                        </Pressable>
+                      </Animated.View>
                     </View>
                   )}
                 </Animated.View>
 
-                {!isCollapsed && (
-                  <Animated.View
-                    className="flex-1 flex-row items-center"
-                    style={animatedContentStyle}
+                <Animated.View
+                  className="flex-1 flex-row items-center"
+                  style={animatedContentStyle}
+                  pointerEvents={isCollapsed ? "none" : "auto"}
+                >
+                  <View className="flex-1 mr-2 items-center">
+                    <Text
+                      className="text-white font-bold text-sm text-center"
+                      numberOfLines={1}
+                    >
+                      {currentTrack.title}
+                    </Text>
+                    <Text
+                      className="text-white/70 text-xs text-center"
+                      numberOfLines={1}
+                    >
+                      {currentTrack.artist}
+                    </Text>
+                  </View>
+
+                  <Pressable
+                    onPress={(e) => {
+                      e.stopPropagation();
+                      playPrevious();
+                    }}
+                    className="p-2"
                   >
-                    <View className="flex-1 mr-2 items-center">
-                      <Text
-                        className="text-white font-bold text-sm text-center"
-                        numberOfLines={1}
-                      >
-                        {currentTrack.title}
-                      </Text>
-                      <Text
-                        className="text-white/70 text-xs text-center"
-                        numberOfLines={1}
-                      >
-                        {currentTrack.artist}
-                      </Text>
-                    </View>
+                    {({ pressed }) => (
+                      <Ionicons
+                        name="play-skip-back"
+                        size={20}
+                        color={pressed ? "#ef4444" : "#fff"}
+                      />
+                    )}
+                  </Pressable>
 
-                    <Pressable
-                      onPress={(e) => {
-                        e.stopPropagation();
-                        playPrevious();
-                      }}
-                      className="p-2"
-                    >
-                      {({ pressed }) => (
+                  <Pressable
+                    onPress={(e) => {
+                      e.stopPropagation();
+                      (isPlaying ? pauseTrack : resumeTrack)();
+                    }}
+                    className="p-2"
+                    disabled={isLoading}
+                  >
+                    {({ pressed }) =>
+                      isLoading ? (
+                        <ActivityIndicator size="small" color="#fff" />
+                      ) : (
                         <Ionicons
-                          name="play-skip-back"
-                          size={20}
+                          name={isPlaying ? "pause" : "play"}
+                          size={24}
                           color={pressed ? "#ef4444" : "#fff"}
                         />
-                      )}
-                    </Pressable>
+                      )
+                    }
+                  </Pressable>
 
-                    <Pressable
-                      onPress={(e) => {
-                        e.stopPropagation();
-                        (isPlaying ? pauseTrack : resumeTrack)();
-                      }}
-                      className="p-2"
-                      disabled={isLoading}
-                    >
-                      {({ pressed }) =>
-                        isLoading ? (
-                          <ActivityIndicator size="small" color="#fff" />
-                        ) : (
-                          <Ionicons
-                            name={isPlaying ? "pause" : "play"}
-                            size={24}
-                            color={pressed ? "#ef4444" : "#fff"}
-                          />
-                        )
-                      }
-                    </Pressable>
+                  <Pressable
+                    onPress={(e) => {
+                      e.stopPropagation();
+                      playNext();
+                    }}
+                    className="p-2"
+                  >
+                    {({ pressed }) => (
+                      <Ionicons
+                        name="play-skip-forward"
+                        size={20}
+                        color={pressed ? "#ef4444" : "#fff"}
+                      />
+                    )}
+                  </Pressable>
 
-                    <Pressable
-                      onPress={(e) => {
-                        e.stopPropagation();
-                        playNext();
-                      }}
-                      className="p-2"
-                    >
-                      {({ pressed }) => (
-                        <Ionicons
-                          name="play-skip-forward"
-                          size={20}
-                          color={pressed ? "#ef4444" : "#fff"}
-                        />
-                      )}
-                    </Pressable>
-
-                    <Pressable
-                      onPress={(e) => {
-                        e.stopPropagation();
-                        void toggleCurrentFavorite(resolvedArtwork);
-                      }}
-                      className="p-2 mr-1"
-                    >
-                      {({ pressed }) => (
-                        <Ionicons
-                          name={isCurrentFavorited ? "heart" : "heart-outline"}
-                          size={20}
-                          color={
-                            isCurrentFavorited || pressed ? "#ef4444" : "#fff"
-                          }
-                        />
-                      )}
-                    </Pressable>
-                  </Animated.View>
-                )}
-              </Card>
+                  <Pressable
+                    onPress={(e) => {
+                      e.stopPropagation();
+                      void toggleCurrentFavorite(resolvedArtwork);
+                    }}
+                    className="p-2 mr-1"
+                  >
+                    {({ pressed }) => (
+                      <Ionicons
+                        name={isCurrentFavorited ? "heart" : "heart-outline"}
+                        size={20}
+                        color={
+                          isCurrentFavorited || pressed ? "#ef4444" : "#fff"
+                        }
+                      />
+                    )}
+                  </Pressable>
+                </Animated.View>
+              </Animated.View>
             </Pressable>
           </Animated.View>
         </Portal>
