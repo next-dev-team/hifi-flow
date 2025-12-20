@@ -46,41 +46,91 @@ const clamp = (value: number, min: number, max: number) => {
   return Math.min(max, Math.max(min, value));
 };
 
-const SPECTRUM_BARS = Array.from({ length: 22 }, (_, index) => {
-  return { id: `spectrum-${index}`, index };
+const BG_SPECTRUM_BARS = Array.from({ length: 70 }, (_, index) => {
+  return { id: `bg-spectrum-${index}`, index };
 });
 
 const SpectrumBar = ({
   index,
   phase,
   active,
+  multiplier = 1,
 }: {
   index: number;
   phase: SharedValue<number>;
   active: boolean;
+  multiplier?: number;
 }) => {
   const animatedStyle = useAnimatedStyle(() => {
     const base = active ? 0.25 : 0.06;
     const amp = active ? 0.75 : 0.12;
     const value = Math.abs(Math.sin(phase.value + index * 0.55));
-    const height = 3 + (base + amp * value) * 14;
+    const height = (3 + (base + amp * value) * 14) * multiplier;
     return {
       height,
       opacity: active ? 0.7 : 0.25,
     };
-  }, [active, index, phase]);
+  }, [active, index, phase, multiplier]);
 
   return (
     <Animated.View
       style={[
         {
-          width: 3,
+          width: 4,
           borderRadius: 999,
           backgroundColor: "rgba(255,255,255,0.9)",
         },
         animatedStyle,
       ]}
     />
+  );
+};
+
+const BackgroundSpectrum = ({ isPlaying }: { isPlaying: boolean }) => {
+  const phase = useSharedValue(0);
+
+  useEffect(() => {
+    if (!isPlaying) {
+      cancelAnimation(phase);
+      phase.value = 0;
+      return;
+    }
+    phase.value = withRepeat(
+      withTiming(Math.PI * 2, {
+        duration: 2000,
+        easing: Easing.linear,
+      }),
+      -1,
+      false
+    );
+  }, [isPlaying, phase]);
+
+  return (
+    <View
+      pointerEvents="none"
+      style={{
+        position: "absolute",
+        left: 0,
+        right: 0,
+        bottom: 0,
+        top: 0,
+        flexDirection: "row",
+        alignItems: "center",
+        justifyContent: "space-between",
+        paddingHorizontal: 0,
+        opacity: 0.25,
+      }}
+    >
+      {BG_SPECTRUM_BARS.map((bar) => (
+        <SpectrumBar
+          key={bar.id}
+          index={bar.index}
+          phase={phase}
+          active={isPlaying}
+          multiplier={24}
+        />
+      ))}
+    </View>
   );
 };
 
@@ -212,24 +262,6 @@ const SeekBar = ({
   const [scrubRatio, setScrubRatio] = useState(0);
   const [isScrubbing, setIsScrubbing] = useState(false);
 
-  const phase = useSharedValue(0);
-
-  useEffect(() => {
-    if (!isPlaying) {
-      cancelAnimation(phase);
-      phase.value = 0;
-      return;
-    }
-    phase.value = withRepeat(
-      withTiming(Math.PI * 2, {
-        duration: 1400,
-        easing: Easing.linear,
-      }),
-      -1,
-      false
-    );
-  }, [isPlaying, phase]);
-
   const progressRatio =
     durationMillis > 0 ? clamp(positionMillis / durationMillis, 0, 1) : 0;
   const visualRatio = isScrubbing ? scrubRatio : progressRatio;
@@ -317,31 +349,6 @@ const SeekBar = ({
         hitSlop={{ top: 18, bottom: 18, left: 18, right: 18 }}
         {...panResponder.panHandlers}
       >
-        <View
-          pointerEvents="none"
-          style={{
-            position: "absolute",
-            left: 0,
-            right: 0,
-            bottom: 0,
-            top: 0,
-            flexDirection: "row",
-            alignItems: "flex-end",
-            justifyContent: "space-between",
-            paddingHorizontal: 2,
-            opacity: 0.5,
-          }}
-        >
-          {SPECTRUM_BARS.map((bar) => (
-            <SpectrumBar
-              key={bar.id}
-              index={bar.index}
-              phase={phase}
-              active={isPlaying}
-            />
-          ))}
-        </View>
-
         <View
           style={{
             height: 8,
@@ -1045,6 +1052,7 @@ export const PlayerBar = () => {
         }}
       >
         <StyledBottomSheetView className="flex-1 rounded-t-[24px] overflow-hidden">
+          <BackgroundSpectrum isPlaying={isPlaying} />
           <View className="flex-1 max-w-md w-full mx-auto relative">
             <View
               className="flex-1 items-center justify-between pb-10"
