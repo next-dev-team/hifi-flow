@@ -202,8 +202,8 @@ export default function Home() {
       }
       return [...df, ...response] as SuggestedArtist[];
     },
-    staleTime: 1000 * 60 * 60 * 24,
-    gcTime: 1000 * 60 * 60 * 24,
+    staleTime: 1000 * 60 * 5,
+    gcTime: 1000 * 60 * 5,
     retry: 2,
   });
 
@@ -610,7 +610,7 @@ export default function Home() {
         handleIndicatorStyle={{ backgroundColor: "#ccc" }}
         backgroundStyle={{ backgroundColor: themeColorBackground }}
       >
-        <StyledBottomSheetView className="flex-1 bg-background">
+        <StyledView className="flex-1 bg-background">
           <View className="px-4 pt-3 pb-2 flex-row items-center justify-between">
             <View className="flex-row items-center">
               {selectedAlbum && (
@@ -790,7 +790,7 @@ export default function Home() {
               }}
             />
           )}
-        </StyledBottomSheetView>
+        </StyledView>
       </BottomSheetModal>
 
       <BottomSheetModal
@@ -804,7 +804,7 @@ export default function Home() {
         handleIndicatorStyle={{ backgroundColor: "#ccc" }}
         backgroundStyle={{ backgroundColor: themeColorBackground }}
       >
-        <StyledBottomSheetView className="flex-1 bg-background">
+        <StyledView className="flex-1 bg-background">
           <View className="px-4 pt-3 pb-2 flex-row items-center justify-between">
             <Text className="text-xl font-bold text-foreground">Favorites</Text>
             <TouchableOpacity
@@ -835,7 +835,7 @@ export default function Home() {
               }}
             />
           )}
-        </StyledBottomSheetView>
+        </StyledView>
       </BottomSheetModal>
 
       <BottomSheetModal
