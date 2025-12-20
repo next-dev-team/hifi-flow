@@ -35,6 +35,7 @@ import Animated, {
   withTiming,
 } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { Circle, Svg } from "react-native-svg";
 import { withUniwind } from "uniwind";
 import { usePlayer } from "@/contexts/player-context";
 import { losslessAPI } from "@/utils/api";
@@ -80,6 +81,48 @@ const SpectrumBar = ({
         animatedStyle,
       ]}
     />
+  );
+};
+
+const CircularProgress = ({
+  size,
+  strokeWidth,
+  progress,
+}: {
+  size: number;
+  strokeWidth: number;
+  progress: number;
+}) => {
+  const radius = (size - strokeWidth) / 2;
+  const circumference = radius * 2 * Math.PI;
+  const strokeDashoffset = circumference - progress * circumference;
+
+  return (
+    <View
+      style={{ width: size, height: size, transform: [{ rotate: "-90deg" }] }}
+    >
+      <Svg width={size} height={size}>
+        <Circle
+          stroke="rgba(255, 255, 255, 0.14)"
+          fill="none"
+          cx={size / 2}
+          cy={size / 2}
+          r={radius}
+          strokeWidth={strokeWidth}
+        />
+        <Circle
+          stroke="#60a5fa"
+          fill="none"
+          cx={size / 2}
+          cy={size / 2}
+          r={radius}
+          strokeWidth={strokeWidth}
+          strokeDasharray={`${circumference} ${circumference}`}
+          strokeDashoffset={strokeDashoffset}
+          strokeLinecap="round"
+        />
+      </Svg>
+    </View>
   );
 };
 
@@ -376,8 +419,9 @@ export const PlayerBar = () => {
 
   useEffect(() => {
     collapseProgress.value = withSpring(isCollapsed ? 1 : 0, {
-      damping: 20,
-      stiffness: 90,
+      damping: 18,
+      stiffness: 110,
+      mass: 0.8,
     });
   }, [isCollapsed, collapseProgress]);
 
@@ -432,11 +476,11 @@ export const PlayerBar = () => {
     );
 
     return {
-      width: isCollapsed ? (64 as any) : `${width}%`,
+      width: isCollapsed ? (58 as any) : `${width}%`,
       left: `${left}%`,
       marginLeft: marginLeft,
-      maxWidth: isCollapsed ? 64 : 440,
-      height: 64,
+      maxWidth: isCollapsed ? 58 : 440,
+      height: isCollapsed ? 58 : 64,
       transform: [
         { translateX: dragX.value },
         { scale: isDragging.value ? 0.98 : 1 },
@@ -454,7 +498,14 @@ export const PlayerBar = () => {
   const animatedArtworkContainerStyle = useAnimatedStyle(() => {
     return {
       transform: [
-        { scale: interpolate(collapseProgress.value, [0, 1], [1, 1.2]) },
+        {
+          scale: interpolate(
+            collapseProgress.value,
+            [0, 0.5, 1],
+            [1, 1.08, 1],
+            "clamp"
+          ),
+        },
       ],
       marginLeft: interpolate(collapseProgress.value, [0, 1], [4, 0]),
       marginRight: interpolate(collapseProgress.value, [0, 1], [12, 0]),
@@ -463,8 +514,8 @@ export const PlayerBar = () => {
 
   const animatedCardStyle = useAnimatedStyle(() => {
     return {
-      paddingHorizontal: interpolate(collapseProgress.value, [0, 1], [12, 0]),
-      paddingVertical: interpolate(collapseProgress.value, [0, 1], [8, 0]),
+      paddingHorizontal: interpolate(collapseProgress.value, [0, 1], [12, 4]),
+      paddingVertical: interpolate(collapseProgress.value, [0, 1], [8, 4]),
     };
   });
 
@@ -694,6 +745,26 @@ export const PlayerBar = () => {
                       />
                       <Animated.View
                         style={[
+                          collapsedIconStyle,
+                          {
+                            position: "absolute",
+                            top: 0,
+                            left: 0,
+                            right: 0,
+                            bottom: 0,
+                            alignItems: "center",
+                            justifyContent: "center",
+                          },
+                        ]}
+                      >
+                        <CircularProgress
+                          size={52}
+                          strokeWidth={2}
+                          progress={miniProgressRatio}
+                        />
+                      </Animated.View>
+                      <Animated.View
+                        style={[
                           expandedIconStyle,
                           {
                             position: "absolute",
@@ -708,13 +779,21 @@ export const PlayerBar = () => {
                             e.stopPropagation();
                             setIsCollapsed(!isCollapsed);
                           }}
-                          className="bg-blue-500 rounded-full w-5 h-5 items-center justify-center border-2 border-black"
+                          className="bg-blue-500 rounded-full w-5 h-5 items-center justify-center border-2 border-black active:scale-90 transition-transform"
                         >
-                          <Ionicons
-                            name="chevron-back"
-                            size={12}
-                            color="#fff"
-                          />
+                          {({ pressed }) => (
+                            <Animated.View
+                              style={{
+                                transform: [{ scale: pressed ? 0.85 : 1 }],
+                              }}
+                            >
+                              <Ionicons
+                                name="chevron-back"
+                                size={12}
+                                color="#fff"
+                              />
+                            </Animated.View>
+                          )}
                         </Pressable>
                       </Animated.View>
                       <Animated.View
@@ -733,19 +812,56 @@ export const PlayerBar = () => {
                             e.stopPropagation();
                             setIsCollapsed(!isCollapsed);
                           }}
-                          className="bg-blue-500 rounded-full w-5 h-5 items-center justify-center border-2 border-black"
+                          className="bg-blue-500 rounded-full w-5 h-5 items-center justify-center border-2 border-black active:scale-90 transition-transform"
                         >
-                          <Ionicons
-                            name="chevron-forward"
-                            size={12}
-                            color="#fff"
-                          />
+                          {({ pressed }) => (
+                            <Animated.View
+                              style={{
+                                transform: [{ scale: pressed ? 0.85 : 1 }],
+                              }}
+                            >
+                              <Ionicons
+                                name="chevron-forward"
+                                size={12}
+                                color="#fff"
+                              />
+                            </Animated.View>
+                          )}
                         </Pressable>
                       </Animated.View>
                     </View>
                   ) : (
-                    <View className="w-10 h-10 rounded-full bg-default-300 items-center justify-center">
+                    <View
+                      style={{
+                        width: 50,
+                        height: 50,
+                        borderRadius: 25,
+                        backgroundColor: "#525252",
+                        alignItems: "center",
+                        justifyContent: "center",
+                      }}
+                    >
                       <Text style={{ fontSize: 16 }}>🎵</Text>
+                      <Animated.View
+                        style={[
+                          collapsedIconStyle,
+                          {
+                            position: "absolute",
+                            top: 0,
+                            left: 0,
+                            right: 0,
+                            bottom: 0,
+                            alignItems: "center",
+                            justifyContent: "center",
+                          },
+                        ]}
+                      >
+                        <CircularProgress
+                          size={52}
+                          strokeWidth={2}
+                          progress={miniProgressRatio}
+                        />
+                      </Animated.View>
                       <Animated.View
                         style={[
                           expandedIconStyle,
@@ -762,13 +878,21 @@ export const PlayerBar = () => {
                             e.stopPropagation();
                             setIsCollapsed(!isCollapsed);
                           }}
-                          className="bg-blue-500 rounded-full w-5 h-5 items-center justify-center border-2 border-black"
+                          className="bg-blue-500 rounded-full w-5 h-5 items-center justify-center border-2 border-black active:scale-90 transition-transform"
                         >
-                          <Ionicons
-                            name="chevron-back"
-                            size={12}
-                            color="#fff"
-                          />
+                          {({ pressed }) => (
+                            <Animated.View
+                              style={{
+                                transform: [{ scale: pressed ? 0.85 : 1 }],
+                              }}
+                            >
+                              <Ionicons
+                                name="chevron-back"
+                                size={12}
+                                color="#fff"
+                              />
+                            </Animated.View>
+                          )}
                         </Pressable>
                       </Animated.View>
                       <Animated.View
@@ -787,13 +911,21 @@ export const PlayerBar = () => {
                             e.stopPropagation();
                             setIsCollapsed(!isCollapsed);
                           }}
-                          className="bg-blue-500 rounded-full w-5 h-5 items-center justify-center border-2 border-black"
+                          className="bg-blue-500 rounded-full w-5 h-5 items-center justify-center border-2 border-black active:scale-90 transition-transform"
                         >
-                          <Ionicons
-                            name="chevron-forward"
-                            size={12}
-                            color="#fff"
-                          />
+                          {({ pressed }) => (
+                            <Animated.View
+                              style={{
+                                transform: [{ scale: pressed ? 0.85 : 1 }],
+                              }}
+                            >
+                              <Ionicons
+                                name="chevron-forward"
+                                size={12}
+                                color="#fff"
+                              />
+                            </Animated.View>
+                          )}
                         </Pressable>
                       </Animated.View>
                     </View>
