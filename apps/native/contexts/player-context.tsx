@@ -451,8 +451,9 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
   }, []);
 
   const analyzeTrack = useCallback(async (uri: string, requestId: number) => {
+    // If we already have analysis for this track, don't re-analyze
+    // checks are done in the effect
     setIsAnalyzing(true);
-    setAudioAnalysis(null);
     try {
       const result = await extractAudioAnalysis({
         fileUri: uri,
@@ -475,6 +476,26 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
     }
   }, []);
 
+  // Trigger analysis when playback starts to avoid competing for bandwidth during initial load
+  useEffect(() => {
+    if (status?.playing && currentStreamUrl && !audioAnalysis && !isAnalyzing) {
+      const requestId = playRequestIdRef.current;
+      // Small delay to ensure player has established a buffer
+      const timer = setTimeout(() => {
+        if (playRequestIdRef.current === requestId) {
+          void analyzeTrack(currentStreamUrl, requestId);
+        }
+      }, 500);
+      return () => clearTimeout(timer);
+    }
+  }, [
+    status?.playing,
+    currentStreamUrl,
+    audioAnalysis,
+    isAnalyzing,
+    analyzeTrack,
+  ]);
+
   const playSound = useCallback(
     async (track: Track) => {
       playRequestIdRef.current += 1;
@@ -486,6 +507,12 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
         playerRef.current = null;
         setPlayer(null);
       }
+
+      hasPreloadedForCurrentTrackRef.current = false;
+
+      // Reset analysis state immediately
+      setAudioAnalysis(null);
+      setIsAnalyzing(false);
 
       if (playRequestIdRef.current !== requestId) {
         return;
@@ -522,7 +549,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
         }
 
         setCurrentStreamUrl(maybePreloadedUrl);
-        void analyzeTrack(maybePreloadedUrl, requestId);
+        // Analysis will be triggered by the useEffect when playing starts
         player.play();
 
         // Preloading is now handled by the useEffect watching status.playing
@@ -561,24 +588,34 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
       }
 
       setCurrentStreamUrl(streamUrl);
-      void analyzeTrack(streamUrl, requestId);
+      // Analysis will be triggered by the useEffect when playing starts
       player.play();
-
-      void preloadNextForTrack(
-        track,
-        requestId,
-        `${qualityRef.current}|${repeatModeRef.current}|${shuffleEnabledRef.current}|${queueRef.current.length}`
-      );
     },
     [
       volume,
-      analyzeTrack,
+      // analyzeTrack, // Removed from dependency since it's not called directly
       getStreamUrlForTrack,
       getTrackKey,
-      preloadNextForTrack,
       resetPreloadState,
     ]
   );
+
+  // Sequential preloading: Only trigger preloading when the current track has actually started playing
+  useEffect(() => {
+    if (
+      status?.playing &&
+      !hasPreloadedForCurrentTrackRef.current &&
+      currentTrackRef.current
+    ) {
+      hasPreloadedForCurrentTrackRef.current = true;
+      const triggerKey = `${qualityRef.current}|${repeatModeRef.current}|${shuffleEnabledRef.current}|${queueRef.current.length}`;
+      void preloadNextForTrack(
+        currentTrackRef.current,
+        playRequestIdRef.current,
+        triggerKey
+      );
+    }
+  }, [status?.playing, preloadNextForTrack]);
 
   const playTrack = useCallback(
     async (track: Track) => {
