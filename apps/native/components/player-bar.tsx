@@ -533,8 +533,30 @@ export const PlayerBar = () => {
   >("wave");
 
   const dragX = useSharedValue(0);
+  const dragY = useSharedValue(0);
+  const miniPlayerOpacity = useSharedValue(1);
   const isDragging = useSharedValue(false);
   const collapseProgress = useSharedValue(0);
+
+  useEffect(() => {
+    miniPlayerOpacity.value = withTiming(isSheetOpen ? 0 : 1, {
+      duration: 250,
+    });
+    if (!isSheetOpen) {
+      dragX.value = withSpring(0);
+      dragY.value = withSpring(0);
+    }
+  }, [isSheetOpen, miniPlayerOpacity, dragX, dragY]);
+
+  const handleOpenFullPlayer = useCallback(() => {
+    setIsSheetOpen(true);
+    bottomSheetRef.current?.present();
+  }, []);
+
+  const handleCloseFullPlayer = useCallback(() => {
+    setIsSheetOpen(false);
+    bottomSheetRef.current?.dismiss();
+  }, []);
 
   useEffect(() => {
     collapseProgress.value = withSpring(isCollapsed ? 1 : 0, {
@@ -548,35 +570,66 @@ export const PlayerBar = () => {
     return PanResponder.create({
       onStartShouldSetPanResponder: () => true,
       onMoveShouldSetPanResponder: (_, gestureState) => {
-        return Math.abs(gestureState.dx) > 10;
+        return Math.abs(gestureState.dx) > 10 || Math.abs(gestureState.dy) > 10;
       },
       onPanResponderGrant: () => {
         isDragging.value = true;
       },
       onPanResponderMove: (_, gestureState) => {
-        if (!isCollapsed) {
-          dragX.value = Math.min(0, gestureState.dx);
+        if (Math.abs(gestureState.dx) > Math.abs(gestureState.dy)) {
+          // Horizontal dominant - reset Y
+          dragY.value = 0;
+          if (!isCollapsed) {
+            dragX.value = Math.min(0, gestureState.dx);
+          }
+        } else {
+          // Vertical dominant - reset X
+          dragX.value = 0;
+          // Vertical swipe - allow upward movement for feedback
+          dragY.value = Math.min(0, gestureState.dy);
         }
       },
       onPanResponderRelease: (_, gestureState) => {
         isDragging.value = false;
-        if (!isCollapsed && gestureState.dx < -100) {
-          setIsCollapsed(true);
-          dragX.value = withSpring(0);
-        } else {
-          dragX.value = withSpring(0);
+
+        // Vertical swipe up to open full player
+        if (gestureState.dy < -60) {
+          handleOpenFullPlayer();
+          // Continue moving up while fading out for a smoother transition
+          dragY.value = withTiming(-80, { duration: 250 });
         }
+        // Horizontal swipes for mini-player collapse/expand
+        else if (!isCollapsed && gestureState.dx < -80) {
+          setIsCollapsed(true);
+          dragY.value = withSpring(0);
+        } else if (isCollapsed && gestureState.dx > 40) {
+          setIsCollapsed(false);
+          dragY.value = withSpring(0);
+        } else {
+          dragY.value = withSpring(0, {
+            damping: 18,
+            stiffness: 110,
+            mass: 0.8,
+          });
+        }
+
+        dragX.value = withSpring(0, {
+          damping: 18,
+          stiffness: 110,
+          mass: 0.8,
+        });
       },
       onPanResponderTerminate: () => {
         isDragging.value = false;
         dragX.value = withSpring(0);
+        dragY.value = withSpring(0);
       },
     });
-  }, [isCollapsed, dragX, isDragging]);
+  }, [isCollapsed, dragX, dragY, isDragging, handleOpenFullPlayer]);
 
   const animatedMiniPlayerStyle = useAnimatedStyle(() => {
     const isWeb = Platform.OS === "web";
-    const margin = 16;
+    const margin = 6;
     const collapsedWidth = 58;
     const APP_WEB_MAX_WIDTH = 480;
 
@@ -591,8 +644,12 @@ export const PlayerBar = () => {
         left: 0,
         bottom: insets.bottom + 56,
         height: isCollapsed ? 58 : 64,
+        opacity:
+          miniPlayerOpacity.value *
+          interpolate(dragY.value, [-100, 0], [0.5, 1], "clamp"),
         transform: [
           { translateX: dragX.value },
+          { translateY: dragY.value },
           { scale: isDragging.value ? 0.98 : 1 },
         ],
       } as any;
@@ -620,8 +677,12 @@ export const PlayerBar = () => {
       left,
       height: interpolate(collapseProgress.value, [0, 1], [64, 58], "clamp"),
       bottom: insets.bottom + 56,
+      opacity:
+        miniPlayerOpacity.value *
+        interpolate(dragY.value, [-100, 0], [0.5, 1], "clamp"),
       transform: [
         { translateX: dragX.value },
+        { translateY: dragY.value },
         { scale: isDragging.value ? 0.98 : 1 },
       ],
     } as any;
@@ -646,8 +707,8 @@ export const PlayerBar = () => {
           ),
         },
       ],
-      marginLeft: interpolate(collapseProgress.value, [0, 1], [4, 0]),
-      marginRight: interpolate(collapseProgress.value, [0, 1], [12, 0]),
+      marginLeft: interpolate(collapseProgress.value, [0, 1], [30, 0]),
+      marginRight: interpolate(collapseProgress.value, [0, 1], [16, 0]),
     };
   });
 
@@ -690,14 +751,6 @@ export const PlayerBar = () => {
     duration: 320,
     easing: Easing.bezier(0.2, 0.9, 0.2, 1),
   });
-
-  const handleOpenFullPlayer = () => {
-    bottomSheetRef.current?.present();
-  };
-
-  const handleCloseFullPlayer = () => {
-    bottomSheetRef.current?.dismiss();
-  };
 
   const renderBackdrop = useMemo(() => {
     return (props: BottomSheetBackdropProps) => (
@@ -840,7 +893,7 @@ export const PlayerBar = () => {
               elevation: 99999,
             },
             animatedMiniPlayerStyle,
-            isSheetOpen ? { opacity: 0, pointerEvents: "none" } : null,
+            isSheetOpen ? { pointerEvents: "none" } : null,
           ]}
           {...panResponderMini.panHandlers}
         >
@@ -998,7 +1051,7 @@ export const PlayerBar = () => {
                         expandedIconStyle,
                         {
                           position: "absolute",
-                          left: -6,
+                          left: -26,
                           top: "50%",
                           marginTop: -10,
                         },
@@ -1097,7 +1150,7 @@ export const PlayerBar = () => {
                         expandedIconStyle,
                         {
                           position: "absolute",
-                          left: -6,
+                          left: -26,
                           top: "50%",
                           marginTop: -10,
                         },
@@ -1167,16 +1220,18 @@ export const PlayerBar = () => {
                 style={animatedContentStyle}
                 pointerEvents={isCollapsed ? "none" : "auto"}
               >
-                <View className="flex-1 mr-2 items-center">
+                <View className="flex-1 mr-2 items-start">
                   <Text
-                    className="text-white font-bold text-sm text-center"
+                    className="text-white font-bold text-sm text-left select-none"
                     numberOfLines={1}
+                    selectable={false}
                   >
                     {currentTrack.title}
                   </Text>
                   <Text
-                    className="text-white/70 text-xs text-center"
+                    className="text-white/70 text-xs text-left select-none"
                     numberOfLines={1}
+                    selectable={false}
                   >
                     {currentTrack.artist}
                   </Text>
@@ -1346,14 +1401,24 @@ export const PlayerBar = () => {
               </View>
 
               <View className="items-center px-8 mb-4">
-                <Text className="text-xs text-gray-300 mb-2">Now Playing</Text>
                 <Text
-                  className="text-2xl font-bold text-white mb-1"
+                  className="text-xs text-gray-300 mb-2 select-none"
+                  selectable={false}
+                >
+                  Now Playing
+                </Text>
+                <Text
+                  className="text-2xl font-bold text-white mb-1 select-none"
                   numberOfLines={1}
+                  selectable={false}
                 >
                   {currentTrack.title}
                 </Text>
-                <Text className="text-gray-300" numberOfLines={1}>
+                <Text
+                  className="text-gray-300 select-none"
+                  numberOfLines={1}
+                  selectable={false}
+                >
                   {currentTrack.artist}
                 </Text>
               </View>
@@ -1384,14 +1449,20 @@ export const PlayerBar = () => {
 
                 <View className="w-full px-10 mt-4">
                   <View className="flex-row justify-between mb-1">
-                    <Text className="text-[11px] text-gray-400">
+                    <Text
+                      className="text-[11px] text-gray-400 select-none"
+                      selectable={false}
+                    >
                       {formatMillis(
                         isScrubbing
                           ? scrubMillis ?? positionMillis
                           : positionMillis
                       )}
                     </Text>
-                    <Text className="text-[11px] text-gray-400">
+                    <Text
+                      className="text-[11px] text-gray-400 select-none"
+                      selectable={false}
+                    >
                       {durationMillis > 0
                         ? formatMillis(durationMillis)
                         : "--:--"}
