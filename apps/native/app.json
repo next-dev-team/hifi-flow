@@ -15,7 +15,17 @@
     },
     "name": "hifi-flow",
     "slug": "hifi-flow",
-    "plugins": ["expo-font"],
+    "plugins": [
+      "expo-font",
+      [
+        "expo-speech-recognition",
+        {
+          "microphonePermission": "Allow HiFi Flow to use the microphone for voice search.",
+          "speechRecognitionPermission": "Allow HiFi Flow to use speech recognition to find your music.",
+          "androidSpeechServicePackages": ["com.google.android.googlequicksearchbox"]
+        }
+      ]
+    ],
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true

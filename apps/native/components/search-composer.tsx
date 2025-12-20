@@ -1,10 +1,22 @@
 import { Ionicons } from "@expo/vector-icons";
+import {
+  ExpoSpeechRecognitionModule,
+  useSpeechRecognitionEvent,
+} from "expo-speech-recognition";
 import { useThemeColor } from "heroui-native";
-import { Platform, TextInput, TouchableOpacity, View } from "react-native";
+import { useCallback, useRef, useState } from "react";
+import {
+  Platform,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
+} from "react-native";
 import { withUniwind } from "uniwind";
 
 const StyledView = withUniwind(View);
 const StyledTextInput = withUniwind(TextInput);
+const StyledText = withUniwind(Text);
 
 interface SearchComposerProps {
   value: string;
@@ -14,9 +26,19 @@ interface SearchComposerProps {
   multiline?: boolean;
 }
 
+interface LanguageOption {
+  label: string;
+  value: string;
+}
+
+const LANGUAGES: LanguageOption[] = [
+  { label: "EN", value: "en-US" },
+  { label: "KH", value: "km-KH" },
+];
+
 /**
  * A highly styled search input component matching the "Message Copilot" UI.
- * Features nested borders and soft shadows for a modern, glass-like look.
+ * Features nested borders, soft shadows, and integrated voice search with language support.
  */
 export function SearchComposer({
   value,
@@ -26,23 +48,166 @@ export function SearchComposer({
   multiline = false,
 }: SearchComposerProps) {
   const themeColorMuted = useThemeColor("muted");
+  const [isListening, setIsListening] = useState(false);
+  const [selectedLang, setSelectedLang] = useState(LANGUAGES[0]);
+  const selectedLangRef = useRef(selectedLang);
+  selectedLangRef.current = selectedLang;
+
+  const [status, setStatus] = useState<"idle" | "listening" | "error">("idle");
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  // Auto-stop timer
+  const silenceTimerRef = useRef<any>(null);
+  const SILENCE_DEBOUNCE_MS = 2000; // 2 seconds of silence to auto-stop
+
+  const stopRecording = useCallback(() => {
+    try {
+      ExpoSpeechRecognitionModule.stop();
+    } catch (e) {
+      // Ignore if already stopped
+    }
+    if (silenceTimerRef.current) {
+      clearTimeout(silenceTimerRef.current);
+      silenceTimerRef.current = null;
+    }
+  }, []);
+
+  // Toggle Language
+  const toggleLanguage = useCallback(() => {
+    const currentIndex = LANGUAGES.findIndex(
+      (l) => l.value === selectedLang.value
+    );
+    const nextIndex = (currentIndex + 1) % LANGUAGES.length;
+    setSelectedLang(LANGUAGES[nextIndex]);
+  }, [selectedLang]);
+
+  // Voice Search Event Listeners
+  useSpeechRecognitionEvent("start", () => {
+    setIsListening(true);
+    setStatus("listening");
+    setErrorMessage(null);
+  });
+
+  useSpeechRecognitionEvent("end", () => {
+    setIsListening(false);
+    setStatus((prev) => (prev === "error" ? "error" : "idle"));
+    if (silenceTimerRef.current) {
+      clearTimeout(silenceTimerRef.current);
+      silenceTimerRef.current = null;
+    }
+  });
+
+  useSpeechRecognitionEvent("result", (event) => {
+    const transcript = event.results.map((r) => r.transcript).join(" ");
+    if (transcript) {
+      onChangeText(transcript);
+
+      // Reset silence timer on every new result
+      if (silenceTimerRef.current) {
+        clearTimeout(silenceTimerRef.current);
+      }
+
+      silenceTimerRef.current = setTimeout(() => {
+        stopRecording();
+      }, SILENCE_DEBOUNCE_MS);
+    }
+  });
+
+  useSpeechRecognitionEvent("error", (event) => {
+    console.error("Speech recognition error:", event.error, event.message);
+    setIsListening(false);
+    setStatus("error");
+
+    if (silenceTimerRef.current) {
+      clearTimeout(silenceTimerRef.current);
+      silenceTimerRef.current = null;
+    }
+
+    let msg = event.message || event.error || "Error";
+
+    // Better error messages for Web/General
+    if (event.error === "network") {
+      msg = Platform.OS === "web" ? "Network/Browser Error" : "Network Error";
+    } else if (
+      event.error === "not-allowed" ||
+      event.error === "service-not-allowed"
+    ) {
+      msg = "Permission Denied";
+    } else if (event.error === "no-speech") {
+      msg = "No speech detected";
+    }
+
+    setErrorMessage(msg);
+
+    setTimeout(() => {
+      setStatus("idle");
+      setErrorMessage(null);
+    }, 3000);
+  });
+
+  const handleVoiceSearch = useCallback(async () => {
+    if (isListening) {
+      stopRecording();
+      return;
+    }
+
+    // Check availability first (especially for Web)
+    const isAvailable =
+      await ExpoSpeechRecognitionModule.isRecognitionAvailable();
+    if (!isAvailable) {
+      setStatus("error");
+      setErrorMessage(
+        Platform.OS === "web"
+          ? "Not supported in this browser"
+          : "Speech unavailable"
+      );
+      setTimeout(() => {
+        setStatus("idle");
+        setErrorMessage(null);
+      }, 3000);
+      return;
+    }
+
+    const result = await ExpoSpeechRecognitionModule.requestPermissionsAsync();
+    if (!result.granted) {
+      setStatus("error");
+      setErrorMessage("Permissions needed");
+      setTimeout(() => {
+        setStatus("idle");
+        setErrorMessage(null);
+      }, 3000);
+      return;
+    }
+
+    try {
+      setStatus("listening");
+      ExpoSpeechRecognitionModule.start({
+        lang: selectedLangRef.current.value,
+        interimResults: true,
+        continuous: true,
+        androidIntentOptions: {
+          EXTRA_LANGUAGE_MODEL: "web_search",
+        },
+      });
+    } catch (e) {
+      setIsListening(false);
+      setStatus("error");
+      setErrorMessage("Failed to start");
+      setTimeout(() => {
+        setStatus("idle");
+        setErrorMessage(null);
+      }, 3000);
+    }
+  }, [isListening, stopRecording]);
 
   return (
     <StyledView className={`relative ${className}`}>
-      {/* Outer Layer: Gradient background and soft border shadow */}
       <StyledView
-        className="relative max-h-full w-full bg-gradient-to-b from-default-400/5 to-default-400/8 dark:from-default-200/65 dark:to-default-200/65 p-1.5 rounded-[32px]"
-        style={
-          {
-            boxShadow: "rgb(255, 255, 255) 0px 0px 0px 1px inset",
-          } as any
-        }
+        className="relative max-h-full w-full bg-linear-to-b from-default-400/5 to-default-400/8 dark:from-default-200/65 dark:to-default-200/65 p-1.5 rounded-[32px]"
+        style={{ boxShadow: "rgb(255, 255, 255) 0px 0px 0px 1px inset" } as any}
       >
-        {/* Middle Layer: Glass-like background */}
         <StyledView className="bg-white/90 dark:bg-background/45 rounded-[26px]">
-          {/* Inner Layer: Main Container with Border */}
           <StyledView className="relative flex-col overflow-hidden w-auto rounded-[24px] border-2 border-transparent">
-            {/* Content Area */}
             <StyledView className="flex-row items-center min-h-[44px] w-auto px-4">
               <StyledView className="justify-center mr-2">
                 <Ionicons
@@ -52,17 +217,26 @@ export function SearchComposer({
                   className="opacity-60"
                 />
               </StyledView>
-
               <StyledView className="flex-1 justify-center">
                 <StyledTextInput
                   className="w-full bg-transparent text-foreground text-[16px] py-2"
-                  style={{
-                    minHeight: 44,
-                    textAlignVertical: "center",
-                    includeFontPadding: false,
-                  }}
-                  placeholder={placeholder}
-                  placeholderTextColor={themeColorMuted}
+                  style={
+                    {
+                      minHeight: 44,
+                      textAlignVertical: "center",
+                      includeFontPadding: false,
+                    } as any
+                  }
+                  placeholder={
+                    status === "listening"
+                      ? "Listening..."
+                      : status === "error"
+                      ? errorMessage || "Error"
+                      : placeholder
+                  }
+                  placeholderTextColor={
+                    status === "error" ? "#FF3B30" : themeColorMuted
+                  }
                   value={value}
                   onChangeText={onChangeText}
                   returnKeyType="search"
@@ -74,20 +248,38 @@ export function SearchComposer({
                 />
               </StyledView>
 
-              {/* Voice Search Icon */}
-              <StyledView className="justify-center ml-2">
+              {/* Language Toggle Button */}
+              <StyledView className="mr-1">
                 <TouchableOpacity
-                  onPress={() => {
-                    // Placeholder for Voice Search (Google feature)
-                    console.log("Voice search triggered");
-                  }}
+                  onPress={toggleLanguage}
+                  className="px-3 py-1.5 rounded-full bg-default-100/50 flex-row items-center justify-center"
                   activeOpacity={0.7}
                 >
+                  <StyledText className="text-[12px] font-bold text-foreground opacity-70">
+                    {selectedLang.label}
+                  </StyledText>
+                </TouchableOpacity>
+              </StyledView>
+
+              <StyledView className="justify-center">
+                <TouchableOpacity
+                  onPress={handleVoiceSearch}
+                  activeOpacity={0.7}
+                  className={`p-2 rounded-full ${
+                    isListening ? "bg-primary/20" : ""
+                  }`}
+                >
                   <Ionicons
-                    name="mic"
+                    name={isListening ? "mic" : "mic-outline"}
                     size={20}
-                    color={themeColorMuted}
-                    className="opacity-80"
+                    color={
+                      status === "error"
+                        ? "#FF3B30"
+                        : isListening
+                        ? "#007AFF"
+                        : themeColorMuted
+                    }
+                    className={isListening ? "opacity-100" : "opacity-80"}
                   />
                 </TouchableOpacity>
               </StyledView>
