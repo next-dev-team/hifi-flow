@@ -46,37 +46,69 @@ const clamp = (value: number, min: number, max: number) => {
   return Math.min(max, Math.max(min, value));
 };
 
-const BG_SPECTRUM_BARS = Array.from({ length: 70 }, (_, index) => {
-  return { id: `bg-spectrum-${index}`, index };
-});
-
 const SpectrumBar = ({
   index,
   phase,
   active,
   multiplier = 1,
+  barWidth = 4,
+  variant = "wave",
+  totalBars,
 }: {
   index: number;
   phase: SharedValue<number>;
   active: boolean;
   multiplier?: number;
+  barWidth?: number;
+  variant?: "wave" | "symmetric" | "pulse" | "digital";
+  totalBars: number;
 }) => {
   const animatedStyle = useAnimatedStyle(() => {
     const base = active ? 0.25 : 0.06;
     const amp = active ? 0.75 : 0.12;
-    const value = Math.abs(Math.sin(phase.value + index * 0.55));
+    let value = 0;
+
+    switch (variant) {
+      case "symmetric": {
+        const center = totalBars / 2;
+        const dist = Math.abs(index - center);
+        value = Math.abs(Math.sin(phase.value - dist * 0.4));
+        break;
+      }
+      case "pulse": {
+        // Rhythmic pulsing with some spatial variation
+        const beat = Math.abs(Math.sin(phase.value * 1.5));
+        const spatial = Math.abs(Math.sin(index * 0.3 + phase.value * 0.5));
+        value = beat * 0.7 + spatial * 0.3;
+        break;
+      }
+      case "digital": {
+        // High frequency pseudo-random look
+        // We vary the speed slightly per bar to create a chaotic equalizer effect
+        const speed = 1 + (index % 7) * 0.2;
+        value = Math.abs(Math.sin(phase.value * speed + index));
+        break;
+      }
+      case "wave":
+      default: {
+        // Default traveling wave
+        value = Math.abs(Math.sin(phase.value + index * 0.55));
+        break;
+      }
+    }
+
     const height = (3 + (base + amp * value) * 14) * multiplier;
     return {
       height,
       opacity: active ? 0.7 : 0.25,
     };
-  }, [active, index, phase, multiplier]);
+  }, [active, index, phase, multiplier, variant, totalBars]);
 
   return (
     <Animated.View
       style={[
         {
-          width: 4,
+          width: barWidth,
           borderRadius: 999,
           backgroundColor: "rgba(255,255,255,0.9)",
         },
@@ -86,7 +118,27 @@ const SpectrumBar = ({
   );
 };
 
-const BackgroundSpectrum = ({ isPlaying }: { isPlaying: boolean }) => {
+const SpectrumVisualizer = ({
+  isPlaying,
+  barCount,
+  multiplier,
+  opacity,
+  containerStyle,
+  barWidth = 4,
+  variant = "wave",
+}: {
+  isPlaying: boolean;
+  barCount: number;
+  multiplier: number;
+  opacity: number;
+  containerStyle?: any;
+  barWidth?: number;
+  variant?: "wave" | "symmetric" | "pulse" | "digital";
+}) => {
+  const bars = useMemo(
+    () => Array.from({ length: barCount }, (_, i) => ({ id: i, index: i })),
+    [barCount]
+  );
   const phase = useSharedValue(0);
 
   useEffect(() => {
@@ -108,26 +160,32 @@ const BackgroundSpectrum = ({ isPlaying }: { isPlaying: boolean }) => {
   return (
     <View
       pointerEvents="none"
-      style={{
-        position: "absolute",
-        left: 0,
-        right: 0,
-        bottom: 0,
-        top: 0,
-        flexDirection: "row",
-        alignItems: "center",
-        justifyContent: "space-between",
-        paddingHorizontal: 0,
-        opacity: 0.25,
-      }}
+      style={[
+        {
+          position: "absolute",
+          left: 0,
+          right: 0,
+          bottom: 0,
+          top: 0,
+          flexDirection: "row",
+          alignItems: "center",
+          justifyContent: "space-between",
+          paddingHorizontal: 0,
+          opacity,
+        },
+        containerStyle,
+      ]}
     >
-      {BG_SPECTRUM_BARS.map((bar) => (
+      {bars.map((bar) => (
         <SpectrumBar
           key={bar.id}
           index={bar.index}
           phase={phase}
           active={isPlaying}
-          multiplier={24}
+          multiplier={multiplier}
+          barWidth={barWidth}
+          variant={variant}
+          totalBars={barCount}
         />
       ))}
     </View>
@@ -419,6 +477,9 @@ export const PlayerBar = () => {
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [scrubMillis, setScrubMillis] = useState<number | null>(null);
   const [isScrubbing, setIsScrubbing] = useState(false);
+  const [spectrumVariant, setSpectrumVariant] = useState<
+    "wave" | "symmetric" | "pulse" | "digital"
+  >("wave");
 
   const dragX = useSharedValue(0);
   const isDragging = useSharedValue(false);
@@ -708,6 +769,17 @@ export const PlayerBar = () => {
                     left: 0,
                     right: 0,
                     bottom: 0,
+                  }}
+                />
+                <SpectrumVisualizer
+                  isPlaying={isPlaying}
+                  barCount={30}
+                  multiplier={3}
+                  opacity={0.15}
+                  barWidth={3}
+                  variant={spectrumVariant}
+                  containerStyle={{
+                    paddingHorizontal: 8,
                   }}
                 />
                 <Animated.View
@@ -1052,7 +1124,14 @@ export const PlayerBar = () => {
         }}
       >
         <StyledBottomSheetView className="flex-1 rounded-t-[24px] overflow-hidden">
-          <BackgroundSpectrum isPlaying={isPlaying} />
+          <SpectrumVisualizer
+            isPlaying={isPlaying}
+            barCount={70}
+            multiplier={24}
+            opacity={0.25}
+            barWidth={4}
+            variant={spectrumVariant}
+          />
           <View className="flex-1 max-w-md w-full mx-auto relative">
             <View
               className="flex-1 items-center justify-between pb-10"
@@ -1068,7 +1147,33 @@ export const PlayerBar = () => {
                     />
                   )}
                 </Pressable>
-                <View className="w-7" />
+                <Pressable
+                  className="w-7 items-center justify-center"
+                  onPress={() =>
+                    setSpectrumVariant((prev) => {
+                      if (prev === "wave") return "symmetric";
+                      if (prev === "symmetric") return "pulse";
+                      if (prev === "pulse") return "digital";
+                      return "wave";
+                    })
+                  }
+                >
+                  {({ pressed }) => (
+                    <Ionicons
+                      name={
+                        spectrumVariant === "wave"
+                          ? "water-outline"
+                          : spectrumVariant === "symmetric"
+                          ? "code-working-outline"
+                          : spectrumVariant === "pulse"
+                          ? "pulse-outline"
+                          : "stats-chart-outline"
+                      }
+                      size={22}
+                      color={pressed ? "#ef4444" : "#fff"}
+                    />
+                  )}
+                </Pressable>
                 <Pressable
                   className="w-7 items-end"
                   onPress={() => void toggleCurrentFavorite(resolvedArtwork)}
