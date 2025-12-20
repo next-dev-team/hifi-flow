@@ -11,7 +11,6 @@ const StyledSafeAreaView = withUniwind(SafeAreaView);
 const StyledView = withUniwind(View);
 const StyledText = withUniwind(Text);
 
-
 export default function Explore() {
   const { playQueue } = usePlayer();
   const { data, isLoading, error } = useSearchSearchGet({ s: "trending" });
@@ -52,10 +51,7 @@ export default function Explore() {
       return {
         id,
         title: item.title || item.name || "Unknown Title",
-        artist:
-          resolveName(item.artist) ||
-          resolveName(item.author) ||
-          "Unknown Artist",
+        artist: "Unknown Artist",
         artwork: item.thumbnail?.url || item.thumbnails?.[0]?.url || item.image,
         url: item.url || `https://www.youtube.com/watch?v=${id}`,
       };

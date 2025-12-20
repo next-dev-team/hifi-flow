@@ -418,15 +418,30 @@ export const PlayerBar = () => {
       [92, 20],
       "clamp"
     );
+    const left = interpolate(
+      collapseProgress.value,
+      [0, 1],
+      [Platform.OS === "web" ? 50 : 4, 4],
+      "clamp"
+    );
+    const marginLeft = interpolate(
+      collapseProgress.value,
+      [0, 1],
+      [Platform.OS === "web" ? -220 : 0, 0],
+      "clamp"
+    );
+
     return {
-      width: `${width}%`,
-      maxWidth: isCollapsed ? 76 : 440,
-      height: withTiming(isCollapsed ? 76 : 64, { duration: 400 }),
+      width: isCollapsed ? (64 as any) : `${width}%`,
+      left: `${left}%`,
+      marginLeft: marginLeft,
+      maxWidth: isCollapsed ? 64 : 440,
+      height: 64,
       transform: [
         { translateX: dragX.value },
         { scale: isDragging.value ? 0.98 : 1 },
       ],
-    };
+    } as any;
   });
 
   const animatedContentStyle = useAnimatedStyle(() => {
