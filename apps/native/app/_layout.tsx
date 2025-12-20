@@ -57,9 +57,9 @@ export default function Layout() {
                       <View style={appShellStyle}>
                         <StackLayout />
                         <PlayerBar />
+                        <PortalHost name="PlayerBarHost" />
                       </View>
                     </View>
-                    <PortalHost name="PlayerBarHost" />
                   </BottomSheetModalProvider>
                 </PlayerProvider>
               </HeroUINativeProvider>

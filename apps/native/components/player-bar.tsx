@@ -15,6 +15,7 @@ import {
   Image,
   ImageBackground,
   PanResponder,
+  Platform,
   Pressable,
   Text,
   TouchableOpacity,
@@ -23,10 +24,12 @@ import {
 import Animated, {
   cancelAnimation,
   Easing,
+  interpolate,
   type SharedValue,
   useAnimatedStyle,
   useSharedValue,
   withRepeat,
+  withSpring,
   withTiming,
 } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -361,8 +364,81 @@ export const PlayerBar = () => {
     undefined
   );
   const [isSheetOpen, setIsSheetOpen] = useState(false);
+  const [isCollapsed, setIsCollapsed] = useState(false);
   const [scrubMillis, setScrubMillis] = useState<number | null>(null);
   const [isScrubbing, setIsScrubbing] = useState(false);
+
+  const dragX = useSharedValue(0);
+  const isDragging = useSharedValue(false);
+  const collapseProgress = useSharedValue(0);
+
+  useEffect(() => {
+    collapseProgress.value = withSpring(isCollapsed ? 1 : 0, {
+      damping: 20,
+      stiffness: 90,
+    });
+  }, [isCollapsed, collapseProgress]);
+
+  const panResponderMini = useMemo(() => {
+    return PanResponder.create({
+      onStartShouldSetPanResponder: () => true,
+      onMoveShouldSetPanResponder: (_, gestureState) => {
+        return Math.abs(gestureState.dx) > 10;
+      },
+      onPanResponderGrant: () => {
+        isDragging.value = true;
+      },
+      onPanResponderMove: (_, gestureState) => {
+        if (!isCollapsed) {
+          dragX.value = Math.min(0, gestureState.dx);
+        }
+      },
+      onPanResponderRelease: (_, gestureState) => {
+        isDragging.value = false;
+        if (!isCollapsed && gestureState.dx < -100) {
+          setIsCollapsed(true);
+          dragX.value = withSpring(0);
+        } else {
+          dragX.value = withSpring(0);
+        }
+      },
+      onPanResponderTerminate: () => {
+        isDragging.value = false;
+        dragX.value = withSpring(0);
+      },
+    });
+  }, [isCollapsed, dragX, isDragging]);
+
+  const animatedMiniPlayerStyle = useAnimatedStyle(() => {
+    const width = interpolate(
+      collapseProgress.value,
+      [0, 1],
+      [92, 20],
+      "clamp"
+    );
+    return {
+      width: `${width}%`,
+      maxWidth: isCollapsed ? 76 : 440,
+      height: withTiming(isCollapsed ? 76 : 64, { duration: 400 }),
+      transform: [
+        { translateX: dragX.value },
+        { scale: isDragging.value ? 0.98 : 1 },
+      ],
+    };
+  });
+
+  const animatedContentStyle = useAnimatedStyle(() => {
+    return {
+      opacity: 1 - collapseProgress.value,
+      transform: [{ scale: 1 - collapseProgress.value * 0.2 }],
+    };
+  });
+
+  const animatedArtworkContainerStyle = useAnimatedStyle(() => {
+    return {
+      transform: [{ scale: 1 + collapseProgress.value * 0.1 }],
+    };
+  });
 
   const formatMillis = (value: number) => {
     const seconds = Math.max(0, Math.floor(value / 1000));
@@ -457,117 +533,207 @@ export const PlayerBar = () => {
     <>
       {isSheetOpen ? null : (
         <Portal hostName="PlayerBarHost">
-          <View
-            className="absolute left-0 right-0 px-4"
-            style={{
-              bottom: insets.bottom + 56,
-              zIndex: 99999,
-              elevation: 99999,
-            }}
+          <Animated.View
+            className="absolute"
+            style={[
+              {
+                bottom: insets.bottom + 56,
+                zIndex: 99999,
+                elevation: 99999,
+                alignSelf: "center",
+              },
+              animatedMiniPlayerStyle,
+            ]}
+            {...panResponderMini.panHandlers}
           >
-            <Pressable onPress={handleOpenFullPlayer}>
-              <Card className="flex-row items-center px-3 py-2 bg-black/95 border border-white/10 relative overflow-hidden rounded-full h-16 shadow-2xl">
-                <View
-                  style={{
-                    position: "absolute",
-                    left: 0,
-                    right: 0,
-                    bottom: 0,
-                    height: 2,
-                    backgroundColor: "rgba(255,255,255,0.15)",
-                  }}
-                />
-                <View
-                  style={{
-                    position: "absolute",
-                    left: 0,
-                    bottom: 0,
-                    height: 2,
-                    width: `${miniProgressRatio * 100}%`,
-                    backgroundColor: "#60a5fa",
-                  }}
-                />
-                {resolvedArtwork ? (
-                  <View className="ml-1 mr-3">
-                    <SpinningCover
-                      uri={resolvedArtwork}
-                      size={38}
-                      isPlaying={isPlaying}
+            <Pressable
+              onPress={() => {
+                if (isCollapsed) {
+                  setIsCollapsed(false);
+                } else {
+                  handleOpenFullPlayer();
+                }
+              }}
+              onLongPress={() => setIsCollapsed(!isCollapsed)}
+              delayLongPress={300}
+            >
+              <Card
+                className={`flex-row items-center bg-black/95 border border-white/10 relative overflow-hidden rounded-full shadow-2xl ${
+                  isCollapsed ? "justify-center px-0" : "px-3 py-2"
+                }`}
+                style={{ height: "100%" }}
+              >
+                {!isCollapsed && (
+                  <>
+                    <View
+                      style={{
+                        position: "absolute",
+                        left: 0,
+                        right: 0,
+                        bottom: 0,
+                        height: 2,
+                        backgroundColor: "rgba(255,255,255,0.15)",
+                      }}
                     />
-                  </View>
-                ) : (
-                  <View className="w-10 h-10 rounded-full ml-1 mr-3 bg-default-300 items-center justify-center">
-                    <Text>🎵</Text>
-                  </View>
+                    <View
+                      style={{
+                        position: "absolute",
+                        left: 0,
+                        bottom: 0,
+                        height: 2,
+                        width: `${miniProgressRatio * 100}%`,
+                        backgroundColor: "#60a5fa",
+                      }}
+                    />
+                  </>
                 )}
 
-                <View className="flex-1 mr-2">
-                  <Text
-                    className="text-white font-bold text-sm"
-                    numberOfLines={1}
-                  >
-                    {currentTrack.title}
-                  </Text>
-                  <Text className="text-white/70 text-xs" numberOfLines={1}>
-                    {currentTrack.artist}
-                  </Text>
-                </View>
-
-                <TouchableOpacity
-                  onPress={(e) => {
-                    e.stopPropagation();
-                    playPrevious();
-                  }}
-                  className="p-2"
+                <Animated.View
+                  className={isCollapsed ? "" : "ml-1 mr-3"}
+                  style={animatedArtworkContainerStyle}
                 >
-                  <Ionicons name="play-skip-back" size={20} color="#fff" />
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                  onPress={(e) => {
-                    e.stopPropagation();
-                    (isPlaying ? pauseTrack : resumeTrack)();
-                  }}
-                  className="p-2"
-                  disabled={isLoading}
-                >
-                  {isLoading ? (
-                    <ActivityIndicator size="small" color="#fff" />
+                  {resolvedArtwork ? (
+                    <View>
+                      <SpinningCover
+                        uri={resolvedArtwork}
+                        size={isCollapsed ? 46 : 38}
+                        isPlaying={isPlaying}
+                      />
+                      <Pressable
+                        onPress={(e) => {
+                          e.stopPropagation();
+                          setIsCollapsed(!isCollapsed);
+                        }}
+                        className="absolute left-1/2 -top-1 -translate-x-1/2 bg-blue-500 rounded-full w-5 h-5 items-center justify-center border-2 border-black"
+                      >
+                        <Ionicons
+                          name={isCollapsed ? "chevron-down" : "chevron-up"}
+                          size={12}
+                          color="#fff"
+                        />
+                      </Pressable>
+                    </View>
                   ) : (
-                    <Ionicons
-                      name={isPlaying ? "pause" : "play"}
-                      size={24}
-                      color="#fff"
-                    />
+                    <View
+                      className={`${
+                        isCollapsed ? "w-14 h-14" : "w-10 h-10"
+                      } rounded-full bg-default-300 items-center justify-center`}
+                    >
+                      <Text style={{ fontSize: isCollapsed ? 20 : 16 }}>
+                        🎵
+                      </Text>
+                      <Pressable
+                        onPress={(e) => {
+                          e.stopPropagation();
+                          setIsCollapsed(!isCollapsed);
+                        }}
+                        className="absolute left-1/2 -top-1 -translate-x-1/2 bg-blue-500 rounded-full w-5 h-5 items-center justify-center border-2 border-black"
+                      >
+                        <Ionicons
+                          name={isCollapsed ? "chevron-down" : "chevron-up"}
+                          size={12}
+                          color="#fff"
+                        />
+                      </Pressable>
+                    </View>
                   )}
-                </TouchableOpacity>
+                </Animated.View>
 
-                <TouchableOpacity
-                  onPress={(e) => {
-                    e.stopPropagation();
-                    playNext();
-                  }}
-                  className="p-2"
-                >
-                  <Ionicons name="play-skip-forward" size={20} color="#fff" />
-                </TouchableOpacity>
+                {!isCollapsed && (
+                  <Animated.View
+                    className="flex-1 flex-row items-center"
+                    style={animatedContentStyle}
+                  >
+                    <View className="flex-1 mr-2 items-center">
+                      <Text
+                        className="text-white font-bold text-sm text-center"
+                        numberOfLines={1}
+                      >
+                        {currentTrack.title}
+                      </Text>
+                      <Text
+                        className="text-white/70 text-xs text-center"
+                        numberOfLines={1}
+                      >
+                        {currentTrack.artist}
+                      </Text>
+                    </View>
 
-                <TouchableOpacity
-                  onPress={(e) => {
-                    e.stopPropagation();
-                    void toggleCurrentFavorite(resolvedArtwork);
-                  }}
-                  className="p-2 mr-1"
-                >
-                  <Ionicons
-                    name={isCurrentFavorited ? "heart" : "heart-outline"}
-                    size={20}
-                    color="#fff"
-                  />
-                </TouchableOpacity>
+                    <Pressable
+                      onPress={(e) => {
+                        e.stopPropagation();
+                        playPrevious();
+                      }}
+                      className="p-2"
+                    >
+                      {({ pressed }) => (
+                        <Ionicons
+                          name="play-skip-back"
+                          size={20}
+                          color={pressed ? "#ef4444" : "#fff"}
+                        />
+                      )}
+                    </Pressable>
+
+                    <Pressable
+                      onPress={(e) => {
+                        e.stopPropagation();
+                        (isPlaying ? pauseTrack : resumeTrack)();
+                      }}
+                      className="p-2"
+                      disabled={isLoading}
+                    >
+                      {({ pressed }) =>
+                        isLoading ? (
+                          <ActivityIndicator size="small" color="#fff" />
+                        ) : (
+                          <Ionicons
+                            name={isPlaying ? "pause" : "play"}
+                            size={24}
+                            color={pressed ? "#ef4444" : "#fff"}
+                          />
+                        )
+                      }
+                    </Pressable>
+
+                    <Pressable
+                      onPress={(e) => {
+                        e.stopPropagation();
+                        playNext();
+                      }}
+                      className="p-2"
+                    >
+                      {({ pressed }) => (
+                        <Ionicons
+                          name="play-skip-forward"
+                          size={20}
+                          color={pressed ? "#ef4444" : "#fff"}
+                        />
+                      )}
+                    </Pressable>
+
+                    <Pressable
+                      onPress={(e) => {
+                        e.stopPropagation();
+                        void toggleCurrentFavorite(resolvedArtwork);
+                      }}
+                      className="p-2 mr-1"
+                    >
+                      {({ pressed }) => (
+                        <Ionicons
+                          name={isCurrentFavorited ? "heart" : "heart-outline"}
+                          size={20}
+                          color={
+                            isCurrentFavorited || pressed ? "#ef4444" : "#fff"
+                          }
+                        />
+                      )}
+                    </Pressable>
+                  </Animated.View>
+                )}
               </Card>
             </Pressable>
-          </View>
+          </Animated.View>
         </Portal>
       )}
       <BottomSheetModal
@@ -582,6 +748,15 @@ export const PlayerBar = () => {
         onDismiss={() => setIsSheetOpen(false)}
         handleIndicatorStyle={{ backgroundColor: "#ccc" }}
         backgroundStyle={{ backgroundColor: "#18181b" }}
+        style={
+          Platform.OS === "web"
+            ? {
+                maxWidth: 480,
+                alignSelf: "center",
+                width: "100%",
+              }
+            : {}
+        }
       >
         <StyledBottomSheetView className="flex-1 bg-black">
           <View style={{ flex: 1 }}>
@@ -606,20 +781,28 @@ export const PlayerBar = () => {
               style={{ paddingTop: insets.top + 12 }}
             >
               <View className="w-full px-5 flex-row items-center justify-between">
-                <TouchableOpacity onPress={handleCloseFullPlayer}>
-                  <Ionicons name="chevron-down" size={28} color="#fff" />
-                </TouchableOpacity>
+                <Pressable onPress={handleCloseFullPlayer}>
+                  {({ pressed }) => (
+                    <Ionicons
+                      name="chevron-down"
+                      size={28}
+                      color={pressed ? "#ef4444" : "#fff"}
+                    />
+                  )}
+                </Pressable>
                 <View className="w-7" />
-                <TouchableOpacity
+                <Pressable
                   className="w-7 items-end"
                   onPress={() => void toggleCurrentFavorite(resolvedArtwork)}
                 >
-                  <Ionicons
-                    name={isCurrentFavorited ? "heart" : "heart-outline"}
-                    size={22}
-                    color="#fff"
-                  />
-                </TouchableOpacity>
+                  {({ pressed }) => (
+                    <Ionicons
+                      name={isCurrentFavorited ? "heart" : "heart-outline"}
+                      size={22}
+                      color={isCurrentFavorited || pressed ? "#ef4444" : "#fff"}
+                    />
+                  )}
+                </Pressable>
               </View>
 
               <View className="items-center px-8 mb-4">
@@ -691,18 +874,24 @@ export const PlayerBar = () => {
                   />
 
                   <View className="flex-row items-center justify-between mt-2">
-                    <TouchableOpacity
+                    <Pressable
                       className="w-10 h-10 rounded-full items-center justify-center"
                       onPress={toggleShuffle}
                     >
-                      <Ionicons
-                        name="shuffle"
-                        size={22}
-                        color={
-                          shuffleEnabled ? "#fff" : "rgba(255,255,255,0.45)"
-                        }
-                      />
-                    </TouchableOpacity>
+                      {({ pressed }) => (
+                        <Ionicons
+                          name="shuffle"
+                          size={22}
+                          color={
+                            pressed
+                              ? "#ef4444"
+                              : shuffleEnabled
+                              ? "#fff"
+                              : "rgba(255,255,255,0.45)"
+                          }
+                        />
+                      )}
+                    </Pressable>
 
                     <View className="flex-row items-center gap-3">
                       <TouchableOpacity
@@ -719,36 +908,42 @@ export const PlayerBar = () => {
                       </TouchableOpacity>
                     </View>
 
-                    <TouchableOpacity
+                    <Pressable
                       className="w-10 h-10 rounded-full items-center justify-center"
                       onPress={cycleRepeatMode}
                     >
-                      <Ionicons
-                        name={
-                          repeatMode === "one"
-                            ? "repeat"
-                            : repeatMode === "all"
-                            ? "repeat"
-                            : "repeat-outline"
-                        }
-                        size={22}
-                        color={
-                          repeatMode !== "off"
-                            ? "#fff"
-                            : "rgba(255,255,255,0.45)"
-                        }
-                      />
-                      {repeatMode === "one" && (
-                        <View className="absolute bottom-1 right-1 bg-white rounded-full w-3 h-3 items-center justify-center">
-                          <Text
-                            className="text-black font-bold"
-                            style={{ fontSize: 7 }}
-                          >
-                            1
-                          </Text>
-                        </View>
+                      {({ pressed }) => (
+                        <>
+                          <Ionicons
+                            name={
+                              repeatMode === "one"
+                                ? "repeat"
+                                : repeatMode === "all"
+                                ? "repeat"
+                                : "repeat-outline"
+                            }
+                            size={22}
+                            color={
+                              pressed
+                                ? "#ef4444"
+                                : repeatMode !== "off"
+                                ? "#fff"
+                                : "rgba(255,255,255,0.45)"
+                            }
+                          />
+                          {repeatMode === "one" && (
+                            <View className="absolute bottom-1 right-1 bg-white rounded-full w-3 h-3 items-center justify-center">
+                              <Text
+                                className="text-black font-bold"
+                                style={{ fontSize: 7 }}
+                              >
+                                1
+                              </Text>
+                            </View>
+                          )}
+                        </>
                       )}
-                    </TouchableOpacity>
+                    </Pressable>
                   </View>
                 </View>
               </View>

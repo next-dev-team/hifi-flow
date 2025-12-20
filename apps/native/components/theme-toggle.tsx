@@ -20,14 +20,26 @@ export function ThemeToggle() {
 			}}
 			className="px-2.5"
 		>
-			{isLight ? (
-				<Animated.View key="moon" entering={ZoomIn} exiting={FadeOut}>
-					<StyledIonicons name="moon" size={20} className="text-foreground" />
-				</Animated.View>
-			) : (
-				<Animated.View key="sun" entering={ZoomIn} exiting={FadeOut}>
-					<StyledIonicons name="sunny" size={20} className="text-foreground" />
-				</Animated.View>
+			{({ pressed }) => (
+				isLight ? (
+					<Animated.View key="moon" entering={ZoomIn} exiting={FadeOut}>
+						<StyledIonicons 
+							name="moon" 
+							size={20} 
+							color={pressed ? "#ef4444" : undefined}
+							className={pressed ? "" : "text-foreground"} 
+						/>
+					</Animated.View>
+				) : (
+					<Animated.View key="sun" entering={ZoomIn} exiting={FadeOut}>
+						<StyledIonicons 
+							name="sunny" 
+							size={20} 
+							color={pressed ? "#ef4444" : undefined}
+							className={pressed ? "" : "text-foreground"} 
+						/>
+					</Animated.View>
+				)
 			)}
 		</Pressable>
 	);
