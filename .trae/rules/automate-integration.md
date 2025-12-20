@@ -1,3 +1,7 @@
+---
+alwaysApply: false
+description: 
+---
 # API Integration Guide
 
 This guide shows how to integrate UI with API using Kubb-generated client/hooks in our React Native (Expo) project.

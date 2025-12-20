@@ -32,6 +32,7 @@ import { withUniwind } from "uniwind";
 import type {} from "uniwind/types";
 import { ApiDebug } from "@/components/api-debug";
 import { type Artist, ArtistItem } from "@/components/artist-item";
+import { SearchComposer } from "@/components/search-composer";
 import { type Track, TrackItem } from "@/components/track-item";
 import { useAppTheme } from "@/contexts/app-theme-context";
 import { type SavedTrack, usePlayer } from "@/contexts/player-context";
@@ -493,46 +494,39 @@ export default function Home() {
             </StyledScrollView>
           </StyledView>
         ) : null}
-        <Card className="bg-content1 border border-default-200">
-          <Card.Body className="p-3">
-            <StyledView className="flex-row items-center bg-default-100 rounded-full px-3 py-2 mb-3">
-              <Ionicons name="search" size={18} color="#888" />
-              <StyledTextInput
-                className="flex-1 ml-2 text-foreground h-9"
-                placeholder="Search songs, artists, albums"
-                placeholderTextColor="#888"
-                value={query}
-                onChangeText={setQuery}
-                returnKeyType="search"
-              />
-            </StyledView>
-            <StyledScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              style={{ maxHeight: 40 }}
-            >
-              {filters.map((f) => (
-                <Chip
-                  key={f.key}
-                  onPress={() => setFilter(f.key)}
-                  color={filter === f.key ? "accent" : "default"}
-                  variant={filter === f.key ? "primary" : "secondary"}
-                  className="mr-2"
+        <StyledView className="mb-4">
+          <SearchComposer
+            value={query}
+            onChangeText={setQuery}
+            placeholder="Search songs, artists, albums..."
+            className="mb-4"
+          />
+          <StyledScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            style={{ maxHeight: 40 }}
+          >
+            {filters.map((f) => (
+              <Chip
+                key={f.key}
+                onPress={() => setFilter(f.key)}
+                color={filter === f.key ? "accent" : "default"}
+                variant={filter === f.key ? "primary" : "secondary"}
+                className="mr-2 h-9"
+              >
+                <StyledText
+                  className={
+                    filter === f.key
+                      ? "text-accent-foreground font-medium"
+                      : "text-default-600"
+                  }
                 >
-                  <StyledText
-                    className={
-                      filter === f.key
-                        ? "text-accent-foreground font-medium"
-                        : "text-default-600"
-                    }
-                  >
-                    {f.label}
-                  </StyledText>
-                </Chip>
-              ))}
-            </StyledScrollView>
-          </Card.Body>
-        </Card>
+                  {f.label}
+                </StyledText>
+              </Chip>
+            ))}
+          </StyledScrollView>
+        </StyledView>
         <ApiDebug title="Home search" data={data} error={error} />
       </StyledView>
 
