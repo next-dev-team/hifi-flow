@@ -746,19 +746,17 @@ export const PlayerBar = () => {
         animationConfigs={animationConfigs}
         onChange={(index) => setIsSheetOpen(index >= 0)}
         onDismiss={() => setIsSheetOpen(false)}
-        handleIndicatorStyle={{ backgroundColor: "#ccc" }}
-        backgroundStyle={{ backgroundColor: "#18181b" }}
-        style={
-          Platform.OS === "web"
-            ? {
-                maxWidth: 480,
-                alignSelf: "center",
-                width: "100%",
-              }
-            : {}
-        }
+        handleIndicatorStyle={{
+          backgroundColor: "rgba(255,255,255,0.3)",
+          width: 40,
+        }}
+        backgroundStyle={{
+          backgroundColor: "#000",
+          borderTopLeftRadius: 24,
+          borderTopRightRadius: 24,
+        }}
       >
-        <StyledBottomSheetView className="flex-1 bg-black">
+        <StyledBottomSheetView className="flex-1 bg-black max-w-md w-full mx-auto left-0 right-0 rounded-t-[24px] overflow-hidden">
           <View style={{ flex: 1 }}>
             {resolvedArtwork ? (
               <ImageBackground
