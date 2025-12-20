@@ -8,7 +8,10 @@ import {
   useBottomSheetTimingConfigs,
 } from "@gorhom/bottom-sheet";
 import { useQuery } from "@tanstack/react-query";
-import { useSearchSearchGet } from "api-hifi/src/gen/hooks";
+import {
+  useGetPlaylistPlaylistGet,
+  useSearchSearchGet,
+} from "api-hifi/src/gen/hooks";
 import type { SearchSearchGetQueryParams } from "api-hifi/src/gen/types/SearchSearchGet";
 import { Card, Chip, useThemeColor } from "heroui-native";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -30,6 +33,8 @@ import { withUniwind } from "uniwind";
 import type {} from "uniwind/types";
 import { ApiDebug } from "@/components/api-debug";
 import { type Artist, ArtistItem } from "@/components/artist-item";
+import { PlaylistDiscovery } from "@/components/playlist-discovery";
+import { type Playlist, PlaylistItem } from "@/components/playlist-item";
 import { SearchComposer } from "@/components/search-composer";
 import { type Track, TrackItem } from "@/components/track-item";
 import { useAppTheme } from "@/contexts/app-theme-context";
@@ -74,6 +79,7 @@ export default function Home() {
 
   const [selectedArtist, setSelectedArtist] = useState<Artist | null>(null);
   const [selectedAlbum, setSelectedAlbum] = useState<any | null>(null);
+  const [selectedPlaylist, setSelectedPlaylist] = useState<any | null>(null);
   const artistSheetRef = useRef<BottomSheetModal | null>(null);
   const artistSnapPoints = useMemo(() => ["90%"], []);
 
@@ -99,6 +105,12 @@ export default function Home() {
     },
     enabled: !!selectedAlbum?.id && !isNaN(parseInt(String(selectedAlbum.id))),
   });
+
+  const { data: playlistDetails, isLoading: isPlaylistLoading } =
+    useGetPlaylistPlaylistGet(
+      { id: String(selectedPlaylist?.uuid) },
+      { query: { enabled: !!selectedPlaylist?.uuid } }
+    );
 
   const artistTopTracks = useMemo(() => {
     if (!artistDetails) return [] as Track[];
@@ -130,6 +142,21 @@ export default function Home() {
       };
     });
   }, [albumDetails]);
+
+  const playlistTracks = useMemo(() => {
+    if (!playlistDetails || !playlistDetails.items) return [] as Track[];
+    return playlistDetails.items.map((entry: any): Track => {
+      const item = entry.item;
+      return {
+        id: String(item.id),
+        title: item.title || "Unknown Title",
+        artist: item.artist?.name || "Unknown Artist",
+        artwork:
+          resolveArtwork(item) || resolveArtwork(playlistDetails.playlist),
+        url: item.url || "",
+      };
+    });
+  }, [playlistDetails]);
 
   const artistAlbums = useMemo(() => {
     if (!artistDetails) return [];
@@ -239,7 +266,14 @@ export default function Home() {
     return base;
   }, [debouncedQuery, filter]);
 
-  const { data, isLoading, error } = useSearchSearchGet(params);
+  const shouldFetchMainQuery = useMemo(() => {
+    if (filter === "playlists" && !query) return false;
+    return true;
+  }, [filter, query]);
+
+  const { data, isLoading, error } = useSearchSearchGet(params, {
+    query: { enabled: shouldFetchMainQuery },
+  });
 
   type SearchResultItem = {
     id?: string | number;
@@ -356,6 +390,20 @@ export default function Home() {
     });
   }, [listData, filter]);
 
+  const playlists = useMemo(() => {
+    if (filter !== "playlists") return [];
+    return listData.map((item, index): Playlist => {
+      const id = item.id || `playlist-${index}`;
+      return {
+        id: String(id),
+        title: item.title || "Unknown Playlist",
+        creator: resolveName(item.artist || item.author),
+        artwork: resolveArtwork(item),
+        trackCount: (item as any).trackCount || (item as any).numberOfTracks,
+      };
+    });
+  }, [listData, filter]);
+
   const favoriteQueue = useMemo<Track[]>(() => {
     return favorites.map((saved) => {
       return {
@@ -377,6 +425,21 @@ export default function Home() {
           artist={artist}
           onPress={() => {
             setSelectedArtist(artist);
+            artistSheetRef.current?.present();
+          }}
+        />
+      );
+    }
+
+    if (filter === "playlists") {
+      const playlist = playlists[index];
+      if (!playlist) return null;
+      return (
+        <PlaylistItem
+          playlist={playlist}
+          onPress={() => {
+            const item = listData[index];
+            setSelectedPlaylist(item);
             artistSheetRef.current?.present();
           }}
         />
@@ -567,7 +630,14 @@ export default function Home() {
         <ApiDebug title="Home search" data={data} error={error} />
       </StyledView>
 
-      {isLoading ? (
+      {filter === "playlists" && !query ? (
+        <PlaylistDiscovery
+          onSelect={(p) => {
+            setSelectedPlaylist(p);
+            artistSheetRef.current?.present();
+          }}
+        />
+      ) : isLoading ? (
         <StyledView className="flex-1 justify-center items-center">
           <ActivityIndicator size="large" color="#fff" />
         </StyledView>
@@ -626,9 +696,12 @@ export default function Home() {
         <StyledView className="flex-1 bg-background">
           <View className="px-4 pt-3 pb-2 flex-row items-center justify-between">
             <View className="flex-row items-center">
-              {selectedAlbum && (
+              {(selectedAlbum || selectedPlaylist) && (
                 <TouchableOpacity
-                  onPress={() => setSelectedAlbum(null)}
+                  onPress={() => {
+                    if (selectedAlbum) setSelectedAlbum(null);
+                    if (selectedPlaylist) setSelectedPlaylist(null);
+                  }}
                   className="mr-3 p-1"
                 >
                   <Ionicons
@@ -639,7 +712,11 @@ export default function Home() {
                 </TouchableOpacity>
               )}
               <Text className="text-xl font-bold text-foreground">
-                {selectedAlbum ? "Album Tracks" : "Artist Details"}
+                {selectedAlbum
+                  ? "Album Tracks"
+                  : selectedPlaylist
+                  ? "Playlist Tracks"
+                  : "Artist Details"}
               </Text>
             </View>
             <TouchableOpacity
@@ -647,13 +724,16 @@ export default function Home() {
               onPress={() => {
                 artistSheetRef.current?.dismiss();
                 setSelectedAlbum(null);
+                setSelectedPlaylist(null);
               }}
             >
               <Ionicons name="close" size={22} color={themeColorForeground} />
             </TouchableOpacity>
           </View>
 
-          {isArtistLoading || (selectedAlbum && isAlbumLoading) ? (
+          {isArtistLoading ||
+          (selectedAlbum && isAlbumLoading) ||
+          (selectedPlaylist && isPlaylistLoading) ? (
             <View className="flex-1 items-center justify-center">
               <ActivityIndicator size="large" color="#fff" />
             </View>
@@ -677,6 +757,26 @@ export default function Home() {
                         </Text>
                         <Text className="text-default-500">
                           {selectedAlbum.releaseDate?.split("-")[0] || "Album"}
+                        </Text>
+                      </View>
+                    </View>
+                  ) : selectedPlaylist ? (
+                    <View className="flex-row items-center mb-6">
+                      <View className="w-24 h-24 rounded-lg overflow-hidden mr-4 bg-content3 shadow-md">
+                        <Image
+                          source={{ uri: resolveArtwork(selectedPlaylist) }}
+                          className="w-full h-full"
+                          resizeMode="cover"
+                        />
+                      </View>
+                      <View className="flex-1">
+                        <Text className="text-2xl font-bold text-foreground">
+                          {selectedPlaylist.title}
+                        </Text>
+                        <Text className="text-default-500">
+                          {resolveName(
+                            selectedPlaylist.artist || selectedPlaylist.author
+                          ) || "Playlist"}
                         </Text>
                       </View>
                     </View>
@@ -706,17 +806,26 @@ export default function Home() {
                     </View>
                   )}
 
-                  {((!selectedAlbum && artistTopTracks.length > 0) ||
-                    (selectedAlbum && albumTracks.length > 0)) && (
+                  {((!selectedAlbum &&
+                    !selectedPlaylist &&
+                    artistTopTracks.length > 0) ||
+                    (selectedAlbum && albumTracks.length > 0) ||
+                    (selectedPlaylist && playlistTracks.length > 0)) && (
                     <View className="mb-8">
                       <View className="flex-row justify-between items-center mb-4">
                         <View>
                           <Text className="text-xl font-bold text-foreground">
-                            {selectedAlbum ? "Tracks" : "Top Tracks"}
+                            {selectedAlbum
+                              ? "Tracks"
+                              : selectedPlaylist
+                              ? "Tracks"
+                              : "Top Tracks"}
                           </Text>
                           <Text className="text-default-500 text-sm">
                             {selectedAlbum
                               ? `All songs from ${selectedAlbum.title}`
+                              : selectedPlaylist
+                              ? `All songs from ${selectedPlaylist.title}`
                               : `Best songs from ${selectedArtist?.name}`}
                           </Text>
                         </View>
@@ -725,6 +834,8 @@ export default function Home() {
                           onPress={() => {
                             const tracksToPlay = selectedAlbum
                               ? albumTracks
+                              : selectedPlaylist
+                              ? playlistTracks
                               : artistTopTracks;
                             if (tracksToPlay.length > 0) {
                               void playQueue(tracksToPlay, 0);
@@ -740,11 +851,19 @@ export default function Home() {
                   )}
                 </View>
               }
-              data={selectedAlbum ? albumTracks : artistTopTracks}
+              data={
+                selectedAlbum
+                  ? albumTracks
+                  : selectedPlaylist
+                  ? playlistTracks
+                  : artistTopTracks
+              }
               keyExtractor={(item: Track) => item.id}
               renderItem={({ item, index }: { item: Track; index: number }) => {
                 const tracksToPlay = selectedAlbum
                   ? albumTracks
+                  : selectedPlaylist
+                  ? playlistTracks
                   : artistTopTracks;
                 return (
                   <View className="px-4">
@@ -758,7 +877,9 @@ export default function Home() {
                 );
               }}
               ListFooterComponent={
-                !selectedAlbum && artistAlbums.length > 0 ? (
+                !selectedAlbum &&
+                !selectedPlaylist &&
+                artistAlbums.length > 0 ? (
                   <View className="px-4 mt-8">
                     <Text className="text-xl font-bold text-foreground mb-4">
                       Albums
