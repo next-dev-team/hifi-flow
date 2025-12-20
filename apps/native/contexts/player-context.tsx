@@ -79,6 +79,10 @@ interface PlayerContextType {
 const PlayerContext = createContext<PlayerContextType | undefined>(undefined);
 
 const FAVORITES_STORAGE_KEY = "hififlow:favorites:v1";
+const QUALITY_STORAGE_KEY = "hififlow:quality:v1";
+const SHUFFLE_STORAGE_KEY = "hififlow:shuffle:v1";
+const REPEAT_STORAGE_KEY = "hififlow:repeat:v1";
+const VOLUME_STORAGE_KEY = "hififlow:volume:v1";
 
 async function readPersistentValue(key: string): Promise<string | null> {
   if (Platform.OS === "web") {
@@ -126,7 +130,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
   const [isPlaying, setIsPlaying] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [queue, setQueue] = useState<Track[]>([]);
-  const [quality, setQuality] = useState<AudioQuality>("HI_RES_LOSSLESS");
+  const [quality, setQualityState] = useState<AudioQuality>("HI_RES_LOSSLESS");
   const [shuffleEnabled, setShuffleEnabled] = useState(false);
   const [repeatMode, setRepeatMode] = useState<RepeatMode>("off");
   const [positionMillis, setPositionMillis] = useState(0);
@@ -140,6 +144,33 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
   const [volume, setVolumeState] = useState(1.0);
   const [sleepTimerEndsAt, setSleepTimerEndsAt] = useState<number | null>(null);
   const [sleepTimerRemainingMs, setSleepTimerRemainingMs] = useState(0);
+
+  const setQuality = useCallback((newQuality: AudioQuality) => {
+    setQualityState(newQuality);
+    void writePersistentValue(QUALITY_STORAGE_KEY, newQuality);
+  }, []);
+
+  useEffect(() => {
+    // Quality
+    readPersistentValue(QUALITY_STORAGE_KEY).then((val) => {
+      if (val) setQualityState(val as AudioQuality);
+    });
+    // Shuffle
+    readPersistentValue(SHUFFLE_STORAGE_KEY).then((val) => {
+      if (val) setShuffleEnabled(val === "true");
+    });
+    // Repeat
+    readPersistentValue(REPEAT_STORAGE_KEY).then((val) => {
+      if (val) setRepeatMode(val as RepeatMode);
+    });
+    // Volume
+    readPersistentValue(VOLUME_STORAGE_KEY).then((val) => {
+      if (val) {
+        const v = parseFloat(val);
+        if (!isNaN(v)) setVolumeState(v);
+      }
+    });
+  }, []);
 
   const soundRef = useRef<Audio.Sound | null>(null);
   const currentTrackRef = useRef<Track | null>(null);
@@ -256,6 +287,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
   const setVolume = useCallback(async (value: number) => {
     const normalized = Math.max(0, Math.min(1, value));
     setVolumeState(normalized);
+    void writePersistentValue(VOLUME_STORAGE_KEY, String(normalized));
     if (soundRef.current) {
       try {
         await soundRef.current.setVolumeAsync(normalized);
@@ -323,7 +355,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
 
       if (Number.isFinite(trackId)) {
         try {
-          streamUrl = await losslessAPI.getTrackStreamUrl(
+          streamUrl = await losslessAPI.getStreamUrl(
             trackId,
             qualityRef.current
           );
@@ -614,15 +646,20 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
       if (!next) {
         shuffleHistoryRef.current = [];
       }
+      void writePersistentValue(SHUFFLE_STORAGE_KEY, String(next));
       return next;
     });
   }, []);
 
   const cycleRepeatMode = useCallback(() => {
     setRepeatMode((prev) => {
-      if (prev === "off") return "all";
-      if (prev === "all") return "one";
-      return "off";
+      let next: RepeatMode;
+      if (prev === "off") next = "all";
+      else if (prev === "all") next = "one";
+      else next = "off";
+
+      void writePersistentValue(REPEAT_STORAGE_KEY, next);
+      return next;
     });
   }, []);
 
