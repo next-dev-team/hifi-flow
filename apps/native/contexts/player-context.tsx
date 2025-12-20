@@ -173,6 +173,13 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
   }, []);
 
   const soundRef = useRef<Audio.Sound | null>(null);
+  const preloadedSoundRef = useRef<Audio.Sound | null>(null);
+  const preloadedTrackKeyRef = useRef<string | null>(null);
+  const preloadedStreamUrlRef = useRef<string | null>(null);
+  const preloadRequestIdRef = useRef(0);
+  const plannedNextForTrackKeyRef = useRef<string | null>(null);
+  const plannedNextIndexRef = useRef<number | null>(null);
+  const lastPreloadTriggerKeyRef = useRef<string | null>(null);
   const currentTrackRef = useRef<Track | null>(null);
   const queueRef = useRef<Track[]>([]);
   const qualityRef = useRef<AudioQuality>(quality);
@@ -182,6 +189,8 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
   const playNextRef = useRef<() => Promise<void>>(async () => {});
   const playRequestIdRef = useRef(0);
   const currentStreamUrlRef = useRef<string | null>(null);
+
+  const preloadTriggerKey = `${quality}|${repeatMode}|${shuffleEnabled}|${queue.length}`;
 
   const sleepTimerTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
     null
@@ -228,6 +237,143 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
     repeatModeRef.current = repeatMode;
   }, [repeatMode]);
 
+  const getTrackKey = useCallback((track: Track, q: AudioQuality) => {
+    return `${String(track.id)}|${q}`;
+  }, []);
+
+  const resetPreloadState = useCallback(async () => {
+    preloadRequestIdRef.current += 1;
+    plannedNextForTrackKeyRef.current = null;
+    plannedNextIndexRef.current = null;
+    preloadedTrackKeyRef.current = null;
+    preloadedStreamUrlRef.current = null;
+    lastPreloadTriggerKeyRef.current = null;
+    const previous = preloadedSoundRef.current;
+    preloadedSoundRef.current = null;
+    if (previous) {
+      try {
+        previous.setOnPlaybackStatusUpdate(null);
+        await previous.unloadAsync();
+      } catch {
+        return preloadRequestIdRef.current;
+      }
+    }
+    return preloadRequestIdRef.current;
+  }, []);
+
+  const getStreamUrlForTrack = useCallback(async (track: Track) => {
+    const trackId = Number(track.id);
+    let streamUrl: string | null = null;
+
+    if (Number.isFinite(trackId)) {
+      try {
+        streamUrl = await losslessAPI.getStreamUrl(trackId, qualityRef.current);
+      } catch {
+        streamUrl = null;
+      }
+    }
+
+    if (!streamUrl && track.url) {
+      streamUrl = track.url;
+    }
+
+    return streamUrl;
+  }, []);
+
+  const preloadNextForTrack = useCallback(
+    async (activeTrack: Track, playRequestId: number, triggerKey: string) => {
+      lastPreloadTriggerKeyRef.current = triggerKey;
+      const nextQueue = queueRef.current;
+      if (nextQueue.length === 0) {
+        await resetPreloadState();
+        return;
+      }
+
+      const currentIndex = nextQueue.findIndex((t) => t.id === activeTrack.id);
+      if (currentIndex === -1) {
+        await resetPreloadState();
+        return;
+      }
+
+      if (repeatModeRef.current === "one") {
+        await resetPreloadState();
+        return;
+      }
+
+      let nextIndex: number | null = null;
+      const activeKey = getTrackKey(activeTrack, qualityRef.current);
+
+      if (shuffleEnabledRef.current && nextQueue.length > 1) {
+        const available: number[] = [];
+        for (let i = 0; i < nextQueue.length; i += 1) {
+          if (i !== currentIndex) available.push(i);
+        }
+        nextIndex =
+          available[Math.floor(Math.random() * available.length)] ?? null;
+        if (nextIndex !== null) {
+          plannedNextForTrackKeyRef.current = activeKey;
+          plannedNextIndexRef.current = nextIndex;
+        }
+      } else if (currentIndex < nextQueue.length - 1) {
+        nextIndex = currentIndex + 1;
+      } else if (repeatModeRef.current === "all" && nextQueue.length > 0) {
+        nextIndex = 0;
+      }
+
+      const nextTrack =
+        nextIndex === null ? null : nextQueue[nextIndex] ?? null;
+      if (!nextTrack) {
+        await resetPreloadState();
+        return;
+      }
+
+      const nextKey = getTrackKey(nextTrack, qualityRef.current);
+      if (preloadedTrackKeyRef.current === nextKey) {
+        return;
+      }
+
+      const preloadId = await resetPreloadState();
+      const streamUrl = await getStreamUrlForTrack(nextTrack);
+      if (!streamUrl) {
+        return;
+      }
+
+      if (
+        playRequestIdRef.current !== playRequestId ||
+        preloadRequestIdRef.current !== preloadId
+      ) {
+        return;
+      }
+
+      const sound = new Audio.Sound();
+      try {
+        await sound.loadAsync(
+          { uri: streamUrl },
+          { shouldPlay: false, progressUpdateIntervalMillis: 250 }
+        );
+
+        if (
+          playRequestIdRef.current !== playRequestId ||
+          preloadRequestIdRef.current !== preloadId
+        ) {
+          await sound.unloadAsync();
+          return;
+        }
+
+        preloadedSoundRef.current = sound;
+        preloadedTrackKeyRef.current = nextKey;
+        preloadedStreamUrlRef.current = streamUrl;
+      } catch {
+        try {
+          await sound.unloadAsync();
+        } catch {
+          return;
+        }
+      }
+    },
+    [getStreamUrlForTrack, getTrackKey, resetPreloadState]
+  );
+
   useEffect(() => {
     async function setupAudio() {
       try {
@@ -273,16 +419,17 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
   }, []);
 
   const unloadSound = useCallback(async () => {
+    await resetPreloadState();
     const sound = soundRef.current;
     if (sound) {
       try {
         sound.setOnPlaybackStatusUpdate(null);
         await sound.unloadAsync();
       } catch {
-        // ignore
+        return;
       }
     }
-  }, []);
+  }, [resetPreloadState]);
 
   const setVolume = useCallback(async (value: number) => {
     const normalized = Math.max(0, Math.min(1, value));
@@ -350,26 +497,115 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
       setDurationMillis(0);
       setCurrentStreamUrl(null);
 
-      const trackId = Number(track.id);
-      let streamUrl: string | null = null;
+      const wantedKey = getTrackKey(track, qualityRef.current);
+      const maybePreloadedSound = preloadedSoundRef.current;
+      const maybePreloadedKey = preloadedTrackKeyRef.current;
+      const maybePreloadedUrl = preloadedStreamUrlRef.current;
 
-      if (Number.isFinite(trackId)) {
+      if (
+        maybePreloadedSound &&
+        maybePreloadedKey === wantedKey &&
+        typeof maybePreloadedUrl === "string" &&
+        maybePreloadedUrl.length > 0
+      ) {
+        preloadedSoundRef.current = null;
+        preloadedTrackKeyRef.current = null;
+        preloadedStreamUrlRef.current = null;
+
+        let status: AVPlaybackStatus;
         try {
-          streamUrl = await losslessAPI.getStreamUrl(
-            trackId,
-            qualityRef.current
-          );
+          status = await maybePreloadedSound.getStatusAsync();
         } catch {
-          streamUrl = null;
+          try {
+            await maybePreloadedSound.unloadAsync();
+          } catch {
+            return;
+          }
+          return;
+        }
+
+        if (!status.isLoaded) {
+          try {
+            await maybePreloadedSound.unloadAsync();
+          } catch {
+            return;
+          }
+          return;
+        }
+
+        const sound = maybePreloadedSound;
+        soundRef.current = sound;
+
+        try {
+          sound.setOnPlaybackStatusUpdate((nextStatus: AVPlaybackStatus) => {
+            if (playRequestIdRef.current !== requestId) return;
+            if (!nextStatus.isLoaded) return;
+            setIsPlaying(nextStatus.isPlaying);
+            setPositionMillis(nextStatus.positionMillis);
+            setDurationMillis(nextStatus.durationMillis ?? 0);
+            if (nextStatus.didJustFinish) {
+              if (repeatModeRef.current === "one") {
+                void (async () => {
+                  try {
+                    await sound.setPositionAsync(0);
+                    await sound.playAsync();
+                  } catch {
+                    return;
+                  }
+                })();
+                return;
+              }
+              void playNextRef.current();
+            }
+          });
+
+          await sound.setVolumeAsync(volume);
+
+          if (soundRef.current !== sound) {
+            await sound.unloadAsync();
+            return;
+          }
+
+          if (playRequestIdRef.current !== requestId) {
+            await sound.unloadAsync();
+            return;
+          }
+
+          setCurrentStreamUrl(maybePreloadedUrl);
+          void analyzeTrack(maybePreloadedUrl, requestId);
+          await sound.playAsync();
+
+          if (playRequestIdRef.current !== requestId) {
+            await sound.unloadAsync();
+            return;
+          }
+
+          setIsLoading(false);
+          void preloadNextForTrack(
+            track,
+            requestId,
+            `${qualityRef.current}|${repeatModeRef.current}|${shuffleEnabledRef.current}|${queueRef.current.length}`
+          );
+          return;
+        } catch {
+          if (playRequestIdRef.current === requestId) {
+            if (soundRef.current === sound) {
+              soundRef.current = null;
+              setIsPlaying(false);
+              setCurrentStreamUrl(null);
+            }
+            setIsLoading(false);
+          }
+          return;
         }
       }
 
+      void resetPreloadState();
+
+      const streamUrl = await getStreamUrlForTrack(track);
+
       if (playRequestIdRef.current !== requestId) {
         return;
-      }
-
-      if (!streamUrl && track.url) {
-        streamUrl = track.url;
       }
 
       if (!streamUrl) {
@@ -437,6 +673,11 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
         }
 
         setIsLoading(false);
+        void preloadNextForTrack(
+          track,
+          requestId,
+          `${qualityRef.current}|${repeatModeRef.current}|${shuffleEnabledRef.current}|${queueRef.current.length}`
+        );
       } catch (error) {
         console.error("Error loading sound", error);
         if (playRequestIdRef.current === requestId) {
@@ -449,7 +690,14 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
         }
       }
     },
-    [volume, analyzeTrack]
+    [
+      volume,
+      analyzeTrack,
+      getStreamUrlForTrack,
+      getTrackKey,
+      preloadNextForTrack,
+      resetPreloadState,
+    ]
   );
 
   const playTrack = useCallback(
@@ -701,6 +949,22 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
     }
 
     if (shuffleEnabledRef.current && nextQueue.length > 1) {
+      const activeKey = getTrackKey(active, qualityRef.current);
+      const plannedForKey = plannedNextForTrackKeyRef.current;
+      const plannedIndex = plannedNextIndexRef.current;
+      if (
+        plannedForKey === activeKey &&
+        plannedIndex !== null &&
+        plannedIndex >= 0 &&
+        plannedIndex < nextQueue.length &&
+        plannedIndex !== currentIndex
+      ) {
+        plannedNextForTrackKeyRef.current = null;
+        plannedNextIndexRef.current = null;
+        shuffleHistoryRef.current.push(currentIndex);
+        await playFromQueueIndex(plannedIndex);
+        return;
+      }
       const available: number[] = [];
       for (let i = 0; i < nextQueue.length; i += 1) {
         if (i !== currentIndex) {
@@ -725,7 +989,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
     }
 
     setIsPlaying(false);
-  }, [playFromQueueIndex]);
+  }, [getTrackKey, playFromQueueIndex]);
 
   useEffect(() => {
     playNextRef.current = playNext;
@@ -764,6 +1028,17 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
       clearSleepTimerHandles();
     };
   }, [clearSleepTimerHandles, unloadSound]);
+
+  useEffect(() => {
+    if (!isPlaying) return;
+    const active = currentTrackRef.current;
+    if (!active) return;
+    void preloadNextForTrack(
+      active,
+      playRequestIdRef.current,
+      preloadTriggerKey
+    );
+  }, [isPlaying, preloadNextForTrack, preloadTriggerKey]);
 
   return (
     <PlayerContext.Provider
