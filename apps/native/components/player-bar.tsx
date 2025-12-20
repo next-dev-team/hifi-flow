@@ -492,6 +492,7 @@ const SeekBar = ({
 
 export const PlayerBar = () => {
   const { width: screenWidth } = useWindowDimensions();
+  const themeColorBackground = useThemeColor("background");
   const {
     currentTrack,
     isPlaying,
@@ -714,7 +715,7 @@ export const PlayerBar = () => {
         style={[
           props.style,
           {
-            backgroundColor: "#000",
+            backgroundColor: themeColorBackground,
             borderTopLeftRadius: 24,
             borderTopRightRadius: 24,
             overflow: "hidden",
@@ -722,24 +723,54 @@ export const PlayerBar = () => {
         ]}
       >
         {resolvedArtwork ? (
-          <ImageBackground
-            source={{ uri: resolvedArtwork }}
+          <View
             style={{
               position: "absolute",
               top: 0,
+              left: 0,
               right: 0,
               bottom: 0,
-              left: 0,
+              backgroundColor: "#000",
             }}
-            resizeMode="cover"
-            blurRadius={50}
           >
-            <View className="absolute inset-0 bg-black/50" />
-          </ImageBackground>
+            <Image
+              source={{ uri: resolvedArtwork }}
+              style={{
+                position: "absolute",
+                top: 0,
+                left: 0,
+                right: 0,
+                bottom: 0,
+                opacity: 0.8,
+              }}
+              resizeMode="cover"
+            />
+            <BlurView
+              intensity={Platform.OS === "ios" ? 50 : 100}
+              tint="dark"
+              style={{
+                position: "absolute",
+                top: 0,
+                left: 0,
+                right: 0,
+                bottom: 0,
+              }}
+            />
+            <View
+              style={{
+                position: "absolute",
+                top: 0,
+                left: 0,
+                right: 0,
+                bottom: 0,
+                backgroundColor: "rgba(0,0,0,0.3)",
+              }}
+            />
+          </View>
         ) : null}
       </View>
     ),
-    [resolvedArtwork]
+    [resolvedArtwork, themeColorBackground]
   );
 
   useEffect(() => {
@@ -798,382 +829,430 @@ export const PlayerBar = () => {
 
   return (
     <>
-      {isSheetOpen ? null : (
-        <Portal hostName="PlayerBarHost">
-          <Animated.View
-            className="absolute"
-            style={[
-              {
-                bottom: insets.bottom + 56,
-                zIndex: 99999,
-                elevation: 99999,
-              },
-              animatedMiniPlayerStyle,
-            ]}
-            {...panResponderMini.panHandlers}
+      <Portal hostName="PlayerBarHost">
+        <Animated.View
+          className="absolute"
+          style={[
+            {
+              bottom: insets.bottom + 56,
+              zIndex: 99999,
+              elevation: 99999,
+            },
+            animatedMiniPlayerStyle,
+            isSheetOpen ? { opacity: 0, pointerEvents: "none" } : null,
+          ]}
+          {...panResponderMini.panHandlers}
+        >
+          <Pressable
+            onPress={() => {
+              if (isCollapsed) {
+                setIsCollapsed(false);
+              } else {
+                handleOpenFullPlayer();
+              }
+            }}
+            onLongPress={() => setIsCollapsed(!isCollapsed)}
+            delayLongPress={300}
           >
-            <Pressable
-              onPress={() => {
-                if (isCollapsed) {
-                  setIsCollapsed(false);
-                } else {
-                  handleOpenFullPlayer();
-                }
-              }}
-              onLongPress={() => setIsCollapsed(!isCollapsed)}
-              delayLongPress={300}
+            <Animated.View
+              className="flex-row items-center border border-white/10 relative overflow-hidden rounded-full shadow-2xl justify-center"
+              style={[
+                animatedCardStyle,
+                { height: "100%", backgroundColor: "transparent" },
+              ]}
             >
-              <Animated.View
-                className="flex-row items-center bg-black/95 border border-white/10 relative overflow-hidden rounded-full shadow-2xl justify-center"
-                style={[animatedCardStyle, { height: "100%" }]}
-              >
-                <BlurView
-                  intensity={Platform.OS === "ios" ? 40 : 80}
-                  tint="dark"
+              {resolvedArtwork ? (
+                <View
                   style={{
                     position: "absolute",
                     top: 0,
                     left: 0,
                     right: 0,
                     bottom: 0,
+                    backgroundColor: "#000",
+                  }}
+                >
+                  <Image
+                    source={{ uri: resolvedArtwork }}
+                    style={{
+                      position: "absolute",
+                      top: 0,
+                      left: 0,
+                      right: 0,
+                      bottom: 0,
+                      opacity: 0.8,
+                    }}
+                    resizeMode="cover"
+                  />
+                  <BlurView
+                    intensity={Platform.OS === "ios" ? 50 : 100}
+                    tint="dark"
+                    style={{
+                      position: "absolute",
+                      top: 0,
+                      left: 0,
+                      right: 0,
+                      bottom: 0,
+                    }}
+                  />
+                  <View
+                    style={{
+                      position: "absolute",
+                      top: 0,
+                      left: 0,
+                      right: 0,
+                      bottom: 0,
+                      backgroundColor: "rgba(0,0,0,0.3)",
+                    }}
+                  />
+                </View>
+              ) : (
+                <BlurView
+                  intensity={Platform.OS === "ios" ? 40 : 80}
+                  tint="default"
+                  style={{
+                    position: "absolute",
+                    top: 0,
+                    left: 0,
+                    right: 0,
+                    bottom: 0,
+                    backgroundColor: themeColorBackground + "99",
                   }}
                 />
-                <SpectrumVisualizer
-                  isPlaying={isPlaying}
-                  barCount={120}
-                  multiplier={3}
-                  opacity={0.15}
-                  barWidth={3}
-                  variant={spectrumVariant}
-                  containerStyle={{
-                    paddingHorizontal: 0,
-                  }}
-                />
-                <Animated.View
+              )}
+              <SpectrumVisualizer
+                isPlaying={isPlaying}
+                barCount={120}
+                multiplier={3}
+                opacity={0.15}
+                barWidth={3}
+                variant={spectrumVariant}
+                containerStyle={{
+                  paddingHorizontal: 0,
+                }}
+              />
+              <Animated.View
+                style={{
+                  position: "absolute",
+                  left: 0,
+                  right: 0,
+                  bottom: 0,
+                  opacity: expandedIconStyle.opacity,
+                }}
+                pointerEvents="none"
+              >
+                <View
                   style={{
                     position: "absolute",
                     left: 0,
                     right: 0,
                     bottom: 0,
-                    opacity: expandedIconStyle.opacity,
+                    height: 2,
+                    backgroundColor: "rgba(255,255,255,0.15)",
                   }}
-                  pointerEvents="none"
-                >
-                  <View
-                    style={{
-                      position: "absolute",
-                      left: 0,
-                      right: 0,
-                      bottom: 0,
-                      height: 2,
-                      backgroundColor: "rgba(255,255,255,0.15)",
-                    }}
-                  />
-                  <View
-                    style={{
-                      position: "absolute",
-                      left: 0,
-                      bottom: 0,
-                      height: 2,
-                      width: `${miniProgressRatio * 100}%`,
-                      backgroundColor: "#60a5fa",
-                    }}
-                  />
-                </Animated.View>
-
-                <Animated.View style={animatedArtworkContainerStyle}>
-                  {resolvedArtwork ? (
-                    <View>
-                      <SpinningCover
-                        uri={resolvedArtwork}
-                        size={38}
-                        isPlaying={isPlaying}
-                      />
-                      <Animated.View
-                        style={[
-                          collapsedIconStyle,
-                          {
-                            position: "absolute",
-                            top: 0,
-                            left: 0,
-                            right: 0,
-                            bottom: 0,
-                            alignItems: "center",
-                            justifyContent: "center",
-                          },
-                        ]}
-                      >
-                        <CircularProgress
-                          size={52}
-                          strokeWidth={2}
-                          progress={miniProgressRatio}
-                        />
-                      </Animated.View>
-                      <Animated.View
-                        style={[
-                          expandedIconStyle,
-                          {
-                            position: "absolute",
-                            left: -6,
-                            top: "50%",
-                            marginTop: -10,
-                          },
-                        ]}
-                      >
-                        <Pressable
-                          onPress={(e) => {
-                            e.stopPropagation();
-                            setIsCollapsed(!isCollapsed);
-                          }}
-                          className="bg-blue-500 rounded-full w-5 h-5 items-center justify-center border-2 border-black active:scale-90 transition-transform"
-                        >
-                          {({ pressed }) => (
-                            <Animated.View
-                              style={{
-                                transform: [{ scale: pressed ? 0.85 : 1 }],
-                              }}
-                            >
-                              <Ionicons
-                                name="chevron-back"
-                                size={12}
-                                color="#fff"
-                              />
-                            </Animated.View>
-                          )}
-                        </Pressable>
-                      </Animated.View>
-                      <Animated.View
-                        style={[
-                          collapsedIconStyle,
-                          {
-                            position: "absolute",
-                            left: -6,
-                            top: "50%",
-                            marginTop: -10,
-                          },
-                        ]}
-                      >
-                        <Pressable
-                          onPress={(e) => {
-                            e.stopPropagation();
-                            setIsCollapsed(!isCollapsed);
-                          }}
-                          className="bg-blue-500 rounded-full w-5 h-5 items-center justify-center border-2 border-black active:scale-90 transition-transform"
-                        >
-                          {({ pressed }) => (
-                            <Animated.View
-                              style={{
-                                transform: [{ scale: pressed ? 0.85 : 1 }],
-                              }}
-                            >
-                              <Ionicons
-                                name="chevron-forward"
-                                size={12}
-                                color="#fff"
-                              />
-                            </Animated.View>
-                          )}
-                        </Pressable>
-                      </Animated.View>
-                    </View>
-                  ) : (
-                    <View
-                      style={{
-                        width: 50,
-                        height: 50,
-                        borderRadius: 25,
-                        backgroundColor: "#525252",
-                        alignItems: "center",
-                        justifyContent: "center",
-                      }}
-                    >
-                      <Text style={{ fontSize: 16 }}>🎵</Text>
-                      <Animated.View
-                        style={[
-                          collapsedIconStyle,
-                          {
-                            position: "absolute",
-                            top: 0,
-                            left: 0,
-                            right: 0,
-                            bottom: 0,
-                            alignItems: "center",
-                            justifyContent: "center",
-                          },
-                        ]}
-                      >
-                        <CircularProgress
-                          size={52}
-                          strokeWidth={2}
-                          progress={miniProgressRatio}
-                        />
-                      </Animated.View>
-                      <Animated.View
-                        style={[
-                          expandedIconStyle,
-                          {
-                            position: "absolute",
-                            left: -6,
-                            top: "50%",
-                            marginTop: -10,
-                          },
-                        ]}
-                      >
-                        <Pressable
-                          onPress={(e) => {
-                            e.stopPropagation();
-                            setIsCollapsed(!isCollapsed);
-                          }}
-                          className="bg-blue-500 rounded-full w-5 h-5 items-center justify-center border-2 border-black active:scale-90 transition-transform"
-                        >
-                          {({ pressed }) => (
-                            <Animated.View
-                              style={{
-                                transform: [{ scale: pressed ? 0.85 : 1 }],
-                              }}
-                            >
-                              <Ionicons
-                                name="chevron-back"
-                                size={12}
-                                color="#fff"
-                              />
-                            </Animated.View>
-                          )}
-                        </Pressable>
-                      </Animated.View>
-                      <Animated.View
-                        style={[
-                          collapsedIconStyle,
-                          {
-                            position: "absolute",
-                            left: -6,
-                            top: "50%",
-                            marginTop: -10,
-                          },
-                        ]}
-                      >
-                        <Pressable
-                          onPress={(e) => {
-                            e.stopPropagation();
-                            setIsCollapsed(!isCollapsed);
-                          }}
-                          className="bg-blue-500 rounded-full w-5 h-5 items-center justify-center border-2 border-black active:scale-90 transition-transform"
-                        >
-                          {({ pressed }) => (
-                            <Animated.View
-                              style={{
-                                transform: [{ scale: pressed ? 0.85 : 1 }],
-                              }}
-                            >
-                              <Ionicons
-                                name="chevron-forward"
-                                size={12}
-                                color="#fff"
-                              />
-                            </Animated.View>
-                          )}
-                        </Pressable>
-                      </Animated.View>
-                    </View>
-                  )}
-                </Animated.View>
-
-                <Animated.View
-                  className="flex-1 flex-row items-center"
-                  style={animatedContentStyle}
-                  pointerEvents={isCollapsed ? "none" : "auto"}
-                >
-                  <View className="flex-1 mr-2 items-center">
-                    <Text
-                      className="text-white font-bold text-sm text-center"
-                      numberOfLines={1}
-                    >
-                      {currentTrack.title}
-                    </Text>
-                    <Text
-                      className="text-white/70 text-xs text-center"
-                      numberOfLines={1}
-                    >
-                      {currentTrack.artist}
-                    </Text>
-                  </View>
-
-                  <Pressable
-                    onPress={(e) => {
-                      e.stopPropagation();
-                      playPrevious();
-                    }}
-                    className="p-2"
-                  >
-                    {({ pressed }) => (
-                      <Ionicons
-                        name="play-skip-back"
-                        size={20}
-                        color={pressed ? "#ef4444" : "#fff"}
-                      />
-                    )}
-                  </Pressable>
-
-                  <Pressable
-                    onPress={(e) => {
-                      e.stopPropagation();
-                      (isPlaying ? pauseTrack : resumeTrack)();
-                    }}
-                    className="p-2"
-                    disabled={isLoading}
-                  >
-                    {({ pressed }) =>
-                      isLoading ? (
-                        <ActivityIndicator size="small" color="#fff" />
-                      ) : (
-                        <Ionicons
-                          name={isPlaying ? "pause" : "play"}
-                          size={24}
-                          color={pressed ? "#ef4444" : "#fff"}
-                        />
-                      )
-                    }
-                  </Pressable>
-
-                  <Pressable
-                    onPress={(e) => {
-                      e.stopPropagation();
-                      playNext();
-                    }}
-                    className="p-2"
-                  >
-                    {({ pressed }) => (
-                      <Ionicons
-                        name="play-skip-forward"
-                        size={20}
-                        color={pressed ? "#ef4444" : "#fff"}
-                      />
-                    )}
-                  </Pressable>
-
-                  <Pressable
-                    onPress={(e) => {
-                      e.stopPropagation();
-                      void toggleCurrentFavorite(resolvedArtwork);
-                    }}
-                    className="p-2 mr-1"
-                  >
-                    {({ pressed }) => (
-                      <Ionicons
-                        name={isCurrentFavorited ? "heart" : "heart-outline"}
-                        size={20}
-                        color={
-                          isCurrentFavorited || pressed ? "#ef4444" : "#fff"
-                        }
-                      />
-                    )}
-                  </Pressable>
-                </Animated.View>
+                />
+                <View
+                  style={{
+                    position: "absolute",
+                    left: 0,
+                    bottom: 0,
+                    height: 2,
+                    width: `${miniProgressRatio * 100}%`,
+                    backgroundColor: "#60a5fa",
+                  }}
+                />
               </Animated.View>
-            </Pressable>
-          </Animated.View>
-        </Portal>
-      )}
+
+              <Animated.View style={animatedArtworkContainerStyle}>
+                {resolvedArtwork ? (
+                  <View>
+                    <SpinningCover
+                      uri={resolvedArtwork}
+                      size={38}
+                      isPlaying={isPlaying}
+                    />
+                    <Animated.View
+                      style={[
+                        collapsedIconStyle,
+                        {
+                          position: "absolute",
+                          top: 0,
+                          left: 0,
+                          right: 0,
+                          bottom: 0,
+                          alignItems: "center",
+                          justifyContent: "center",
+                        },
+                      ]}
+                    >
+                      <CircularProgress
+                        size={52}
+                        strokeWidth={2}
+                        progress={miniProgressRatio}
+                      />
+                    </Animated.View>
+                    <Animated.View
+                      style={[
+                        expandedIconStyle,
+                        {
+                          position: "absolute",
+                          left: -6,
+                          top: "50%",
+                          marginTop: -10,
+                        },
+                      ]}
+                    >
+                      <Pressable
+                        onPress={(e) => {
+                          e.stopPropagation();
+                          setIsCollapsed(!isCollapsed);
+                        }}
+                        className="bg-blue-500 rounded-full w-5 h-5 items-center justify-center border-2 border-black active:scale-90 transition-transform"
+                      >
+                        {({ pressed }) => (
+                          <Animated.View
+                            style={{
+                              transform: [{ scale: pressed ? 0.85 : 1 }],
+                            }}
+                          >
+                            <Ionicons
+                              name="chevron-back"
+                              size={12}
+                              color="#fff"
+                            />
+                          </Animated.View>
+                        )}
+                      </Pressable>
+                    </Animated.View>
+                    <Animated.View
+                      style={[
+                        collapsedIconStyle,
+                        {
+                          position: "absolute",
+                          left: -6,
+                          top: "50%",
+                          marginTop: -10,
+                        },
+                      ]}
+                    >
+                      <Pressable
+                        onPress={(e) => {
+                          e.stopPropagation();
+                          setIsCollapsed(!isCollapsed);
+                        }}
+                        className="bg-blue-500 rounded-full w-5 h-5 items-center justify-center border-2 border-black active:scale-90 transition-transform"
+                      >
+                        {({ pressed }) => (
+                          <Animated.View
+                            style={{
+                              transform: [{ scale: pressed ? 0.85 : 1 }],
+                            }}
+                          >
+                            <Ionicons
+                              name="chevron-forward"
+                              size={12}
+                              color="#fff"
+                            />
+                          </Animated.View>
+                        )}
+                      </Pressable>
+                    </Animated.View>
+                  </View>
+                ) : (
+                  <View
+                    style={{
+                      width: 50,
+                      height: 50,
+                      borderRadius: 25,
+                      backgroundColor: "#525252",
+                      alignItems: "center",
+                      justifyContent: "center",
+                    }}
+                  >
+                    <Text style={{ fontSize: 16 }}>🎵</Text>
+                    <Animated.View
+                      style={[
+                        collapsedIconStyle,
+                        {
+                          position: "absolute",
+                          top: 0,
+                          left: 0,
+                          right: 0,
+                          bottom: 0,
+                          alignItems: "center",
+                          justifyContent: "center",
+                        },
+                      ]}
+                    >
+                      <CircularProgress
+                        size={52}
+                        strokeWidth={2}
+                        progress={miniProgressRatio}
+                      />
+                    </Animated.View>
+                    <Animated.View
+                      style={[
+                        expandedIconStyle,
+                        {
+                          position: "absolute",
+                          left: -6,
+                          top: "50%",
+                          marginTop: -10,
+                        },
+                      ]}
+                    >
+                      <Pressable
+                        onPress={(e) => {
+                          e.stopPropagation();
+                          setIsCollapsed(!isCollapsed);
+                        }}
+                        className="bg-blue-500 rounded-full w-5 h-5 items-center justify-center border-2 border-black active:scale-90 transition-transform"
+                      >
+                        {({ pressed }) => (
+                          <Animated.View
+                            style={{
+                              transform: [{ scale: pressed ? 0.85 : 1 }],
+                            }}
+                          >
+                            <Ionicons
+                              name="chevron-back"
+                              size={12}
+                              color="#fff"
+                            />
+                          </Animated.View>
+                        )}
+                      </Pressable>
+                    </Animated.View>
+                    <Animated.View
+                      style={[
+                        collapsedIconStyle,
+                        {
+                          position: "absolute",
+                          left: -6,
+                          top: "50%",
+                          marginTop: -10,
+                        },
+                      ]}
+                    >
+                      <Pressable
+                        onPress={(e) => {
+                          e.stopPropagation();
+                          setIsCollapsed(!isCollapsed);
+                        }}
+                        className="bg-blue-500 rounded-full w-5 h-5 items-center justify-center border-2 border-black active:scale-90 transition-transform"
+                      >
+                        {({ pressed }) => (
+                          <Animated.View
+                            style={{
+                              transform: [{ scale: pressed ? 0.85 : 1 }],
+                            }}
+                          >
+                            <Ionicons
+                              name="chevron-forward"
+                              size={12}
+                              color="#fff"
+                            />
+                          </Animated.View>
+                        )}
+                      </Pressable>
+                    </Animated.View>
+                  </View>
+                )}
+              </Animated.View>
+
+              <Animated.View
+                className="flex-1 flex-row items-center"
+                style={animatedContentStyle}
+                pointerEvents={isCollapsed ? "none" : "auto"}
+              >
+                <View className="flex-1 mr-2 items-center">
+                  <Text
+                    className="text-white font-bold text-sm text-center"
+                    numberOfLines={1}
+                  >
+                    {currentTrack.title}
+                  </Text>
+                  <Text
+                    className="text-white/70 text-xs text-center"
+                    numberOfLines={1}
+                  >
+                    {currentTrack.artist}
+                  </Text>
+                </View>
+
+                <Pressable
+                  onPress={(e) => {
+                    e.stopPropagation();
+                    playPrevious();
+                  }}
+                  className="p-2"
+                >
+                  {({ pressed }) => (
+                    <Ionicons
+                      name="play-skip-back"
+                      size={20}
+                      color={pressed ? "#ef4444" : "#fff"}
+                    />
+                  )}
+                </Pressable>
+
+                <Pressable
+                  onPress={(e) => {
+                    e.stopPropagation();
+                    (isPlaying ? pauseTrack : resumeTrack)();
+                  }}
+                  className="p-2"
+                  disabled={isLoading}
+                >
+                  {({ pressed }) =>
+                    isLoading ? (
+                      <ActivityIndicator size="small" color="#fff" />
+                    ) : (
+                      <Ionicons
+                        name={isPlaying ? "pause" : "play"}
+                        size={24}
+                        color={pressed ? "#ef4444" : "#fff"}
+                      />
+                    )
+                  }
+                </Pressable>
+
+                <Pressable
+                  onPress={(e) => {
+                    e.stopPropagation();
+                    playNext();
+                  }}
+                  className="p-2"
+                >
+                  {({ pressed }) => (
+                    <Ionicons
+                      name="play-skip-forward"
+                      size={20}
+                      color={pressed ? "#ef4444" : "#fff"}
+                    />
+                  )}
+                </Pressable>
+
+                <Pressable
+                  onPress={(e) => {
+                    e.stopPropagation();
+                    void toggleCurrentFavorite(resolvedArtwork);
+                  }}
+                  className="p-2 mr-1"
+                >
+                  {({ pressed }) => (
+                    <Ionicons
+                      name={isCurrentFavorited ? "heart" : "heart-outline"}
+                      size={20}
+                      color={isCurrentFavorited || pressed ? "#ef4444" : "#fff"}
+                    />
+                  )}
+                </Pressable>
+              </Animated.View>
+            </Animated.View>
+          </Pressable>
+        </Animated.View>
+      </Portal>
       <BottomSheetModal
         ref={bottomSheetRef}
         snapPoints={snapPoints}
