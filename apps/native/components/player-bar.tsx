@@ -60,7 +60,14 @@ const SpectrumBar = ({
   active: boolean;
   multiplier?: number;
   barWidth?: number;
-  variant?: "wave" | "symmetric" | "pulse" | "digital";
+  variant?:
+    | "wave"
+    | "symmetric"
+    | "pulse"
+    | "digital"
+    | "natural"
+    | "mirror"
+    | "fountain";
   totalBars: number;
 }) => {
   const animatedStyle = useAnimatedStyle(() => {
@@ -76,22 +83,50 @@ const SpectrumBar = ({
         break;
       }
       case "pulse": {
-        // Rhythmic pulsing with some spatial variation
         const beat = Math.abs(Math.sin(phase.value * 1.5));
         const spatial = Math.abs(Math.sin(index * 0.3 + phase.value * 0.5));
         value = beat * 0.7 + spatial * 0.3;
         break;
       }
       case "digital": {
-        // High frequency pseudo-random look
-        // We vary the speed slightly per bar to create a chaotic equalizer effect
         const speed = 1 + (index % 7) * 0.2;
         value = Math.abs(Math.sin(phase.value * speed + index));
         break;
       }
+      case "natural": {
+        // Simulates a frequency spectrum: Bass (low index) -> Treble (high index)
+        const normalizedIndex = index / totalBars;
+        // Bass moves slower but has more "weight", Treble moves faster
+        const speed = 0.8 + normalizedIndex * 3;
+        // Combine multiple sines for "noise" look
+        const v1 = Math.sin(phase.value * speed + index * 0.5);
+        const v2 = Math.sin(phase.value * (speed * 0.5) - index * 0.2);
+        // Scale down high frequencies slightly
+        value =
+          (Math.abs(v1) * 0.7 + Math.abs(v2) * 0.3) *
+          (1 - normalizedIndex * 0.4);
+        break;
+      }
+      case "mirror": {
+        // Intersecting waves
+        const v1 = Math.sin(phase.value + index * 0.3);
+        const v2 = Math.sin(phase.value * 1.2 - index * 0.3);
+        value = (Math.abs(v1) + Math.abs(v2)) / 2;
+        break;
+      }
+      case "fountain": {
+        // High energy in center, shooting out
+        const center = totalBars / 2;
+        const dist = Math.abs(index - center);
+        const normalizedDist = dist / (totalBars / 2);
+        // Wave moving outward
+        const wave = Math.abs(Math.sin(phase.value * 2 - dist * 0.4));
+        // Decay with distance from center
+        value = wave * (1 - normalizedDist * 0.7);
+        break;
+      }
       case "wave":
       default: {
-        // Default traveling wave
         value = Math.abs(Math.sin(phase.value + index * 0.55));
         break;
       }
@@ -133,7 +168,14 @@ const SpectrumVisualizer = ({
   opacity: number;
   containerStyle?: any;
   barWidth?: number;
-  variant?: "wave" | "symmetric" | "pulse" | "digital";
+  variant?:
+    | "wave"
+    | "symmetric"
+    | "pulse"
+    | "digital"
+    | "natural"
+    | "mirror"
+    | "fountain";
 }) => {
   const bars = useMemo(
     () => Array.from({ length: barCount }, (_, i) => ({ id: i, index: i })),
@@ -478,7 +520,13 @@ export const PlayerBar = () => {
   const [scrubMillis, setScrubMillis] = useState<number | null>(null);
   const [isScrubbing, setIsScrubbing] = useState(false);
   const [spectrumVariant, setSpectrumVariant] = useState<
-    "wave" | "symmetric" | "pulse" | "digital"
+    | "wave"
+    | "symmetric"
+    | "pulse"
+    | "digital"
+    | "natural"
+    | "mirror"
+    | "fountain"
   >("wave");
 
   const dragX = useSharedValue(0);
@@ -527,27 +575,16 @@ export const PlayerBar = () => {
     const width = interpolate(
       collapseProgress.value,
       [0, 1],
-      [92, 20],
+      [100, 20],
       "clamp"
     );
-    const left = interpolate(
-      collapseProgress.value,
-      [0, 1],
-      [Platform.OS === "web" ? 50 : 4, 4],
-      "clamp"
-    );
-    const marginLeft = interpolate(
-      collapseProgress.value,
-      [0, 1],
-      [Platform.OS === "web" ? -220 : 0, 0],
-      "clamp"
-    );
+    const left = interpolate(collapseProgress.value, [0, 1], [0, 0], "clamp");
 
     return {
       width: isCollapsed ? (58 as any) : `${width}%`,
-      left: `${left}%`,
-      marginLeft: marginLeft,
-      maxWidth: isCollapsed ? 58 : 440,
+      left: 0,
+      marginLeft: 0,
+      maxWidth: isCollapsed ? 58 : Platform.OS === "web" ? 800 : "100%",
       height: isCollapsed ? 58 : 64,
       transform: [
         { translateX: dragX.value },
@@ -739,7 +776,6 @@ export const PlayerBar = () => {
                 bottom: insets.bottom + 56,
                 zIndex: 99999,
                 elevation: 99999,
-                alignSelf: "center",
               },
               animatedMiniPlayerStyle,
             ]}
@@ -773,13 +809,13 @@ export const PlayerBar = () => {
                 />
                 <SpectrumVisualizer
                   isPlaying={isPlaying}
-                  barCount={30}
+                  barCount={120}
                   multiplier={3}
                   opacity={0.15}
                   barWidth={3}
                   variant={spectrumVariant}
                   containerStyle={{
-                    paddingHorizontal: 8,
+                    paddingHorizontal: 0,
                   }}
                 />
                 <Animated.View
@@ -1126,7 +1162,7 @@ export const PlayerBar = () => {
         <StyledBottomSheetView className="flex-1 rounded-t-[24px] overflow-hidden">
           <SpectrumVisualizer
             isPlaying={isPlaying}
-            barCount={70}
+            barCount={150}
             multiplier={24}
             opacity={0.25}
             barWidth={4}
@@ -1154,6 +1190,9 @@ export const PlayerBar = () => {
                       if (prev === "wave") return "symmetric";
                       if (prev === "symmetric") return "pulse";
                       if (prev === "pulse") return "digital";
+                      if (prev === "digital") return "natural";
+                      if (prev === "natural") return "mirror";
+                      if (prev === "mirror") return "fountain";
                       return "wave";
                     })
                   }
@@ -1167,7 +1206,13 @@ export const PlayerBar = () => {
                           ? "code-working-outline"
                           : spectrumVariant === "pulse"
                           ? "pulse-outline"
-                          : "stats-chart-outline"
+                          : spectrumVariant === "digital"
+                          ? "stats-chart-outline"
+                          : spectrumVariant === "natural"
+                          ? "musical-notes-outline"
+                          : spectrumVariant === "mirror"
+                          ? "git-compare-outline"
+                          : "flash-outline"
                       }
                       size={22}
                       color={pressed ? "#ef4444" : "#fff"}
