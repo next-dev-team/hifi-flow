@@ -589,6 +589,7 @@ export const PlayerBar = () => {
       return {
         width: isCollapsed ? collapsedWidth : "100%",
         left: 0,
+        bottom: insets.bottom + 56,
         height: isCollapsed ? 58 : 64,
         transform: [
           { translateX: dragX.value },
@@ -618,6 +619,7 @@ export const PlayerBar = () => {
       width,
       left,
       height: interpolate(collapseProgress.value, [0, 1], [64, 58], "clamp"),
+      bottom: insets.bottom + 56,
       transform: [
         { translateX: dragX.value },
         { scale: isDragging.value ? 0.98 : 1 },
@@ -834,7 +836,6 @@ export const PlayerBar = () => {
           className="absolute"
           style={[
             {
-              bottom: insets.bottom + 56,
               zIndex: 99999,
               elevation: 99999,
             },
@@ -844,6 +845,7 @@ export const PlayerBar = () => {
           {...panResponderMini.panHandlers}
         >
           <Pressable
+            style={{ height: "100%" }}
             onPress={() => {
               if (isCollapsed) {
                 setIsCollapsed(false);
