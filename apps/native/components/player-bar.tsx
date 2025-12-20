@@ -21,6 +21,7 @@ import {
   Pressable,
   Text,
   TouchableOpacity,
+  useWindowDimensions,
   View,
 } from "react-native";
 import Animated, {
@@ -490,6 +491,7 @@ const SeekBar = ({
 };
 
 export const PlayerBar = () => {
+  const { width: screenWidth } = useWindowDimensions();
   const {
     currentTrack,
     isPlaying,
@@ -572,20 +574,49 @@ export const PlayerBar = () => {
   }, [isCollapsed, dragX, isDragging]);
 
   const animatedMiniPlayerStyle = useAnimatedStyle(() => {
+    const isWeb = Platform.OS === "web";
+    const margin = 16;
+    const collapsedWidth = 58;
+    const APP_WEB_MAX_WIDTH = 480;
+
+    // Determine if we should use the "floating" style (native mobile OR mobile web H5)
+    // On web, we check if screenWidth is small (typical mobile breakpoint)
+    const isFloating = !isWeb || screenWidth < APP_WEB_MAX_WIDTH + 40;
+
+    if (!isFloating) {
+      // Desktop Web style: Fill the container width
+      return {
+        width: isCollapsed ? collapsedWidth : "100%",
+        left: 0,
+        height: isCollapsed ? 58 : 64,
+        transform: [
+          { translateX: dragX.value },
+          { scale: isDragging.value ? 0.98 : 1 },
+        ],
+      } as any;
+    }
+
+    // Mobile style (Native or H5): Floating with margins
+    const expandedWidth = screenWidth - margin * 2;
+
     const width = interpolate(
       collapseProgress.value,
       [0, 1],
-      [100, 20],
+      [expandedWidth, collapsedWidth],
       "clamp"
     );
-    const left = interpolate(collapseProgress.value, [0, 1], [0, 0], "clamp");
+
+    const left = interpolate(
+      collapseProgress.value,
+      [0, 1],
+      [margin, margin],
+      "clamp"
+    );
 
     return {
-      width: isCollapsed ? (58 as any) : `${width}%`,
-      left: 0,
-      marginLeft: 0,
-      maxWidth: isCollapsed ? 58 : Platform.OS === "web" ? 800 : "100%",
-      height: isCollapsed ? 58 : 64,
+      width,
+      left,
+      height: interpolate(collapseProgress.value, [0, 1], [64, 58], "clamp"),
       transform: [
         { translateX: dragX.value },
         { scale: isDragging.value ? 0.98 : 1 },
