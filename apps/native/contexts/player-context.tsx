@@ -1,3 +1,7 @@
+import {
+  type AudioAnalysis,
+  extractAudioAnalysis,
+} from "@siteed/expo-audio-studio";
 import { Audio, type AVPlaybackStatus } from "expo-av";
 import * as SecureStore from "expo-secure-store";
 import type React from "react";
@@ -48,6 +52,8 @@ interface PlayerContextType {
   positionMillis: number;
   durationMillis: number;
   currentStreamUrl: string | null;
+  audioAnalysis: AudioAnalysis | null;
+  isAnalyzing: boolean;
   sleepTimerEndsAt: number | null;
   sleepTimerRemainingMs: number;
   startSleepTimer: (minutes: number) => void;
@@ -126,6 +132,10 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
   const [positionMillis, setPositionMillis] = useState(0);
   const [durationMillis, setDurationMillis] = useState(0);
   const [currentStreamUrl, setCurrentStreamUrl] = useState<string | null>(null);
+  const [audioAnalysis, setAudioAnalysis] = useState<AudioAnalysis | null>(
+    null
+  );
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [favorites, setFavorites] = useState<SavedTrack[]>([]);
   const [volume, setVolumeState] = useState(1.0);
   const [sleepTimerEndsAt, setSleepTimerEndsAt] = useState<number | null>(null);
@@ -255,6 +265,31 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
     }
   }, []);
 
+  const analyzeTrack = useCallback(async (uri: string, requestId: number) => {
+    setIsAnalyzing(true);
+    setAudioAnalysis(null);
+    try {
+      const result = await extractAudioAnalysis({
+        fileUri: uri,
+        segmentDurationMs: 100,
+        features: {
+          rms: true,
+          energy: true,
+          spectralCentroid: true,
+        },
+      });
+      if (playRequestIdRef.current === requestId) {
+        setAudioAnalysis(result);
+      }
+    } catch (e) {
+      console.error("Error analyzing track", e);
+    } finally {
+      if (playRequestIdRef.current === requestId) {
+        setIsAnalyzing(false);
+      }
+    }
+  }, []);
+
   const playSound = useCallback(
     async (track: Track) => {
       playRequestIdRef.current += 1;
@@ -361,6 +396,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
         }
 
         setCurrentStreamUrl(streamUrl);
+        void analyzeTrack(streamUrl, requestId);
         await sound.playAsync();
 
         if (playRequestIdRef.current !== requestId) {
@@ -381,7 +417,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
         }
       }
     },
-    [volume]
+    [volume, analyzeTrack]
   );
 
   const playTrack = useCallback(
@@ -708,6 +744,8 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
         positionMillis,
         durationMillis,
         currentStreamUrl,
+        audioAnalysis,
+        isAnalyzing,
         sleepTimerEndsAt,
         sleepTimerRemainingMs,
         startSleepTimer,

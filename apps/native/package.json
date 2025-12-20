@@ -35,6 +35,8 @@
     "expo-secure-store": "~15.0.7",
     "expo-speech-recognition": "^3.0.1",
     "expo-status-bar": "~3.0.8",
+    "@siteed/expo-audio-studio": "^2.18.1",
+    "@siteed/expo-audio-ui": "^0.7.0",
     "heroui-native": "1.0.0-beta.3",
     "react": "19.1.0",
     "react-dom": "19.1.0",

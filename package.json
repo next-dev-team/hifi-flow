@@ -20,9 +20,6 @@
     "zod": "catalog:"
   },
   "devDependencies": {
-    "@turbo/gen": "^2.6.3",
-    "turbo": "^2.6.3",
-    "typescript": "catalog:",
     "@kubb/cli": "^4.11.1",
     "@kubb/core": "^4.11.1",
     "@kubb/plugin-client": "^4.11.1",
@@ -30,14 +27,20 @@
     "@kubb/plugin-react-query": "^4.11.1",
     "@kubb/plugin-ts": "^4.11.1",
     "@kubb/react": "^4.3.1",
-    "@kubb/react-fabric": "^0.5.5"
+    "@kubb/react-fabric": "^0.5.5",
+    "@turbo/gen": "^2.6.3",
+    "turbo": "^2.6.3",
+    "typescript": "catalog:"
   },
   "pnpm": {
     "overrides": {
       "react": "19.1.0",
       "react-dom": "19.1.0",
       "react-is": "19.1.0"
-    }
+    },
+    "onlyBuiltDependencies": [
+      "@shopify/react-native-skia"
+    ]
   },
   "packageManager": "pnpm@10.19.0"
 }

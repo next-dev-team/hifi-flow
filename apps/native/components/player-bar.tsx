@@ -8,6 +8,7 @@ import {
   useBottomSheetTimingConfigs,
 } from "@gorhom/bottom-sheet";
 import { Portal } from "@gorhom/portal";
+import type { AudioAnalysis } from "@siteed/expo-audio-studio";
 import { BlurView } from "expo-blur";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -330,6 +331,8 @@ const SpectrumVisualizer = ({
   variant = "wave",
   radius,
   phase: externalPhase,
+  audioAnalysis,
+  positionMillis,
 }: {
   isPlaying: boolean;
   barCount: number;
@@ -348,6 +351,8 @@ const SpectrumVisualizer = ({
     | "trap";
   radius?: number;
   phase?: SharedValue<number>;
+  audioAnalysis?: AudioAnalysis | null;
+  positionMillis?: number;
 }) => {
   const bars = useMemo(
     () => Array.from({ length: barCount }, (_, i) => ({ id: i, index: i })),
@@ -355,6 +360,26 @@ const SpectrumVisualizer = ({
   );
   const internalPhase = useSharedValue(0);
   const phase = externalPhase || internalPhase;
+
+  // Real-time amplitude scaling based on analysis
+  const amplitudeScale = useSharedValue(1);
+
+  useEffect(() => {
+    if (audioAnalysis && positionMillis !== undefined) {
+      const dp = audioAnalysis.dataPoints.find(
+        (p) =>
+          positionMillis >= (p.startTime ?? 0) &&
+          positionMillis < (p.endTime ?? 0)
+      );
+      if (dp) {
+        // Normalize amplitude/rms to a reasonable scale
+        const targetScale = 0.5 + dp.rms * 5;
+        amplitudeScale.value = withTiming(targetScale, { duration: 100 });
+      }
+    } else {
+      amplitudeScale.value = 1;
+    }
+  }, [audioAnalysis, positionMillis, amplitudeScale]);
 
   // Add more dynamic simulation based on playback state
   const frameId = useRef<number>(0);
@@ -370,13 +395,15 @@ const SpectrumVisualizer = ({
     const animate = () => {
       // Slightly vary the phase increment for more organic feel
       const jitter = Math.sin(Date.now() / 1000) * 0.01;
-      phase.value = phase.value + (0.05 + jitter);
+      // If we have real amplitude data, use it to boost the speed
+      const speedBoost = audioAnalysis ? amplitudeScale.value * 0.5 : 1;
+      phase.value = phase.value + (0.05 + jitter) * speedBoost;
       frameId.current = requestAnimationFrame(animate);
     };
 
     frameId.current = requestAnimationFrame(animate);
     return () => cancelAnimationFrame(frameId.current);
-  }, [isPlaying, phase, externalPhase]);
+  }, [isPlaying, phase, externalPhase, audioAnalysis, amplitudeScale]);
 
   const isCircular = variant === "trap" && radius !== undefined && radius > 0;
 
@@ -406,7 +433,7 @@ const SpectrumVisualizer = ({
           index={bar.index}
           phase={phase}
           active={isPlaying}
-          multiplier={multiplier}
+          multiplier={multiplier * (audioAnalysis ? amplitudeScale.value : 1)}
           barWidth={barWidth}
           variant={variant}
           totalBars={barCount}
@@ -850,6 +877,7 @@ export const PlayerBar = () => {
     seekByMillis,
     volume,
     setVolume,
+    audioAnalysis,
   } = usePlayer();
   const insets = useSafeAreaInsets();
   const bottomSheetRef = useRef<BottomSheetModal | null>(null);
@@ -860,6 +888,19 @@ export const PlayerBar = () => {
   const [isSheetOpen, setIsSheetOpen] = useState(false);
   const [showVolume, setShowVolume] = useState(false);
   const [showSpectrumSelector, setShowSpectrumSelector] = useState(false);
+
+  // Auto-close volume slider after 3 seconds of inactivity
+  // biome-ignore lint/correctness/useExhaustiveDependencies: volume is used to reset the timer
+  useEffect(() => {
+    if (!showVolume) return;
+
+    const timer = setTimeout(() => {
+      setShowVolume(false);
+    }, 3000);
+
+    return () => clearTimeout(timer);
+  }, [showVolume, volume]);
+
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [scrubMillis, setScrubMillis] = useState<number | null>(null);
   const [isScrubbing, setIsScrubbing] = useState(false);
@@ -1344,6 +1385,8 @@ export const PlayerBar = () => {
                 barWidth={3}
                 variant={spectrumVariant}
                 phase={sharedPhase}
+                audioAnalysis={audioAnalysis}
+                positionMillis={positionMillis}
                 containerStyle={{
                   paddingHorizontal: 0,
                 }}
@@ -1698,6 +1741,8 @@ export const PlayerBar = () => {
               barWidth={4}
               variant={spectrumVariant}
               phase={sharedPhase}
+              audioAnalysis={audioAnalysis}
+              positionMillis={positionMillis}
             />
           )}
           <View className="flex-1 max-w-md w-full mx-auto relative">
@@ -1877,6 +1922,8 @@ export const PlayerBar = () => {
                       variant="trap"
                       radius={104}
                       phase={sharedPhase}
+                      audioAnalysis={audioAnalysis}
+                      positionMillis={positionMillis}
                     />
                   )}
                   {resolvedArtwork ? (
