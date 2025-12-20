@@ -1239,9 +1239,11 @@ export const PlayerBar = () => {
       return;
     }
 
-    setResolvedArtwork(currentTrack.artwork);
+    // Use the enhanced resolveArtwork which handles direct URLs and Tidal UUIDs
+    const artwork = resolveArtwork(currentTrack, "1280");
+    setResolvedArtwork(artwork);
 
-    if (currentTrack.artwork) {
+    if (artwork) {
       return () => {
         cancelled = true;
       };
@@ -1254,13 +1256,15 @@ export const PlayerBar = () => {
       };
     }
 
+    // If still no artwork, try to fetch track metadata to get coverId
     losslessAPI
       .getTrack(trackId)
       .then((lookup) => {
         if (cancelled) return;
-        const coverId = lookup.track.album?.cover;
-        if (!coverId) return;
-        setResolvedArtwork(losslessAPI.getCoverUrl(coverId, "1280"));
+        const resolved = resolveArtwork(lookup.track, "1280");
+        if (resolved) {
+          setResolvedArtwork(resolved);
+        }
       })
       .catch(() => {
         if (cancelled) return;

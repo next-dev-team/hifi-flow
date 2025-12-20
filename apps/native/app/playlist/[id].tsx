@@ -7,16 +7,11 @@ import { withUniwind } from "uniwind";
 import { ApiDebug } from "@/components/api-debug";
 import { type Track, TrackItem } from "@/components/track-item";
 import { usePlayer } from "@/contexts/player-context";
+import { resolveArtwork, resolveName } from "@/utils/resolvers";
 
 const StyledSafeAreaView = withUniwind(SafeAreaView);
 const StyledView = withUniwind(View);
 const StyledText = withUniwind(Text);
-
-const resolveName = (value?: { name?: string } | string) => {
-  if (!value) return undefined;
-  if (typeof value === "string") return value;
-  return value.name;
-};
 
 export default function PlaylistScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -73,13 +68,13 @@ export default function PlaylistScreen() {
     return items.map((item, index) => {
       const resolvedId = item.id || item.videoId || `playlist-${String(id)}-${index}`;
       return {
-        id: resolvedId,
+        id: String(resolvedId),
         title: item.title || item.name || "Unknown Title",
         artist:
           resolveName(item.artist) ||
           resolveName(item.author) ||
           "Unknown Artist",
-        artwork: item.thumbnail?.url || item.thumbnails?.[0]?.url || item.image,
+        artwork: resolveArtwork(item),
         url: item.url || `https://www.youtube.com/watch?v=${resolvedId}`,
       };
     });

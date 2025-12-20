@@ -8,10 +8,7 @@ import {
   useBottomSheetTimingConfigs,
 } from "@gorhom/bottom-sheet";
 import { useQuery } from "@tanstack/react-query";
-import {
-  useGetArtistArtistGet,
-  useSearchSearchGet,
-} from "api-hifi/src/gen/hooks";
+import { useSearchSearchGet } from "api-hifi/src/gen/hooks";
 import type { SearchSearchGetQueryParams } from "api-hifi/src/gen/types/SearchSearchGet";
 import { Card, Chip, useThemeColor } from "heroui-native";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -37,7 +34,7 @@ import { SearchComposer } from "@/components/search-composer";
 import { type Track, TrackItem } from "@/components/track-item";
 import { useAppTheme } from "@/contexts/app-theme-context";
 import { type SavedTrack, usePlayer } from "@/contexts/player-context";
-import { getSuggestedArtists } from "@/utils/api";
+import { getSuggestedArtists, losslessAPI } from "@/utils/api";
 import { resolveArtwork, resolveName } from "@/utils/resolvers";
 
 type SearchFilter = "songs" | "artists" | "albums" | "playlists";
@@ -76,58 +73,68 @@ export default function Home() {
   const [debouncedQuery, setDebouncedQuery] = useState("");
 
   const [selectedArtist, setSelectedArtist] = useState<Artist | null>(null);
+  const [selectedAlbum, setSelectedAlbum] = useState<any | null>(null);
   const artistSheetRef = useRef<BottomSheetModal | null>(null);
   const artistSnapPoints = useMemo(() => ["90%"], []);
 
-  const { data: artistDetails, isLoading: isArtistLoading } =
-    useGetArtistArtistGet(
-      selectedArtist
-        ? {
-            f:
-              parseInt(String(selectedArtist.id)) ||
-              parseInt(
-                String(selectedArtist.browseId).replace(/[^0-9]/g, "")
-              ) ||
-              0,
-          }
-        : undefined,
-      {
-        query: {
-          enabled: !!(selectedArtist?.id || selectedArtist?.browseId),
-        },
-      }
-    );
+  const { data: artistDetails, isLoading: isArtistLoading } = useQuery({
+    queryKey: ["artist", selectedArtist?.id],
+    queryFn: async () => {
+      if (!selectedArtist?.id) return null;
+      const id = parseInt(String(selectedArtist.id));
+      if (isNaN(id)) return null;
+      return await losslessAPI.getArtist(id);
+    },
+    enabled:
+      !!selectedArtist?.id && !isNaN(parseInt(String(selectedArtist.id))),
+  });
+
+  const { data: albumDetails, isLoading: isAlbumLoading } = useQuery({
+    queryKey: ["album", selectedAlbum?.id],
+    queryFn: async () => {
+      if (!selectedAlbum?.id) return null;
+      const id = parseInt(String(selectedAlbum.id));
+      if (isNaN(id)) return null;
+      return await losslessAPI.getAlbum(id);
+    },
+    enabled: !!selectedAlbum?.id && !isNaN(parseInt(String(selectedAlbum.id))),
+  });
 
   const artistTopTracks = useMemo(() => {
     if (!artistDetails) return [] as Track[];
-
-    // The API might return tracks in a specific property, let's look for them
-    const response = artistDetails as any;
-    const items =
-      response.tracks?.items ||
-      response.tracks ||
-      response.data?.tracks?.items ||
-      response.data?.tracks ||
-      response.items ||
-      response.results ||
-      [];
-
-    return (Array.isArray(items) ? items : []).map(
+    return (artistDetails.tracks || []).map(
       (item: any, index: number): Track => {
-        const id = item.id || item.videoId || `artist-track-${index}`;
         return {
-          id: String(id),
-          title: item.title || item.name || "Unknown Title",
-          artist:
-            resolveName(item.artist) ||
-            selectedArtist?.name ||
-            "Unknown Artist",
-          artwork: resolveArtwork(item) || selectedArtist?.artwork,
-          url: item.url || `https://www.youtube.com/watch?v=${id}`,
+          id: String(item.id),
+          title: item.title || "Unknown Title",
+          artist: item.artist?.name || selectedArtist?.name || "Unknown Artist",
+          artwork: resolveArtwork(item) || resolveArtwork(selectedArtist),
+          url: item.url || "",
         };
       }
     );
   }, [artistDetails, selectedArtist]);
+
+  const albumTracks = useMemo(() => {
+    if (!albumDetails) return [] as Track[];
+    return (albumDetails.tracks || []).map((item: any): Track => {
+      return {
+        id: String(item.id),
+        title: item.title || "Unknown Title",
+        artist:
+          item.artist?.name ||
+          albumDetails.album?.artist?.name ||
+          "Unknown Artist",
+        artwork: resolveArtwork(item) || resolveArtwork(albumDetails.album),
+        url: item.url || "",
+      };
+    });
+  }, [albumDetails]);
+
+  const artistAlbums = useMemo(() => {
+    if (!artistDetails) return [];
+    return artistDetails.albums || [];
+  }, [artistDetails]);
 
   const favoritesSheetRef = useRef<BottomSheetModal | null>(null);
   const settingsSheetRef = useRef<BottomSheetModal | null>(null);
@@ -605,18 +612,35 @@ export default function Home() {
       >
         <StyledBottomSheetView className="flex-1 bg-background">
           <View className="px-4 pt-3 pb-2 flex-row items-center justify-between">
-            <Text className="text-xl font-bold text-foreground">
-              Artist Details
-            </Text>
+            <View className="flex-row items-center">
+              {selectedAlbum && (
+                <TouchableOpacity
+                  onPress={() => setSelectedAlbum(null)}
+                  className="mr-3 p-1"
+                >
+                  <Ionicons
+                    name="arrow-back"
+                    size={24}
+                    color={themeColorForeground}
+                  />
+                </TouchableOpacity>
+              )}
+              <Text className="text-xl font-bold text-foreground">
+                {selectedAlbum ? "Album Tracks" : "Artist Details"}
+              </Text>
+            </View>
             <TouchableOpacity
               className="p-2"
-              onPress={() => artistSheetRef.current?.dismiss()}
+              onPress={() => {
+                artistSheetRef.current?.dismiss();
+                setSelectedAlbum(null);
+              }}
             >
               <Ionicons name="close" size={22} color={themeColorForeground} />
             </TouchableOpacity>
           </View>
 
-          {isArtistLoading ? (
+          {isArtistLoading || (selectedAlbum && isAlbumLoading) ? (
             <View className="flex-1 items-center justify-center">
               <ActivityIndicator size="large" color="#fff" />
             </View>
@@ -624,68 +648,144 @@ export default function Home() {
             <BottomSheetFlatList
               ListHeaderComponent={
                 <View className="px-4 mb-6">
-                  <View className="flex-row items-center mb-6">
-                    <View className="w-24 h-24 rounded-full overflow-hidden mr-4 bg-content3 shadow-md">
-                      {selectedArtist?.artwork ? (
+                  {selectedAlbum ? (
+                    <View className="flex-row items-center mb-6">
+                      <View className="w-24 h-24 rounded-lg overflow-hidden mr-4 bg-content3 shadow-md">
                         <Image
-                          source={{ uri: selectedArtist.artwork }}
+                          source={{ uri: resolveArtwork(selectedAlbum) }}
                           className="w-full h-full"
                           resizeMode="cover"
                         />
-                      ) : (
-                        <View className="w-full h-full items-center justify-center">
-                          <Text className="text-3xl">👤</Text>
-                        </View>
-                      )}
+                      </View>
+                      <View className="flex-1">
+                        <Text className="text-2xl font-bold text-foreground">
+                          {selectedAlbum.title}
+                        </Text>
+                        <Text className="text-default-500">
+                          {selectedAlbum.releaseDate?.split("-")[0] || "Album"}
+                        </Text>
+                      </View>
                     </View>
-                    <View className="flex-1">
-                      <Text className="text-2xl font-bold text-foreground">
-                        {selectedArtist?.name}
-                      </Text>
-                      <Text className="text-default-500">
-                        {selectedArtist?.subscribers || "Artist"}
-                      </Text>
+                  ) : (
+                    <View className="flex-row items-center mb-6">
+                      <View className="w-24 h-24 rounded-full overflow-hidden mr-4 bg-content3 shadow-md">
+                        {resolveArtwork(selectedArtist) ? (
+                          <Image
+                            source={{ uri: resolveArtwork(selectedArtist) }}
+                            className="w-full h-full"
+                            resizeMode="cover"
+                          />
+                        ) : (
+                          <View className="w-full h-full items-center justify-center">
+                            <Text className="text-3xl">👤</Text>
+                          </View>
+                        )}
+                      </View>
+                      <View className="flex-1">
+                        <Text className="text-2xl font-bold text-foreground">
+                          {selectedArtist?.name}
+                        </Text>
+                        <Text className="text-default-500">
+                          {selectedArtist?.subscribers || "Artist"}
+                        </Text>
+                      </View>
                     </View>
-                  </View>
+                  )}
 
-                  <View className="flex-row justify-between items-center mb-4">
-                    <View>
-                      <Text className="text-xl font-bold text-foreground">
-                        Top Tracks
-                      </Text>
-                      <Text className="text-default-500 text-sm">
-                        Best songs from {selectedArtist?.name}
-                      </Text>
+                  {((!selectedAlbum && artistTopTracks.length > 0) ||
+                    (selectedAlbum && albumTracks.length > 0)) && (
+                    <View className="mb-8">
+                      <View className="flex-row justify-between items-center mb-4">
+                        <View>
+                          <Text className="text-xl font-bold text-foreground">
+                            {selectedAlbum ? "Tracks" : "Top Tracks"}
+                          </Text>
+                          <Text className="text-default-500 text-sm">
+                            {selectedAlbum
+                              ? `All songs from ${selectedAlbum.title}`
+                              : `Best songs from ${selectedArtist?.name}`}
+                          </Text>
+                        </View>
+                        <TouchableOpacity
+                          className="bg-primary px-4 py-2 rounded-full"
+                          onPress={() => {
+                            const tracksToPlay = selectedAlbum
+                              ? albumTracks
+                              : artistTopTracks;
+                            if (tracksToPlay.length > 0) {
+                              void playQueue(tracksToPlay, 0);
+                            }
+                          }}
+                        >
+                          <Text className="text-primary-foreground font-bold">
+                            Play All
+                          </Text>
+                        </TouchableOpacity>
+                      </View>
                     </View>
-                    <TouchableOpacity
-                      className="bg-primary px-4 py-2 rounded-full"
-                      onPress={() => {
-                        if (artistTopTracks.length > 0) {
-                          void playQueue(artistTopTracks, 0);
-                        }
-                      }}
-                    >
-                      <Text className="text-primary-foreground font-bold">
-                        Play All
-                      </Text>
-                    </TouchableOpacity>
-                  </View>
+                  )}
                 </View>
               }
-              data={artistTopTracks}
+              data={selectedAlbum ? albumTracks : artistTopTracks}
               keyExtractor={(item: Track) => item.id}
-              renderItem={({ item, index }: { item: Track; index: number }) => (
-                <View className="px-4">
-                  <TrackItem
-                    track={item}
-                    onPress={() => {
-                      void playQueue(artistTopTracks, index);
-                    }}
-                  />
-                </View>
-              )}
+              renderItem={({ item, index }: { item: Track; index: number }) => {
+                const tracksToPlay = selectedAlbum
+                  ? albumTracks
+                  : artistTopTracks;
+                return (
+                  <View className="px-4">
+                    <TrackItem
+                      track={item}
+                      onPress={() => {
+                        void playQueue(tracksToPlay, index);
+                      }}
+                    />
+                  </View>
+                );
+              }}
+              ListFooterComponent={
+                !selectedAlbum && artistAlbums.length > 0 ? (
+                  <View className="px-4 mt-8">
+                    <Text className="text-xl font-bold text-foreground mb-4">
+                      Albums
+                    </Text>
+                    <ScrollView
+                      horizontal
+                      showsHorizontalScrollIndicator={false}
+                      className="flex-row"
+                    >
+                      {artistAlbums.map((album: any) => (
+                        <TouchableOpacity
+                          key={album.id}
+                          className="mr-4 w-32"
+                          onPress={() => {
+                            setSelectedAlbum(album);
+                          }}
+                        >
+                          <View className="w-32 h-32 rounded-lg overflow-hidden bg-content3 mb-2 shadow-sm">
+                            <Image
+                              source={{ uri: resolveArtwork(album) }}
+                              className="w-full h-full"
+                              resizeMode="cover"
+                            />
+                          </View>
+                          <Text
+                            className="text-foreground font-medium text-sm"
+                            numberOfLines={1}
+                          >
+                            {album.title}
+                          </Text>
+                          <Text className="text-default-500 text-xs">
+                            {album.releaseDate?.split("-")[0] || "Album"}
+                          </Text>
+                        </TouchableOpacity>
+                      ))}
+                    </ScrollView>
+                  </View>
+                ) : null
+              }
               contentContainerStyle={{
-                paddingBottom: 40,
+                paddingBottom: 60,
               }}
             />
           )}

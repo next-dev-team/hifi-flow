@@ -6,6 +6,7 @@ import { withUniwind } from "uniwind";
 import { ApiDebug } from "@/components/api-debug";
 import { type Track, TrackItem } from "@/components/track-item";
 import { usePlayer } from "@/contexts/player-context";
+import { resolveArtwork, resolveName } from "@/utils/resolvers";
 
 const StyledSafeAreaView = withUniwind(SafeAreaView);
 const StyledView = withUniwind(View);
@@ -49,10 +50,10 @@ export default function Explore() {
     return listData.map((item, index): Track => {
       const id = item.id || item.videoId || `result-${index}`;
       return {
-        id,
+        id: String(id),
         title: item.title || item.name || "Unknown Title",
-        artist: "Unknown Artist",
-        artwork: item.thumbnail?.url || item.thumbnails?.[0]?.url || item.image,
+        artist: resolveName(item.artist || item.author) || "Unknown Artist",
+        artwork: resolveArtwork(item),
         url: item.url || `https://www.youtube.com/watch?v=${id}`,
       };
     });

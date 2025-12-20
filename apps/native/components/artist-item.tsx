@@ -1,6 +1,7 @@
 import { Card } from "heroui-native";
 import type React from "react";
 import { Image, Text, TouchableOpacity, View } from "react-native";
+import { resolveArtwork } from "../utils/resolvers";
 
 export interface Artist {
   id: string;
@@ -17,6 +18,8 @@ interface ArtistItemProps {
 }
 
 export const ArtistItem: React.FC<ArtistItemProps> = ({ artist, onPress }) => {
+  const artwork = resolveArtwork(artist);
+
   return (
     <TouchableOpacity 
       onPress={onPress}
@@ -24,9 +27,9 @@ export const ArtistItem: React.FC<ArtistItemProps> = ({ artist, onPress }) => {
       style={{ width: "50%" }}
     >
       <View className="w-36 h-36 rounded-full overflow-hidden mb-3 bg-content3 shadow-lg">
-        {artist.artwork ? (
+        {artwork ? (
           <Image
-            source={{ uri: artist.artwork }}
+            source={{ uri: artwork }}
             className="w-full h-full"
             resizeMode="cover"
           />
