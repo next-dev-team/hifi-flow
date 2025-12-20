@@ -4,17 +4,22 @@ import {
   useSpeechRecognitionEvent,
 } from "expo-speech-recognition";
 import { useThemeColor } from "heroui-native";
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
+  ActivityIndicator,
+  Keyboard,
   Platform,
+  ScrollView,
   Text,
   TextInput,
   TouchableOpacity,
   View,
 } from "react-native";
 import { withUniwind } from "uniwind";
+import { fetchRelatedKeywords } from "../utils/ai";
 
 const StyledView = withUniwind(View);
+const StyledScrollView = withUniwind(ScrollView);
 const StyledTextInput = withUniwind(TextInput);
 const StyledText = withUniwind(Text);
 
@@ -55,6 +60,30 @@ export function SearchComposer({
 
   const [status, setStatus] = useState<"idle" | "listening" | "error">("idle");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [relatedKeywords, setRelatedKeywords] = useState<string[]>([]);
+  const [isLoadingKeywords, setIsLoadingKeywords] = useState(false);
+
+  // Fetch related keywords when value changes (debounced-ish)
+  useEffect(() => {
+    const timer = setTimeout(async () => {
+      if (value.trim().length >= 2) {
+        setIsLoadingKeywords(true);
+        try {
+          const keywords = await fetchRelatedKeywords(value);
+          setRelatedKeywords(keywords);
+        } catch (e) {
+          console.error("Failed to fetch keywords:", e);
+        } finally {
+          setIsLoadingKeywords(false);
+        }
+      } else {
+        setRelatedKeywords([]);
+        setIsLoadingKeywords(false);
+      }
+    }, 800);
+
+    return () => clearTimeout(timer);
+  }, [value]);
 
   // Auto-stop timer
   const silenceTimerRef = useRef<any>(null);
@@ -208,7 +237,7 @@ export function SearchComposer({
       >
         <StyledView className="bg-white/90 dark:bg-background/45 rounded-[26px]">
           <StyledView className="relative flex-col overflow-hidden w-auto rounded-[24px] border-2 border-transparent">
-            <StyledView className="flex-row items-center min-h-[44px] w-auto px-4">
+            <StyledView className="flex-row items-center min-h-[44px] w-auto px-3">
               <StyledView className="justify-center mr-2">
                 <Ionicons
                   name="search"
@@ -248,24 +277,40 @@ export function SearchComposer({
                 />
               </StyledView>
 
-              {/* Language Toggle Button */}
-              <StyledView className="mr-1">
+              {/* Actions Group */}
+              <StyledView className="flex-row items-center gap-x-0.5">
+                {/* Clear Button */}
+                {value.length > 0 && (
+                  <TouchableOpacity
+                    onPress={() => onChangeText("")}
+                    className="p-1"
+                    activeOpacity={0.7}
+                  >
+                    <Ionicons
+                      name="close-circle"
+                      size={18}
+                      color={themeColorMuted}
+                      className="opacity-50"
+                    />
+                  </TouchableOpacity>
+                )}
+
+                {/* Language Toggle Button */}
                 <TouchableOpacity
                   onPress={toggleLanguage}
-                  className="px-3 py-1.5 rounded-full bg-default-100/50 flex-row items-center justify-center"
+                  className="px-2 py-0.5 rounded-full bg-default-100/50 flex-row items-center justify-center"
                   activeOpacity={0.7}
                 >
-                  <StyledText className="text-[12px] font-bold text-foreground opacity-70">
+                  <StyledText className="text-[10px] font-bold text-foreground opacity-70">
                     {selectedLang.label}
                   </StyledText>
                 </TouchableOpacity>
-              </StyledView>
 
-              <StyledView className="justify-center">
+                {/* Mic Button */}
                 <TouchableOpacity
                   onPress={handleVoiceSearch}
                   activeOpacity={0.7}
-                  className={`p-2 rounded-full ${
+                  className={`p-1 rounded-full ${
                     isListening ? "bg-primary/20" : ""
                   }`}
                 >
@@ -287,6 +332,52 @@ export function SearchComposer({
           </StyledView>
         </StyledView>
       </StyledView>
+
+      {/* Related Keywords UI */}
+      {(isLoadingKeywords || relatedKeywords.length > 0) && (
+        <StyledScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          className="mt-1 px-2"
+          contentContainerStyle={{
+            alignItems: "center",
+            minHeight: 44,
+            paddingRight: 16,
+          }}
+          style={{ zIndex: 100 }}
+        >
+          {isLoadingKeywords ? (
+            <StyledView className="flex-row items-center ml-2">
+              <ActivityIndicator size="small" color={themeColorMuted} />
+              <StyledText className="text-[12px] text-foreground/40 font-medium ml-2 italic">
+                Suggesting...
+              </StyledText>
+            </StyledView>
+          ) : (
+            relatedKeywords.map((keyword) => (
+              <TouchableOpacity
+                key={keyword}
+                onPress={() => {
+                  onChangeText(keyword);
+                }}
+                className="bg-default-100 dark:bg-default-200/30 px-4 py-2 rounded-full mr-2 border border-default-300/50 dark:border-default-400/30 shadow-md"
+                activeOpacity={0.6}
+                style={{
+                  elevation: 4,
+                  shadowColor: "#000",
+                  shadowOffset: { width: 0, height: 2 },
+                  shadowOpacity: 0.2,
+                  shadowRadius: 4,
+                }}
+              >
+                <StyledText className="text-[14px] text-foreground font-bold">
+                  {keyword}
+                </StyledText>
+              </TouchableOpacity>
+            ))
+          )}
+        </StyledScrollView>
+      )}
     </StyledView>
   );
 }

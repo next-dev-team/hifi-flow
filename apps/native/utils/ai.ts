@@ -1106,6 +1106,50 @@ class HuggingFace extends Client {
   }
 }
 
+export const pollinations = new Pollinations();
+
+/**
+ * Fetches 3 related search keywords for a given query using LLM.
+ * Returns an array of 3 strings.
+ */
+export async function fetchRelatedKeywords(query: string): Promise<string[]> {
+  if (!query || query.trim().length < 2) return [];
+
+  try {
+    const response = await pollinations.chat.completions.create({
+      messages: [
+        {
+          role: "system",
+          content:
+            "You are a music search assistant. Given a search query, provide exactly 3 related search keywords (song names, artist names, or music genres) that are highly relevant. Output ONLY the 3 keywords separated by commas, no numbers, no extra text.",
+        },
+        {
+          role: "user",
+          content: `Query: ${query}`,
+        },
+      ],
+      model: "openai",
+    });
+
+    const content = response.choices?.[0]?.message?.content;
+    if (!content) {
+      return [];
+    }
+
+    // Clean up and split by comma
+    const keywords = content
+      .split(",")
+      .map((k: string) => k.trim())
+      .filter((k: string) => k.length > 0)
+      .slice(0, 3);
+
+    return keywords;
+  } catch (error) {
+    console.error("Error fetching related keywords:", error);
+    return [];
+  }
+}
+
 export {
   Client,
   Pollinations,

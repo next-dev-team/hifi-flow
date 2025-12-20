@@ -17,6 +17,7 @@ import { Card, Chip, useThemeColor } from "heroui-native";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
+  DeviceEventEmitter,
   FlatList,
   Image,
   ScrollView,
@@ -59,6 +60,7 @@ export default function Home() {
   const {
     playQueue,
     favorites,
+    removeFavorite,
     quality,
     setQuality,
     sleepTimerEndsAt,
@@ -387,6 +389,13 @@ export default function Home() {
     );
   };
 
+  useEffect(() => {
+    const sub = DeviceEventEmitter.addListener("open-favorites-sheet", () => {
+      favoritesSheetRef.current?.present();
+    });
+    return () => sub.remove();
+  }, []);
+
   const renderSavedItem = ({
     item,
     index,
@@ -395,13 +404,14 @@ export default function Home() {
     index: number;
   }) => {
     return (
-      <TouchableOpacity
-        onPress={() => {
-          void playQueue(favoriteQueue, index);
-          favoritesSheetRef.current?.dismiss();
-        }}
-      >
-        <Card className="flex-row items-center p-3 mb-2 bg-content2 border-none shadow-sm">
+      <Card className="flex-row items-center p-3 mb-2 bg-content2 border-none shadow-sm">
+        <TouchableOpacity
+          className="flex-1 flex-row items-center"
+          onPress={() => {
+            void playQueue(favoriteQueue, index);
+            favoritesSheetRef.current?.dismiss();
+          }}
+        >
           <View className="w-14 h-14 rounded-full overflow-hidden mr-4 bg-default-300 items-center justify-center">
             {item.artwork ? (
               <Image
@@ -424,8 +434,17 @@ export default function Home() {
               {item.artist}
             </Text>
           </View>
-        </Card>
-      </TouchableOpacity>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          className="p-2 ml-2"
+          onPress={() => {
+            void removeFavorite(item.id);
+          }}
+        >
+          <Ionicons name="trash-outline" size={20} color="#ff4444" />
+        </TouchableOpacity>
+      </Card>
     );
   };
 
@@ -464,9 +483,7 @@ export default function Home() {
             </TouchableOpacity>
           </View>
         </View>
-        <StyledText className="text-default-500 mb-4">
-          Search across songs, artists, albums and playlists.
-        </StyledText>
+
         {suggestedArtistNames.length > 0 ? (
           <StyledView className="mb-3">
             <StyledText className="text-default-500 text-xs mb-2">

@@ -64,6 +64,7 @@ interface PlayerContextType {
   favorites: SavedTrack[];
   isCurrentFavorited: boolean;
   toggleCurrentFavorite: (artwork?: string) => Promise<void>;
+  removeFavorite: (id: string) => Promise<void>;
   playSaved: (saved: SavedTrack) => Promise<void>;
 }
 
@@ -397,7 +398,14 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
   const pauseTrack = useCallback(async () => {
     const sound = soundRef.current;
     if (!sound) return;
-    await sound.pauseAsync();
+    try {
+      const status = await sound.getStatusAsync();
+      if (status.isLoaded) {
+        await sound.pauseAsync();
+      }
+    } catch (e) {
+      // ignore errors if sound is not loaded
+    }
     setIsPlaying(false);
   }, []);
 
@@ -439,8 +447,15 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
   const resumeTrack = useCallback(async () => {
     const sound = soundRef.current;
     if (!sound) return;
-    await sound.playAsync();
-    setIsPlaying(true);
+    try {
+      const status = await sound.getStatusAsync();
+      if (status.isLoaded) {
+        await sound.playAsync();
+        setIsPlaying(true);
+      }
+    } catch (e) {
+      // ignore errors if sound is not loaded
+    }
   }, []);
 
   const persistFavorites = useCallback(async (next: SavedTrack[]) => {
@@ -479,6 +494,15 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
     [favorites, persistFavorites]
   );
 
+  const removeFavorite = useCallback(
+    async (id: string) => {
+      const favoriteId = normalizeFavoriteId(id);
+      const next = favorites.filter((entry) => entry.id !== favoriteId);
+      await persistFavorites(next);
+    },
+    [favorites, persistFavorites]
+  );
+
   const playSaved = useCallback(
     async (saved: SavedTrack) => {
       const track: Track = {
@@ -502,12 +526,20 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
     async (nextPositionMillis: number) => {
       const sound = soundRef.current;
       if (!sound) return;
-      const clamped = Math.min(
-        Math.max(0, Math.floor(nextPositionMillis)),
-        durationMillis > 0 ? durationMillis : Number.MAX_SAFE_INTEGER
-      );
-      await sound.setPositionAsync(clamped);
-      setPositionMillis(clamped);
+
+      try {
+        const status = await sound.getStatusAsync();
+        if (!status.isLoaded) return;
+
+        const clamped = Math.min(
+          Math.max(0, Math.floor(nextPositionMillis)),
+          durationMillis > 0 ? durationMillis : Number.MAX_SAFE_INTEGER
+        );
+        await sound.setPositionAsync(clamped);
+        setPositionMillis(clamped);
+      } catch (e) {
+        // ignore errors if sound is not loaded
+      }
     },
     [durationMillis]
   );
@@ -676,6 +708,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
             )
         ),
         toggleCurrentFavorite,
+        removeFavorite,
         playSaved,
       }}
     >

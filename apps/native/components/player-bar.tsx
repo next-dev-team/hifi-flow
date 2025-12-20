@@ -9,13 +9,11 @@ import {
 } from "@gorhom/bottom-sheet";
 import { Portal } from "@gorhom/portal";
 import { BlurView } from "expo-blur";
-import { Card, useThemeColor } from "heroui-native";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   BackHandler,
   Image,
-  ImageBackground,
   PanResponder,
   Platform,
   Pressable,
@@ -47,6 +45,77 @@ const clamp = (value: number, min: number, max: number) => {
   return Math.min(max, Math.max(min, value));
 };
 
+const Particle = ({
+  p,
+  phase,
+  active,
+}: {
+  p: {
+    x: number;
+    y: number;
+    size: number;
+    speed: number;
+    offset: number;
+    color: string;
+  };
+  phase: SharedValue<number>;
+  active: boolean;
+}) => {
+  const animatedStyle = useAnimatedStyle(() => {
+    // Simpler, faster calculations
+    const bassPulse = Math.max(0, Math.sin(phase.value * 3.2)) ** 3;
+    const moveX = p.x + Math.sin(phase.value * p.speed + p.offset) * 25;
+    const moveY = p.y + Math.cos(phase.value * p.speed + p.offset) * 25;
+
+    return {
+      transform: [
+        { translateX: moveX },
+        { translateY: moveY },
+        { scale: active ? 1 + bassPulse * 0.6 : 1 },
+      ],
+      opacity: active ? 0.3 + bassPulse * 0.4 : 0.05,
+      width: p.size,
+      height: p.size,
+      borderRadius: p.size / 2,
+      backgroundColor: p.color,
+      position: "absolute",
+    };
+  });
+
+  return <Animated.View style={animatedStyle} />;
+};
+
+const TrapParticles = ({
+  phase,
+  active,
+}: {
+  phase: SharedValue<number>;
+  active: boolean;
+}) => {
+  const particleCount = 40; // Reduced for performance
+  const particles = useMemo(
+    () =>
+      Array.from({ length: particleCount }, (_, i) => ({
+        id: i,
+        x: Math.random() * 500 - 250,
+        y: Math.random() * 500 - 250,
+        size: Math.random() * 2 + 0.5,
+        speed: Math.random() * 0.8 + 0.2,
+        offset: Math.random() * Math.PI * 2,
+        color: Math.random() > 0.85 ? "rgba(147, 197, 253, 0.7)" : "#fff",
+      })),
+    []
+  );
+
+  return (
+    <View className="absolute inset-0 items-center justify-center overflow-hidden">
+      {particles.map((p) => (
+        <Particle key={p.id} p={p} phase={phase} active={active} />
+      ))}
+    </View>
+  );
+};
+
 const SpectrumBar = ({
   index,
   phase,
@@ -55,6 +124,7 @@ const SpectrumBar = ({
   barWidth = 4,
   variant = "wave",
   totalBars,
+  radius,
 }: {
   index: number;
   phase: SharedValue<number>;
@@ -68,15 +138,66 @@ const SpectrumBar = ({
     | "digital"
     | "natural"
     | "mirror"
-    | "fountain";
+    | "fountain"
+    | "trap";
   totalBars: number;
+  radius?: number;
 }) => {
+  const barRadius = radius;
   const animatedStyle = useAnimatedStyle(() => {
     const base = active ? 0.25 : 0.06;
     const amp = active ? 0.75 : 0.12;
     let value = 0;
 
     switch (variant) {
+      case "trap": {
+        // High energy, circular reaction
+        const normalizedIndex = index / totalBars;
+        // Symmetry
+        const mirrorIndex =
+          normalizedIndex > 0.5 ? 1 - normalizedIndex : normalizedIndex;
+
+        // Bass pulse
+        const bassPulse = Math.max(0, Math.sin(phase.value * 3.2)) ** 3;
+
+        // Add a bit of jitter/speed boost during bass peaks to make it "feel" the beat
+        const dynamicPhase = phase.value + bassPulse * 0.15;
+        const energySpeed = 1 + mirrorIndex * 2.5;
+        const localPhase = dynamicPhase * energySpeed;
+
+        const bass = bassPulse * Math.max(0, 1 - mirrorIndex * 3.5);
+
+        // Mids
+        const mids =
+          Math.sin(localPhase * 1.5 + mirrorIndex * 12) *
+          Math.max(0, 1 - Math.abs(mirrorIndex - 0.3) * 3);
+
+        // Treble
+        const treble =
+          (Math.sin(localPhase * 5 + mirrorIndex * 40) * 0.5 +
+            Math.sin(localPhase * 8 - mirrorIndex * 25) * 0.5) *
+          Math.max(0, mirrorIndex * 1.5);
+
+        // Trap Nation "Ears" shape logic
+        const ear1 = Math.exp(-((normalizedIndex - 0.08) ** 2) / 0.006);
+        const ear2 = Math.exp(-((normalizedIndex - 0.92) ** 2) / 0.006);
+        const earShape = (ear1 + ear2) * 1.5;
+
+        value =
+          Math.abs(bass) * 1.2 + Math.abs(mids) * 0.6 + Math.abs(treble) * 0.4;
+
+        // Apply ear shape boost
+        value = value * (1 + earShape);
+
+        // Add a "kick" pulse effect
+        const globalKick =
+          Math.max(0, Math.sin(phase.value * 3.2 + 0.2)) ** 5 * 0.3;
+        value += globalKick;
+
+        // Scale for more subtle visual impact (closer to cover)
+        value = value * 0.7;
+        break;
+      }
       case "symmetric": {
         const center = totalBars / 2;
         const dist = Math.abs(index - center);
@@ -133,25 +254,70 @@ const SpectrumBar = ({
       }
     }
 
+    if (variant === "trap") {
+      const angle = (index / totalBars) * Math.PI * 2;
+      const baseRadius = barRadius;
+      const height = (2 + (base + amp * value) * 25) * multiplier;
+
+      // Rainbow color logic with white mix
+      const hue = (index / totalBars) * 360;
+      const isGlint = index % 4 === 0;
+      const saturation = isGlint ? 0 : 90 - value * 40;
+      const lightness = isGlint ? 95 : 65 + value * 25;
+      const color = `hsl(${hue}, ${Math.max(0, saturation)}%, ${Math.min(
+        100,
+        lightness
+      )}%)`;
+
+      // If no radius provided, render as a linear bar (for mini player)
+      if (!baseRadius || baseRadius <= 0) {
+        return {
+          height,
+          width: barWidth,
+          borderRadius: 999,
+          backgroundColor: active ? color : "rgba(255,255,255,0.4)",
+          opacity: active ? 0.95 : 0.3,
+        };
+      }
+
+      return {
+        height,
+        position: "absolute",
+        left: "50%",
+        top: "50%",
+        width: barWidth,
+        borderRadius: 999,
+        backgroundColor: active ? color : "rgba(255,255,255,0.4)",
+        transform: [
+          { translateX: -barWidth / 2 },
+          { translateY: -height / 2 },
+          { rotate: `${angle}rad` },
+          { translateY: -baseRadius - height / 2 },
+        ],
+        opacity: active ? 0.95 : 0.3,
+      };
+    }
+
     const height = (3 + (base + amp * value) * 14) * multiplier;
     return {
       height,
+      width: barWidth,
+      borderRadius: 999,
+      backgroundColor: "rgba(255,255,255,0.9)",
       opacity: active ? 0.7 : 0.25,
     };
-  }, [active, index, phase, multiplier, variant, totalBars]);
+  }, [
+    active,
+    index,
+    phase,
+    multiplier,
+    variant,
+    totalBars,
+    barWidth,
+    barRadius,
+  ]);
 
-  return (
-    <Animated.View
-      style={[
-        {
-          width: barWidth,
-          borderRadius: 999,
-          backgroundColor: "rgba(255,255,255,0.9)",
-        },
-        animatedStyle,
-      ]}
-    />
-  );
+  return <Animated.View style={animatedStyle} />;
 };
 
 const SpectrumVisualizer = ({
@@ -162,6 +328,8 @@ const SpectrumVisualizer = ({
   containerStyle,
   barWidth = 4,
   variant = "wave",
+  radius,
+  phase: externalPhase,
 }: {
   isPlaying: boolean;
   barCount: number;
@@ -176,29 +344,41 @@ const SpectrumVisualizer = ({
     | "digital"
     | "natural"
     | "mirror"
-    | "fountain";
+    | "fountain"
+    | "trap";
+  radius?: number;
+  phase?: SharedValue<number>;
 }) => {
   const bars = useMemo(
     () => Array.from({ length: barCount }, (_, i) => ({ id: i, index: i })),
     [barCount]
   );
-  const phase = useSharedValue(0);
+  const internalPhase = useSharedValue(0);
+  const phase = externalPhase || internalPhase;
 
+  // Add more dynamic simulation based on playback state
+  const frameId = useRef<number>(0);
   useEffect(() => {
+    // Only animate if we're using internal phase
+    if (externalPhase) return;
+
     if (!isPlaying) {
-      cancelAnimation(phase);
       phase.value = 0;
       return;
     }
-    phase.value = withRepeat(
-      withTiming(Math.PI * 2, {
-        duration: 2000,
-        easing: Easing.linear,
-      }),
-      -1,
-      false
-    );
-  }, [isPlaying, phase]);
+
+    const animate = () => {
+      // Slightly vary the phase increment for more organic feel
+      const jitter = Math.sin(Date.now() / 1000) * 0.01;
+      phase.value = phase.value + (0.05 + jitter);
+      frameId.current = requestAnimationFrame(animate);
+    };
+
+    frameId.current = requestAnimationFrame(animate);
+    return () => cancelAnimationFrame(frameId.current);
+  }, [isPlaying, phase, externalPhase]);
+
+  const isCircular = variant === "trap" && radius !== undefined && radius > 0;
 
   return (
     <View
@@ -210,15 +390,16 @@ const SpectrumVisualizer = ({
           right: 0,
           bottom: 0,
           top: 0,
-          flexDirection: "row",
+          flexDirection: isCircular ? "column" : "row",
           alignItems: "center",
-          justifyContent: "space-between",
+          justifyContent: isCircular ? "center" : "space-between",
           paddingHorizontal: 0,
           opacity,
         },
         containerStyle,
       ]}
     >
+      {isCircular && <TrapParticles phase={phase} active={isPlaying} />}
       {bars.map((bar) => (
         <SpectrumBar
           key={bar.id}
@@ -229,6 +410,7 @@ const SpectrumVisualizer = ({
           barWidth={barWidth}
           variant={variant}
           totalBars={barCount}
+          radius={radius}
         />
       ))}
     </View>
@@ -281,10 +463,12 @@ const SpinningCover = ({
   uri,
   size,
   isPlaying,
+  phase,
 }: {
   uri: string;
   size: number;
   isPlaying: boolean;
+  phase?: SharedValue<number>;
 }) => {
   const spin = useSharedValue(0);
 
@@ -305,38 +489,77 @@ const SpinningCover = ({
 
   const animatedStyle = useAnimatedStyle(() => {
     const degrees = (spin.value % 1) * 360;
-    return { transform: [{ rotate: `${degrees}deg` }] };
-  }, [spin]);
+    const baseScale = 1;
+    let pulseScale = 0;
+
+    if (phase) {
+      // Smoother pulse
+      const bassPulse = Math.max(0, Math.sin(phase.value * 3.2)) ** 3;
+      pulseScale = bassPulse * 0.08;
+    }
+
+    return {
+      transform: [
+        { rotate: `${degrees}deg` },
+        { scale: baseScale + pulseScale },
+      ],
+    };
+  }, [spin, phase]);
+
+  const ringStyle = useAnimatedStyle(() => {
+    if (!phase) return { opacity: 0 };
+    const bassPulse = Math.max(0, Math.sin(phase.value * 3.2)) ** 3;
+    return {
+      transform: [{ scale: 1.05 + bassPulse * 0.3 }],
+      opacity: bassPulse * 0.4,
+      borderColor: "rgba(255,255,255,0.3)",
+    };
+  });
 
   return (
-    <View
-      style={{
-        width: size + 12,
-        height: size + 12,
-        borderRadius: (size + 12) / 2,
-        padding: 6,
-        backgroundColor: isPlaying
-          ? "rgba(255,255,255,0.14)"
-          : "rgba(255,255,255,0.06)",
-      }}
-    >
+    <View className="items-center justify-center">
+      {/* Pulsing ring for Trap style */}
       <Animated.View
         style={[
           {
-            width: size,
-            height: size,
-            borderRadius: size / 2,
-            overflow: "hidden",
+            position: "absolute",
+            width: size + 20,
+            height: size + 20,
+            borderRadius: (size + 20) / 2,
+            borderWidth: 2,
           },
-          animatedStyle,
+          ringStyle,
         ]}
+      />
+      <View
+        style={{
+          width: size + 12,
+          height: size + 12,
+          borderRadius: (size + 12) / 2,
+          padding: 6,
+          backgroundColor: isPlaying
+            ? "rgba(255,255,255,0.14)"
+            : "rgba(255,255,255,0.06)",
+        }}
       >
-        <Image
-          source={{ uri }}
-          style={{ width: "100%", height: "100%" }}
-          resizeMode="cover"
-        />
-      </Animated.View>
+        <Animated.View
+          style={[
+            {
+              width: size,
+              height: size,
+              borderRadius: size / 2,
+              overflow: "hidden",
+            },
+            animatedStyle,
+          ]}
+        >
+          <Image
+            source={{ uri }}
+            style={{ width: "100%", height: "100%" }}
+            resizeMode="cover"
+          />
+        </Animated.View>
+      </View>
     </View>
   );
 };
@@ -344,14 +567,12 @@ const SpinningCover = ({
 const SeekBar = ({
   positionMillis,
   durationMillis,
-  isPlaying,
   onSeekToMillis,
   onScrubMillisChange,
   onScrubStateChange,
 }: {
   positionMillis: number;
   durationMillis: number;
-  isPlaying: boolean;
   onSeekToMillis: (value: number) => void;
   onScrubMillisChange?: (value: number) => void;
   onScrubStateChange?: (value: boolean) => void;
@@ -492,7 +713,6 @@ const SeekBar = ({
 
 export const PlayerBar = () => {
   const { width: screenWidth } = useWindowDimensions();
-  const themeColorBackground = useThemeColor("background");
   const {
     currentTrack,
     isPlaying,
@@ -519,6 +739,7 @@ export const PlayerBar = () => {
     undefined
   );
   const [isSheetOpen, setIsSheetOpen] = useState(false);
+  const [showSpectrumSelector, setShowSpectrumSelector] = useState(false);
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [scrubMillis, setScrubMillis] = useState<number | null>(null);
   const [isScrubbing, setIsScrubbing] = useState(false);
@@ -530,7 +751,29 @@ export const PlayerBar = () => {
     | "natural"
     | "mirror"
     | "fountain"
+    | "trap"
   >("wave");
+
+  const sharedPhase = useSharedValue(0);
+
+  useEffect(() => {
+    if (!isPlaying) {
+      cancelAnimation(sharedPhase);
+      sharedPhase.value = withTiming(0, { duration: 300 });
+      return;
+    }
+
+    // Seamless continuous phase increment
+    // Using a multiple of 2PI (Math.PI * 20 ≈ 62.83) to ensure seamless loops
+    sharedPhase.value = withRepeat(
+      withTiming(sharedPhase.value + Math.PI * 20, {
+        duration: 20000, // 1 unit per second approx
+        easing: Easing.linear,
+      }),
+      -1,
+      false
+    );
+  }, [isPlaying, sharedPhase]);
 
   const dragX = useSharedValue(0);
   const dragY = useSharedValue(0);
@@ -770,7 +1013,7 @@ export const PlayerBar = () => {
         style={[
           props.style,
           {
-            backgroundColor: themeColorBackground,
+            backgroundColor: "#000",
             borderTopLeftRadius: 24,
             borderTopRightRadius: 24,
             overflow: "hidden",
@@ -825,7 +1068,7 @@ export const PlayerBar = () => {
         ) : null}
       </View>
     ),
-    [resolvedArtwork, themeColorBackground]
+    [resolvedArtwork]
   );
 
   useEffect(() => {
@@ -962,26 +1205,25 @@ export const PlayerBar = () => {
                   />
                 </View>
               ) : (
-                <BlurView
-                  intensity={Platform.OS === "ios" ? 40 : 80}
-                  tint="default"
+                <View
                   style={{
                     position: "absolute",
                     top: 0,
                     left: 0,
                     right: 0,
                     bottom: 0,
-                    backgroundColor: themeColorBackground + "99",
+                    backgroundColor: "#000",
                   }}
                 />
               )}
               <SpectrumVisualizer
                 isPlaying={isPlaying}
-                barCount={120}
-                multiplier={3}
+                barCount={spectrumVariant === "trap" ? 60 : 120}
+                multiplier={spectrumVariant === "trap" ? 1.5 : 3}
                 opacity={0.15}
                 barWidth={3}
                 variant={spectrumVariant}
+                phase={sharedPhase}
                 containerStyle={{
                   paddingHorizontal: 0,
                 }}
@@ -1326,15 +1568,18 @@ export const PlayerBar = () => {
           width: 40,
         }}
       >
-        <StyledBottomSheetView className="flex-1 rounded-t-[24px] overflow-hidden">
-          <SpectrumVisualizer
-            isPlaying={isPlaying}
-            barCount={150}
-            multiplier={24}
-            opacity={0.25}
-            barWidth={4}
-            variant={spectrumVariant}
-          />
+        <StyledBottomSheetView className="flex-1 rounded-t-3xl overflow-hidden">
+          {spectrumVariant !== "trap" && (
+            <SpectrumVisualizer
+              isPlaying={isPlaying}
+              barCount={150}
+              multiplier={24}
+              opacity={0.25}
+              barWidth={4}
+              variant={spectrumVariant}
+              phase={sharedPhase}
+            />
+          )}
           <View className="flex-1 max-w-md w-full mx-auto relative">
             <View
               className="flex-1 items-center justify-between pb-10"
@@ -1352,17 +1597,7 @@ export const PlayerBar = () => {
                 </Pressable>
                 <Pressable
                   className="w-7 items-center justify-center"
-                  onPress={() =>
-                    setSpectrumVariant((prev) => {
-                      if (prev === "wave") return "symmetric";
-                      if (prev === "symmetric") return "pulse";
-                      if (prev === "pulse") return "digital";
-                      if (prev === "digital") return "natural";
-                      if (prev === "natural") return "mirror";
-                      if (prev === "mirror") return "fountain";
-                      return "wave";
-                    })
-                  }
+                  onPress={() => setShowSpectrumSelector(!showSpectrumSelector)}
                 >
                   {({ pressed }) => (
                     <Ionicons
@@ -1370,19 +1605,23 @@ export const PlayerBar = () => {
                         spectrumVariant === "wave"
                           ? "water-outline"
                           : spectrumVariant === "symmetric"
-                          ? "code-working-outline"
+                          ? "git-compare-outline"
                           : spectrumVariant === "pulse"
-                          ? "pulse-outline"
+                          ? "heart-outline"
                           : spectrumVariant === "digital"
                           ? "stats-chart-outline"
                           : spectrumVariant === "natural"
-                          ? "musical-notes-outline"
+                          ? "leaf-outline"
                           : spectrumVariant === "mirror"
-                          ? "git-compare-outline"
-                          : "flash-outline"
+                          ? "repeat-outline"
+                          : spectrumVariant === "fountain"
+                          ? "sunny-outline"
+                          : "disc-outline"
                       }
-                      size={22}
-                      color={pressed ? "#ef4444" : "#fff"}
+                      size={20}
+                      color={
+                        showSpectrumSelector || pressed ? "#60a5fa" : "#fff"
+                      }
                     />
                   )}
                 </Pressable>
@@ -1398,7 +1637,80 @@ export const PlayerBar = () => {
                     />
                   )}
                 </Pressable>
+                <Pressable
+                  className="w-7 items-end ml-4"
+                  onPress={() => {
+                    handleCloseFullPlayer();
+                    // Emit custom event or use a global state to open favorites sheet
+                    // For now, since favoritesSheetRef is in (tabs)/index.tsx, we can use DeviceEventEmitter
+                    // or better yet, since we are using Expo Router, we might have a way to communicate.
+                    // But usually, DeviceEventEmitter is the simplest for cross-component triggers.
+                    import("react-native").then(({ DeviceEventEmitter }) => {
+                      DeviceEventEmitter.emit("open-favorites-sheet");
+                    });
+                  }}
+                >
+                  {({ pressed }) => (
+                    <Ionicons
+                      name="list"
+                      size={22}
+                      color={pressed ? "#60a5fa" : "#fff"}
+                    />
+                  )}
+                </Pressable>
               </View>
+
+              {showSpectrumSelector && (
+                <View className="absolute top-16 left-0 right-0 z-50 items-center">
+                  <BlurView
+                    intensity={80}
+                    tint="dark"
+                    className="flex-row items-center bg-black/40 px-4 py-3 rounded-2xl border border-white/10"
+                  >
+                    {[
+                      { id: "wave", icon: "water-outline", label: "Wave" },
+                      {
+                        id: "symmetric",
+                        icon: "git-compare-outline",
+                        label: "Symmetric",
+                      },
+                      { id: "pulse", icon: "heart-outline", label: "Pulse" },
+                      {
+                        id: "digital",
+                        icon: "stats-chart-outline",
+                        label: "Digital",
+                      },
+                      { id: "natural", icon: "leaf-outline", label: "Natural" },
+                      { id: "mirror", icon: "repeat-outline", label: "Mirror" },
+                      {
+                        id: "fountain",
+                        icon: "sunny-outline",
+                        label: "Fountain",
+                      },
+                      { id: "trap", icon: "disc-outline", label: "Trap" },
+                    ].map((v) => (
+                      <TouchableOpacity
+                        key={v.id}
+                        onPress={() => {
+                          setSpectrumVariant(v.id as any);
+                          setShowSpectrumSelector(false);
+                        }}
+                        className={`mx-2 items-center justify-center w-10 h-10 rounded-full ${
+                          spectrumVariant === v.id
+                            ? "bg-blue-500"
+                            : "bg-white/10"
+                        }`}
+                      >
+                        <Ionicons
+                          name={v.icon as any}
+                          size={18}
+                          color={spectrumVariant === v.id ? "#fff" : "#ccc"}
+                        />
+                      </TouchableOpacity>
+                    ))}
+                  </BlurView>
+                </View>
+              )}
 
               <View className="items-center px-8 mb-4">
                 <Text
@@ -1424,12 +1736,35 @@ export const PlayerBar = () => {
               </View>
 
               <View className="items-center">
-                <View className="items-center justify-center mt-2 mb-8">
+                <Pressable
+                  onPress={() => {
+                    if (isLoading) return;
+                    if (isPlaying) {
+                      void pauseTrack();
+                    } else {
+                      void resumeTrack();
+                    }
+                  }}
+                  className="items-center justify-center mt-2 mb-8 relative"
+                >
+                  {spectrumVariant === "trap" && (
+                    <SpectrumVisualizer
+                      isPlaying={isPlaying}
+                      barCount={80}
+                      multiplier={1.2}
+                      opacity={1}
+                      barWidth={3}
+                      variant="trap"
+                      radius={104}
+                      phase={sharedPhase}
+                    />
+                  )}
                   {resolvedArtwork ? (
                     <SpinningCover
                       uri={resolvedArtwork}
                       size={202}
                       isPlaying={isPlaying}
+                      phase={sharedPhase}
                     />
                   ) : (
                     <View
@@ -1437,7 +1772,7 @@ export const PlayerBar = () => {
                         width: 214,
                         height: 214,
                         borderRadius: 107,
-                        backgroundColor: "rgba(0,0,0,0.2)",
+                        backgroundColor: "#000",
                         alignItems: "center",
                         justifyContent: "center",
                       }}
@@ -1445,7 +1780,7 @@ export const PlayerBar = () => {
                       <Text className="text-6xl">🎵</Text>
                     </View>
                   )}
-                </View>
+                </Pressable>
 
                 <View className="w-full px-10 mt-4">
                   <View className="flex-row justify-between mb-1">
@@ -1471,7 +1806,6 @@ export const PlayerBar = () => {
                   <SeekBar
                     positionMillis={positionMillis}
                     durationMillis={durationMillis}
-                    isPlaying={isPlaying}
                     onSeekToMillis={(value) => {
                       void seekToMillis(value);
                     }}
