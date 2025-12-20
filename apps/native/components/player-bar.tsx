@@ -2,11 +2,13 @@ import { Ionicons } from "@expo/vector-icons";
 import {
   BottomSheetBackdrop,
   type BottomSheetBackdropProps,
+  type BottomSheetBackgroundProps,
   BottomSheetModal,
   BottomSheetView,
   useBottomSheetTimingConfigs,
 } from "@gorhom/bottom-sheet";
 import { Portal } from "@gorhom/portal";
+import { BlurView } from "expo-blur";
 import { Card, useThemeColor } from "heroui-native";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -475,6 +477,40 @@ export const PlayerBar = () => {
     );
   }, []);
 
+  const renderBackground = useCallback(
+    (props: BottomSheetBackgroundProps) => (
+      <View
+        style={[
+          props.style,
+          {
+            backgroundColor: "#000",
+            borderTopLeftRadius: 24,
+            borderTopRightRadius: 24,
+            overflow: "hidden",
+          },
+        ]}
+      >
+        {resolvedArtwork ? (
+          <ImageBackground
+            source={{ uri: resolvedArtwork }}
+            style={{
+              position: "absolute",
+              top: 0,
+              right: 0,
+              bottom: 0,
+              left: 0,
+            }}
+            resizeMode="cover"
+            blurRadius={50}
+          >
+            <View className="absolute inset-0 bg-black/50" />
+          </ImageBackground>
+        ) : null}
+      </View>
+    ),
+    [resolvedArtwork]
+  );
+
   useEffect(() => {
     let cancelled = false;
     if (!currentTrack) {
@@ -558,11 +594,22 @@ export const PlayerBar = () => {
               delayLongPress={300}
             >
               <Card
-                className={`flex-row items-center bg-black/95 border border-white/10 relative overflow-hidden rounded-full shadow-2xl ${
-                  isCollapsed ? "justify-center px-0" : "px-3 py-2"
+                className={`flex-row items-center bg-black/95 border border-white/10 relative overflow-hidden rounded-full shadow-2xl justify-center ${
+                  isCollapsed ? "p-0" : "px-3 py-2"
                 }`}
                 style={{ height: "100%" }}
               >
+                <BlurView
+                  intensity={Platform.OS === "ios" ? 40 : 80}
+                  tint="dark"
+                  style={{
+                    position: "absolute",
+                    top: 0,
+                    left: 0,
+                    right: 0,
+                    bottom: 0,
+                  }}
+                />
                 {!isCollapsed && (
                   <>
                     <View
@@ -599,19 +646,17 @@ export const PlayerBar = () => {
                         size={isCollapsed ? 46 : 38}
                         isPlaying={isPlaying}
                       />
-                      <Pressable
-                        onPress={(e) => {
-                          e.stopPropagation();
-                          setIsCollapsed(!isCollapsed);
-                        }}
-                        className="absolute left-1/2 -top-1 -translate-x-1/2 bg-blue-500 rounded-full w-5 h-5 items-center justify-center border-2 border-black"
-                      >
-                        <Ionicons
-                          name={isCollapsed ? "chevron-down" : "chevron-up"}
-                          size={12}
-                          color="#fff"
-                        />
-                      </Pressable>
+                      {!isCollapsed && (
+                        <Pressable
+                          onPress={(e) => {
+                            e.stopPropagation();
+                            setIsCollapsed(!isCollapsed);
+                          }}
+                          className="absolute left-1/2 -top-1 -translate-x-1/2 bg-blue-500 rounded-full w-5 h-5 items-center justify-center border-2 border-black"
+                        >
+                          <Ionicons name="chevron-up" size={12} color="#fff" />
+                        </Pressable>
+                      )}
                     </View>
                   ) : (
                     <View
@@ -622,19 +667,17 @@ export const PlayerBar = () => {
                       <Text style={{ fontSize: isCollapsed ? 20 : 16 }}>
                         🎵
                       </Text>
-                      <Pressable
-                        onPress={(e) => {
-                          e.stopPropagation();
-                          setIsCollapsed(!isCollapsed);
-                        }}
-                        className="absolute left-1/2 -top-1 -translate-x-1/2 bg-blue-500 rounded-full w-5 h-5 items-center justify-center border-2 border-black"
-                      >
-                        <Ionicons
-                          name={isCollapsed ? "chevron-down" : "chevron-up"}
-                          size={12}
-                          color="#fff"
-                        />
-                      </Pressable>
+                      {!isCollapsed && (
+                        <Pressable
+                          onPress={(e) => {
+                            e.stopPropagation();
+                            setIsCollapsed(!isCollapsed);
+                          }}
+                          className="absolute left-1/2 -top-1 -translate-x-1/2 bg-blue-500 rounded-full w-5 h-5 items-center justify-center border-2 border-black"
+                        >
+                          <Ionicons name="chevron-up" size={12} color="#fff" />
+                        </Pressable>
+                      )}
                     </View>
                   )}
                 </Animated.View>
@@ -743,6 +786,7 @@ export const PlayerBar = () => {
         enablePanDownToClose
         enableDismissOnClose
         backdropComponent={renderBackdrop}
+        backgroundComponent={renderBackground}
         animationConfigs={animationConfigs}
         onChange={(index) => setIsSheetOpen(index >= 0)}
         onDismiss={() => setIsSheetOpen(false)}
@@ -750,30 +794,9 @@ export const PlayerBar = () => {
           backgroundColor: "rgba(255,255,255,0.3)",
           width: 40,
         }}
-        backgroundStyle={{
-          backgroundColor: "#000",
-          borderTopLeftRadius: 24,
-          borderTopRightRadius: 24,
-        }}
       >
-        <StyledBottomSheetView className="flex-1 bg-black max-w-md w-full mx-auto left-0 right-0 rounded-t-[24px] overflow-hidden">
-          <View style={{ flex: 1 }}>
-            {resolvedArtwork ? (
-              <ImageBackground
-                source={{ uri: resolvedArtwork }}
-                style={{
-                  position: "absolute",
-                  top: 0,
-                  right: 0,
-                  bottom: 0,
-                  left: 0,
-                }}
-                resizeMode="cover"
-                blurRadius={50}
-              >
-                <View className="absolute inset-0 bg-black/50" />
-              </ImageBackground>
-            ) : null}
+        <StyledBottomSheetView className="flex-1 rounded-t-[24px] overflow-hidden">
+          <View className="flex-1 max-w-md w-full mx-auto relative">
             <View
               className="flex-1 items-center justify-between pb-10"
               style={{ paddingTop: insets.top + 12 }}
