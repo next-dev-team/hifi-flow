@@ -386,6 +386,19 @@ export default function Home() {
     const track = tracks[index];
     if (!track) return null;
 
+    if (filter === "albums") {
+      return (
+        <TrackItem
+          track={track}
+          onPress={() => {
+            const item = listData[index];
+            setSelectedAlbum(item);
+            artistSheetRef.current?.present();
+          }}
+        />
+      );
+    }
+
     return (
       <TrackItem
         track={track}
