@@ -66,6 +66,8 @@ interface PlayerContextType {
   toggleCurrentFavorite: (artwork?: string) => Promise<void>;
   removeFavorite: (id: string) => Promise<void>;
   playSaved: (saved: SavedTrack) => Promise<void>;
+  volume: number;
+  setVolume: (volume: number) => Promise<void>;
 }
 
 const PlayerContext = createContext<PlayerContextType | undefined>(undefined);
@@ -125,6 +127,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
   const [durationMillis, setDurationMillis] = useState(0);
   const [currentStreamUrl, setCurrentStreamUrl] = useState<string | null>(null);
   const [favorites, setFavorites] = useState<SavedTrack[]>([]);
+  const [volume, setVolumeState] = useState(1.0);
   const [sleepTimerEndsAt, setSleepTimerEndsAt] = useState<number | null>(null);
   const [sleepTimerRemainingMs, setSleepTimerRemainingMs] = useState(0);
 
@@ -240,128 +243,146 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
     }
   }, []);
 
-  const playSound = useCallback(async (track: Track) => {
-    playRequestIdRef.current += 1;
-    const requestId = playRequestIdRef.current;
-
-    setIsLoading(true);
-    setIsPlaying(false);
-
-    // Unload previous sound first
+  const setVolume = useCallback(async (value: number) => {
+    const normalized = Math.max(0, Math.min(1, value));
+    setVolumeState(normalized);
     if (soundRef.current) {
-      const previous = soundRef.current;
       try {
-        previous.setOnPlaybackStatusUpdate(null);
-        await previous.unloadAsync();
+        await soundRef.current.setVolumeAsync(normalized);
       } catch {
         // ignore
       }
-      soundRef.current = null;
-    }
-
-    if (playRequestIdRef.current !== requestId) {
-      return;
-    }
-
-    setPositionMillis(0);
-    setDurationMillis(0);
-    setCurrentStreamUrl(null);
-
-    const trackId = Number(track.id);
-    let streamUrl: string | null = null;
-
-    if (Number.isFinite(trackId)) {
-      try {
-        streamUrl = await losslessAPI.getTrackStreamUrl(
-          trackId,
-          qualityRef.current
-        );
-      } catch {
-        streamUrl = null;
-      }
-    }
-
-    if (playRequestIdRef.current !== requestId) {
-      return;
-    }
-
-    if (!streamUrl && track.url) {
-      streamUrl = track.url;
-    }
-
-    if (!streamUrl) {
-      if (playRequestIdRef.current === requestId) {
-        setIsPlaying(false);
-        setIsLoading(false);
-        setCurrentStreamUrl(null);
-      }
-      return;
-    }
-
-    // Create new sound instance
-    const sound = new Audio.Sound();
-    soundRef.current = sound;
-
-    try {
-      sound.setOnPlaybackStatusUpdate((status: AVPlaybackStatus) => {
-        if (playRequestIdRef.current !== requestId) return;
-        if (!status.isLoaded) return;
-        setIsPlaying(status.isPlaying);
-        setPositionMillis(status.positionMillis);
-        setDurationMillis(status.durationMillis ?? 0);
-        if (status.didJustFinish) {
-          if (repeatModeRef.current === "one") {
-            void (async () => {
-              try {
-                await sound.setPositionAsync(0);
-                await sound.playAsync();
-              } catch {
-                return;
-              }
-            })();
-            return;
-          }
-          void playNextRef.current();
-        }
-      });
-
-      await sound.loadAsync(
-        { uri: streamUrl },
-        { shouldPlay: false, progressUpdateIntervalMillis: 250 }
-      );
-
-      // Check if we were interrupted
-      if (soundRef.current !== sound) {
-        await sound.unloadAsync();
-        return;
-      }
-
-      if (playRequestIdRef.current !== requestId) {
-        await sound.unloadAsync();
-        return;
-      }
-
-      setCurrentStreamUrl(streamUrl);
-      await sound.playAsync();
-
-      if (playRequestIdRef.current !== requestId) {
-        await sound.unloadAsync();
-        return;
-      }
-
-      setIsLoading(false);
-    } catch (error) {
-      console.error("Error loading sound", error);
-      if (playRequestIdRef.current === requestId) {
-        if (soundRef.current === sound) {
-          soundRef.current = null;
-          setIsPlaying(false);
-          setCurrentStreamUrl(null);
-        }
-        setIsLoading(false);
-      }
     }
   }, []);
+
+  const playSound = useCallback(
+    async (track: Track) => {
+      playRequestIdRef.current += 1;
+      const requestId = playRequestIdRef.current;
+
+      setIsLoading(true);
+      setIsPlaying(false);
+
+      // Unload previous sound first
+      if (soundRef.current) {
+        const previous = soundRef.current;
+        try {
+          previous.setOnPlaybackStatusUpdate(null);
+          await previous.unloadAsync();
+        } catch {
+          // ignore
+        }
+        soundRef.current = null;
+      }
+
+      if (playRequestIdRef.current !== requestId) {
+        return;
+      }
+
+      setPositionMillis(0);
+      setDurationMillis(0);
+      setCurrentStreamUrl(null);
+
+      const trackId = Number(track.id);
+      let streamUrl: string | null = null;
+
+      if (Number.isFinite(trackId)) {
+        try {
+          streamUrl = await losslessAPI.getTrackStreamUrl(
+            trackId,
+            qualityRef.current
+          );
+        } catch {
+          streamUrl = null;
+        }
+      }
+
+      if (playRequestIdRef.current !== requestId) {
+        return;
+      }
+
+      if (!streamUrl && track.url) {
+        streamUrl = track.url;
+      }
+
+      if (!streamUrl) {
+        if (playRequestIdRef.current === requestId) {
+          setIsPlaying(false);
+          setIsLoading(false);
+          setCurrentStreamUrl(null);
+        }
+        return;
+      }
+
+      // Create new sound instance
+      const sound = new Audio.Sound();
+      soundRef.current = sound;
+
+      try {
+        sound.setOnPlaybackStatusUpdate((status: AVPlaybackStatus) => {
+          if (playRequestIdRef.current !== requestId) return;
+          if (!status.isLoaded) return;
+          setIsPlaying(status.isPlaying);
+          setPositionMillis(status.positionMillis);
+          setDurationMillis(status.durationMillis ?? 0);
+          if (status.didJustFinish) {
+            if (repeatModeRef.current === "one") {
+              void (async () => {
+                try {
+                  await sound.setPositionAsync(0);
+                  await sound.playAsync();
+                } catch {
+                  return;
+                }
+              })();
+              return;
+            }
+            void playNextRef.current();
+          }
+        });
+
+        await sound.loadAsync(
+          { uri: streamUrl },
+          { shouldPlay: false, progressUpdateIntervalMillis: 250 }
+        );
+
+        // Apply current volume
+        await sound.setVolumeAsync(volume);
+
+        // Check if we were interrupted
+        if (soundRef.current !== sound) {
+          await sound.unloadAsync();
+          return;
+        }
+
+        if (playRequestIdRef.current !== requestId) {
+          await sound.unloadAsync();
+          return;
+        }
+
+        setCurrentStreamUrl(streamUrl);
+        await sound.playAsync();
+
+        if (playRequestIdRef.current !== requestId) {
+          await sound.unloadAsync();
+          return;
+        }
+
+        setIsLoading(false);
+      } catch (error) {
+        console.error("Error loading sound", error);
+        if (playRequestIdRef.current === requestId) {
+          if (soundRef.current === sound) {
+            soundRef.current = null;
+            setIsPlaying(false);
+            setCurrentStreamUrl(null);
+          }
+          setIsLoading(false);
+        }
+      }
+    },
+    [volume]
+  );
 
   const playTrack = useCallback(
     async (track: Track) => {
@@ -710,6 +731,8 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
         toggleCurrentFavorite,
         removeFavorite,
         playSaved,
+        volume,
+        setVolume,
       }}
     >
       {children}

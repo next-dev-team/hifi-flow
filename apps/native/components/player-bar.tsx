@@ -711,6 +711,123 @@ const SeekBar = ({
   );
 };
 
+const VolumeSlider = ({
+  volume,
+  onVolumeChange,
+}: {
+  volume: number;
+  onVolumeChange: (value: number) => void;
+}) => {
+  const barRef = useRef<View | null>(null);
+  const barYRef = useRef(0);
+  const [barHeight, setBarHeight] = useState(0);
+  const [isDragging, setIsDragging] = useState(false);
+  const [dragVolume, setDragVolume] = useState(volume);
+
+  const visualRatio = isDragging ? dragVolume : volume;
+
+  const handleVolumeUpdate = useCallback(
+    (pageY: number) => {
+      if (barHeight <= 0) return;
+      // In vertical slider, top is 1 (ratio), bottom is 0 (ratio)
+      // pageY increases downwards, so we invert the ratio
+      const ratio = clamp(1 - (pageY - barYRef.current) / barHeight, 0, 1);
+      setDragVolume(ratio);
+      onVolumeChange(ratio);
+    },
+    [barHeight, onVolumeChange]
+  );
+
+  const panResponder = useMemo(() => {
+    return PanResponder.create({
+      onStartShouldSetPanResponder: () => true,
+      onMoveShouldSetPanResponder: () => true,
+      onPanResponderGrant: (evt) => {
+        setIsDragging(true);
+        barRef.current?.measureInWindow((_x, y) => {
+          barYRef.current = y;
+          handleVolumeUpdate(evt.nativeEvent.pageY);
+        });
+      },
+      onPanResponderMove: (_evt, gestureState) => {
+        handleVolumeUpdate(gestureState.moveY);
+      },
+      onPanResponderRelease: () => {
+        setIsDragging(false);
+      },
+      onPanResponderTerminate: () => {
+        setIsDragging(false);
+      },
+    });
+  }, [handleVolumeUpdate]);
+
+  const knobSize = isDragging ? 18 : 14;
+  const knobY = barHeight * (1 - visualRatio);
+  const knobTop = clamp(
+    knobY - knobSize / 2,
+    -2,
+    Math.max(-2, barHeight - knobSize + 2)
+  );
+
+  return (
+    <View
+      ref={(node) => {
+        barRef.current = node;
+      }}
+      onLayout={(e) => {
+        setBarHeight(e.nativeEvent.layout.height);
+        barRef.current?.measureInWindow((_x, y) => {
+          barYRef.current = y;
+        });
+      }}
+      style={{
+        height: 120,
+        width: 30,
+        alignItems: "center",
+        justifyContent: "center",
+      }}
+      hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+      {...panResponder.panHandlers}
+    >
+      <View
+        style={{
+          width: 8,
+          height: "100%",
+          borderRadius: 999,
+          overflow: "hidden",
+          backgroundColor: "rgba(255,255,255,0.18)",
+          justifyContent: "flex-end",
+        }}
+      >
+        <View
+          style={{
+            width: "100%",
+            height: `${visualRatio * 100}%`,
+            backgroundColor: "#fff",
+          }}
+        />
+      </View>
+
+      <View
+        pointerEvents="none"
+        style={{
+          position: "absolute",
+          top: knobTop,
+          width: knobSize,
+          height: knobSize,
+          borderRadius: knobSize / 2,
+          backgroundColor: "#fff",
+          shadowColor: "#000",
+          shadowOpacity: 0.35,
+          shadowRadius: 10,
+          shadowOffset: { width: 0, height: 4 },
+          elevation: 10,
+        }}
+      />
+    </View>
+  );
+};
+
 export const PlayerBar = () => {
   const { width: screenWidth } = useWindowDimensions();
   const {
@@ -731,6 +848,8 @@ export const PlayerBar = () => {
     durationMillis,
     seekToMillis,
     seekByMillis,
+    volume,
+    setVolume,
   } = usePlayer();
   const insets = useSafeAreaInsets();
   const bottomSheetRef = useRef<BottomSheetModal | null>(null);
@@ -739,6 +858,7 @@ export const PlayerBar = () => {
     undefined
   );
   const [isSheetOpen, setIsSheetOpen] = useState(false);
+  const [showVolume, setShowVolume] = useState(false);
   const [showSpectrumSelector, setShowSpectrumSelector] = useState(false);
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [scrubMillis, setScrubMillis] = useState<number | null>(null);
@@ -1818,7 +1938,7 @@ export const PlayerBar = () => {
                     }}
                   />
 
-                  <View className="flex-row items-center justify-between mt-2">
+                  <View className="flex-row items-center justify-between mt-2 px-2">
                     <Pressable
                       className="w-10 h-10 rounded-full items-center justify-center"
                       onPress={toggleShuffle}
@@ -1889,34 +2009,78 @@ export const PlayerBar = () => {
                         </>
                       )}
                     </Pressable>
+
+                    <View className="relative">
+                      {showVolume && (
+                        <View
+                          style={{
+                            position: "absolute",
+                            bottom: 50,
+                            right: 0,
+                            backgroundColor: "rgba(30,30,30,0.95)",
+                            borderRadius: 20,
+                            paddingVertical: 12,
+                            paddingHorizontal: 4,
+                            shadowColor: "#000",
+                            shadowOpacity: 0.3,
+                            shadowRadius: 10,
+                            elevation: 5,
+                            zIndex: 100,
+                          }}
+                        >
+                          <VolumeSlider
+                            volume={volume}
+                            onVolumeChange={setVolume}
+                          />
+                        </View>
+                      )}
+                      <TouchableOpacity
+                        onPress={() => setShowVolume(!showVolume)}
+                        className="w-10 h-10 rounded-full items-center justify-center"
+                      >
+                        <Ionicons
+                          name={
+                            volume === 0
+                              ? "volume-mute"
+                              : volume < 0.5
+                              ? "volume-low"
+                              : "volume-high"
+                          }
+                          size={22}
+                          color={showVolume ? "#fff" : "rgba(255,255,255,0.45)"}
+                        />
+                      </TouchableOpacity>
+                    </View>
                   </View>
                 </View>
               </View>
 
-              <View className="w-full flex-row items-center justify-evenly px-6 mt-6">
-                <TouchableOpacity onPress={playPrevious} className="p-4">
-                  <Ionicons name="play-skip-back" size={38} color="#fff" />
-                </TouchableOpacity>
+              <View className="w-full flex-row items-center justify-center px-6 mt-6">
+                <View className="flex-row items-center justify-center flex-1">
+                  <TouchableOpacity onPress={playPrevious} className="p-4">
+                    <Ionicons name="play-skip-back" size={38} color="#fff" />
+                  </TouchableOpacity>
 
-                <TouchableOpacity
-                  onPress={isPlaying ? pauseTrack : resumeTrack}
-                  className="w-20 h-20 rounded-full bg-white items-center justify-center shadow-lg"
-                  disabled={isLoading}
-                >
-                  {isLoading ? (
-                    <ActivityIndicator size="large" color="#000" />
-                  ) : (
-                    <Ionicons
-                      name={isPlaying ? "pause" : "play"}
-                      size={42}
-                      color="#000"
-                    />
-                  )}
-                </TouchableOpacity>
+                  <TouchableOpacity
+                    onPress={isPlaying ? pauseTrack : resumeTrack}
+                    className="w-20 h-20 rounded-full bg-white items-center justify-center shadow-lg"
+                    disabled={isLoading}
+                  >
+                    {isLoading ? (
+                      <ActivityIndicator size="large" color="#000" />
+                    ) : (
+                      <Ionicons
+                        name={isPlaying ? "pause" : "play"}
+                        size={42}
+                        color="#000"
+                      />
+                    )}
+                  </TouchableOpacity>
 
-                <TouchableOpacity onPress={playNext} className="p-4">
-                  <Ionicons name="play-skip-forward" size={38} color="#fff" />
-                </TouchableOpacity>
+                  <TouchableOpacity onPress={playNext} className="p-4">
+                    <Ionicons name="play-skip-forward" size={38} color="#fff" />
+                  </TouchableOpacity>
+                </View>
               </View>
 
               <View className="h-6" />
