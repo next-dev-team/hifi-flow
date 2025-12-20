@@ -1,13 +1,20 @@
-import { useLocalSearchParams } from "expo-router";
+import { Ionicons } from "@expo/vector-icons";
 import { useQuery } from "@tanstack/react-query";
-import { ActivityIndicator, Image, ScrollView, Text, View, TouchableOpacity } from "react-native";
+import { useLocalSearchParams } from "expo-router";
+import { Card } from "heroui-native";
+import {
+  ActivityIndicator,
+  Image,
+  ScrollView,
+  Text,
+  TouchableOpacity,
+  View,
+} from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { withUniwind } from "uniwind";
+import { usePlayer } from "@/contexts/player-context";
 import { losslessAPI } from "@/utils/api";
 import { resolveArtwork, resolveName } from "@/utils/resolvers";
-import { usePlayer } from "@/contexts/player-context";
-import { Ionicons } from "@expo/vector-icons";
-import { Card } from "heroui-native";
 
 const StyledSafeAreaView = withUniwind(SafeAreaView);
 const StyledView = withUniwind(View);
@@ -15,7 +22,8 @@ const StyledText = withUniwind(Text);
 
 export default function SongPage() {
   const { id } = useLocalSearchParams<{ id: string }>();
-  const { playTrack, isPlaying, pause, resume, currentTrack } = usePlayer();
+  const { playTrack, isPlaying, pauseTrack, resumeTrack, currentTrack } =
+    usePlayer();
 
   const { data: trackDetails, isLoading } = useQuery({
     queryKey: ["track", id],
@@ -46,25 +54,32 @@ export default function SongPage() {
     );
   }
 
-  const track = trackDetails || currentTrack;
+  const track = trackDetails?.track || currentTrack;
+  const streamUrl = trackDetails?.originalTrackUrl;
   const artworkUrl = resolveArtwork(track, "1280");
-  const title = track?.title || track?.name || "Unknown Title";
-  const artist = resolveName(track?.artist || track?.author) || "Unknown Artist";
-  const album = track?.album?.title || "Single";
+  const title =
+    (typeof (track as any)?.title === "string" && (track as any).title) ||
+    (typeof (track as any)?.name === "string" && (track as any).name) ||
+    "Unknown Title";
+  const artist =
+    resolveName((track as any)?.artist) ||
+    resolveName((track as any)?.author) ||
+    "Unknown Artist";
+  const album = (track as any)?.album?.title || "Single";
 
-  const isCurrentTrack = currentTrack?.id === id;
+  const isCurrentTrack = String(currentTrack?.id ?? "") === String(id);
 
   const handlePlay = () => {
     if (isCurrentTrack) {
-      if (isPlaying) pause();
-      else resume();
+      if (isPlaying) void pauseTrack();
+      else void resumeTrack();
     } else if (track) {
       void playTrack({
         id: String(id),
         title,
         artist,
         artwork: artworkUrl,
-        url: track.url || "",
+        url: streamUrl || "",
       });
     }
   };
@@ -90,15 +105,14 @@ export default function SongPage() {
 
           {/* Track Info */}
           <View className="mb-8">
-            <Text className="text-3xl font-bold text-foreground mb-2" numberOfLines={2}>
+            <Text
+              className="text-3xl font-bold text-foreground mb-2"
+              numberOfLines={2}
+            >
               {title}
             </Text>
-            <Text className="text-xl text-default-500 mb-1">
-              {artist}
-            </Text>
-            <Text className="text-sm text-default-400">
-              {album}
-            </Text>
+            <Text className="text-xl text-default-500 mb-1">{artist}</Text>
+            <Text className="text-sm text-default-400">{album}</Text>
           </View>
 
           {/* Controls */}
@@ -106,15 +120,15 @@ export default function SongPage() {
             <TouchableOpacity onPress={() => {}}>
               <Ionicons name="play-skip-back" size={40} color="#fff" />
             </TouchableOpacity>
-            
-            <TouchableOpacity 
+
+            <TouchableOpacity
               onPress={handlePlay}
               className="w-20 h-20 bg-primary rounded-full items-center justify-center shadow-lg"
             >
-              <Ionicons 
-                name={isCurrentTrack && isPlaying ? "pause" : "play"} 
-                size={45} 
-                color="#fff" 
+              <Ionicons
+                name={isCurrentTrack && isPlaying ? "pause" : "play"}
+                size={45}
+                color="#fff"
                 style={{ marginLeft: isCurrentTrack && isPlaying ? 0 : 4 }}
               />
             </TouchableOpacity>

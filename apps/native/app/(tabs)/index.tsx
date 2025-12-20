@@ -646,6 +646,7 @@ export default function Home() {
             </View>
           ) : (
             <BottomSheetFlatList
+              style={{ flex: 1 }}
               ListHeaderComponent={
                 <View className="px-4 mb-6">
                   {selectedAlbum ? (
