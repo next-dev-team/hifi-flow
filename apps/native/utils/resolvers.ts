@@ -12,8 +12,31 @@ export const resolveArtwork = (
 ): string | undefined => {
   if (!item) return undefined;
 
+  const normalizeString = (value: unknown): string | undefined => {
+    if (typeof value !== "string") return undefined;
+    const trimmed = value.trim();
+    return trimmed.length > 0 ? trimmed : undefined;
+  };
+
+  const resolveTidalImageId = (id: string, kind: "cover" | "picture") => {
+    if (kind === "picture") return losslessAPI.getArtistPictureUrl(id);
+    return losslessAPI.getCoverUrl(id, size);
+  };
+
+  const looksLikeTidalId = (value: string) =>
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+      value
+    );
+
   // Handle case where item might be a string (the URL itself)
-  if (typeof item === "string") return item;
+  if (typeof item === "string") {
+    const candidate = normalizeString(item);
+    if (!candidate) return undefined;
+    if (candidate.startsWith("http")) return candidate;
+    if (looksLikeTidalId(candidate))
+      return resolveTidalImageId(candidate, "cover");
+    return candidate;
+  }
 
   // 1. Try common direct URL fields
   const directUrl =
@@ -27,29 +50,30 @@ export const resolveArtwork = (
     item.artworkUrl ||
     item.artwork;
 
-  if (typeof directUrl === "string") {
-    if (directUrl.startsWith("http")) return directUrl;
+  const directCandidate = normalizeString(directUrl);
+  if (directCandidate) {
+    if (directCandidate.startsWith("http")) return directCandidate;
 
     // 2. If it looks like a Tidal UUID (contains dashes and is about 36 chars), use losslessAPI
-    if (
-      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
-        directUrl
-      )
-    ) {
-      // Check if it's likely a picture or cover based on field name or item type
-      const isArtist =
-        item.type === "artist" || !!item.subscribers || !!item.artistTypes;
-      if (isArtist) {
-        return losslessAPI.getArtistPictureUrl(directUrl);
-      }
-      return losslessAPI.getCoverUrl(directUrl, size);
+    if (looksLikeTidalId(directCandidate)) {
+      const isPictureSource =
+        typeof item.picture === "string" ||
+        typeof item.picture_url === "string" ||
+        typeof item.avatar === "string" ||
+        typeof item.avatar_url === "string" ||
+        typeof item.profile === "string";
+      return resolveTidalImageId(
+        directCandidate,
+        isPictureSource ? "picture" : "cover"
+      );
     }
   }
 
   // 3. Try thumbnail object
-  if (item.thumbnail?.url) return item.thumbnail.url;
-  if (item.thumbnail && typeof item.thumbnail === "string")
-    return item.thumbnail;
+  const thumbnailUrl = normalizeString(item.thumbnail?.url);
+  if (thumbnailUrl) return thumbnailUrl;
+  const thumbnailString = normalizeString(item.thumbnail);
+  if (thumbnailString) return thumbnailString;
 
   // 4. Try thumbnails array
   if (Array.isArray(item.thumbnails) && item.thumbnails.length > 0) {
@@ -59,20 +83,31 @@ export const resolveArtwork = (
       const bSize = (b.width || 0) * (b.height || 0);
       return bSize - aSize;
     })[0];
-    return best?.url || item.thumbnails[0]?.url;
+    const bestUrl = normalizeString(best?.url);
+    if (bestUrl) return bestUrl;
+    const firstUrl = normalizeString(item.thumbnails[0]?.url);
+    if (firstUrl) return firstUrl;
   }
 
   // 5. Handle thumbnails as string
-  if (typeof item.thumbnails === "string") return item.thumbnails;
+  const thumbnailsString = normalizeString(item.thumbnails);
+  if (thumbnailsString) return thumbnailsString;
 
   // 6. Check nested structures (sometimes artists have images inside a 'data' or 'artist' object)
-  if (item.data) return resolveArtwork(item.data, size);
-  if (item.artist && typeof item.artist === "object")
-    return resolveArtwork(item.artist, size);
-  if (item.author && typeof item.author === "object")
-    return resolveArtwork(item.author, size);
-  if (item.album && typeof item.album === "object")
-    return resolveArtwork(item.album, size);
+  const nestedCandidates = [
+    item.album,
+    item.data,
+    item.item,
+    item.track,
+    item.artist,
+    item.author,
+  ];
+
+  for (const candidate of nestedCandidates) {
+    if (!candidate) continue;
+    const resolved = resolveArtwork(candidate, size);
+    if (resolved) return resolved;
+  }
 
   return undefined;
 };

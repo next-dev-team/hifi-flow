@@ -39,6 +39,7 @@ import { Circle, Svg } from "react-native-svg";
 import { withUniwind } from "uniwind";
 import { usePlayer } from "@/contexts/player-context";
 import { losslessAPI } from "@/utils/api";
+import { resolveArtwork } from "@/utils/resolvers";
 
 const StyledBottomSheetView = withUniwind(BottomSheetView);
 
