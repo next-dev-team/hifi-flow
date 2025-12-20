@@ -2,7 +2,12 @@ import {
   type AudioAnalysis,
   extractAudioAnalysis,
 } from "@siteed/expo-audio-studio";
-import { Audio, type AVPlaybackStatus } from "expo-av";
+import {
+  type AudioPlayer,
+  type AudioStatus,
+  createAudioPlayer,
+  useAudioPlayerStatus,
+} from "expo-audio";
 import * as SecureStore from "expo-secure-store";
 import type React from "react";
 import {
@@ -127,14 +132,36 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
   children,
 }) => {
   const [currentTrack, setCurrentTrack] = useState<Track | null>(null);
-  const [isPlaying, setIsPlaying] = useState(false);
-  const [isLoading, setIsLoading] = useState(false);
+  // We manage the current player in state so hooks can react to it
+  const [player, setPlayer] = useState<AudioPlayer | null>(null);
+  const [status, setStatus] = useState<AudioStatus | null>(null);
+
+  useEffect(() => {
+    if (!player) {
+      setStatus(null);
+      return;
+    }
+    setStatus(player.currentStatus);
+    const subscription = player.addListener(
+      "playbackStatusUpdate",
+      (newStatus) => {
+        setStatus(newStatus);
+      }
+    );
+    return () => subscription.remove();
+  }, [player]);
+
+  // Derived state from status
+  const isPlaying = status?.playing ?? false;
+  const isLoading = status?.isBuffering ?? false; // or !status.isLoaded if we want initial load
+  const positionMillis = (status?.currentTime ?? 0) * 1000;
+  const durationMillis = (status?.duration ?? 0) * 1000;
+
   const [queue, setQueue] = useState<Track[]>([]);
   const [quality, setQualityState] = useState<AudioQuality>("HI_RES_LOSSLESS");
   const [shuffleEnabled, setShuffleEnabled] = useState(false);
   const [repeatMode, setRepeatMode] = useState<RepeatMode>("off");
-  const [positionMillis, setPositionMillis] = useState(0);
-  const [durationMillis, setDurationMillis] = useState(0);
+  // Removed manual position/duration/isPlaying/isLoading state since we use status hook
   const [currentStreamUrl, setCurrentStreamUrl] = useState<string | null>(null);
   const [audioAnalysis, setAudioAnalysis] = useState<AudioAnalysis | null>(
     null
@@ -172,8 +199,9 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
     });
   }, []);
 
-  const soundRef = useRef<Audio.Sound | null>(null);
-  const preloadedSoundRef = useRef<Audio.Sound | null>(null);
+  // We keep a ref to the current player for imperative access in playSound
+  const playerRef = useRef<AudioPlayer | null>(null);
+  const preloadedPlayerRef = useRef<AudioPlayer | null>(null);
   const preloadedTrackKeyRef = useRef<string | null>(null);
   const preloadedStreamUrlRef = useRef<string | null>(null);
   const preloadRequestIdRef = useRef(0);
@@ -189,6 +217,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
   const playNextRef = useRef<() => Promise<void>>(async () => {});
   const playRequestIdRef = useRef(0);
   const currentStreamUrlRef = useRef<string | null>(null);
+  const hasPreloadedForCurrentTrackRef = useRef(false);
 
   const preloadTriggerKey = `${quality}|${repeatMode}|${shuffleEnabled}|${queue.length}`;
 
@@ -237,6 +266,18 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
     repeatModeRef.current = repeatMode;
   }, [repeatMode]);
 
+  // Handle playback completion
+  useEffect(() => {
+    if (status?.didJustFinish) {
+      if (repeatModeRef.current === "one") {
+        player?.seekTo(0);
+        player?.play();
+      } else {
+        void playNextRef.current();
+      }
+    }
+  }, [status?.didJustFinish, player]);
+
   const getTrackKey = useCallback((track: Track, q: AudioQuality) => {
     return `${String(track.id)}|${q}`;
   }, []);
@@ -248,15 +289,10 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
     preloadedTrackKeyRef.current = null;
     preloadedStreamUrlRef.current = null;
     lastPreloadTriggerKeyRef.current = null;
-    const previous = preloadedSoundRef.current;
-    preloadedSoundRef.current = null;
+    const previous = preloadedPlayerRef.current;
+    preloadedPlayerRef.current = null;
     if (previous) {
-      try {
-        previous.setOnPlaybackStatusUpdate(null);
-        await previous.unloadAsync();
-      } catch {
-        return preloadRequestIdRef.current;
-      }
+      previous.remove();
     }
     return preloadRequestIdRef.current;
   }, []);
@@ -345,50 +381,27 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
         return;
       }
 
-      const sound = new Audio.Sound();
-      try {
-        await sound.loadAsync(
-          { uri: streamUrl },
-          { shouldPlay: false, progressUpdateIntervalMillis: 250 }
-        );
+      // Create preloaded player
+      // We don't play it, just create it. It will buffer.
+      const player = createAudioPlayer(streamUrl, {
+        downloadFirst: false, // Stream immediately
+        updateInterval: 250,
+      });
 
-        if (
-          playRequestIdRef.current !== playRequestId ||
-          preloadRequestIdRef.current !== preloadId
-        ) {
-          await sound.unloadAsync();
-          return;
-        }
-
-        preloadedSoundRef.current = sound;
-        preloadedTrackKeyRef.current = nextKey;
-        preloadedStreamUrlRef.current = streamUrl;
-      } catch {
-        try {
-          await sound.unloadAsync();
-        } catch {
-          return;
-        }
+      if (
+        playRequestIdRef.current !== playRequestId ||
+        preloadRequestIdRef.current !== preloadId
+      ) {
+        player.remove();
+        return;
       }
+
+      preloadedPlayerRef.current = player;
+      preloadedTrackKeyRef.current = nextKey;
+      preloadedStreamUrlRef.current = streamUrl;
     },
     [getStreamUrlForTrack, getTrackKey, resetPreloadState]
   );
-
-  useEffect(() => {
-    async function setupAudio() {
-      try {
-        await Audio.setAudioModeAsync({
-          staysActiveInBackground: true,
-          playsInSilentModeIOS: true,
-          shouldDuckAndroid: true,
-          playThroughEarpieceAndroid: false,
-        });
-      } catch (e) {
-        console.error("Error setting up audio mode", e);
-      }
-    }
-    setupAudio();
-  }, []);
 
   useEffect(() => {
     readPersistentValue(FAVORITES_STORAGE_KEY)
@@ -420,14 +433,11 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
 
   const unloadSound = useCallback(async () => {
     await resetPreloadState();
-    const sound = soundRef.current;
+    const sound = playerRef.current;
     if (sound) {
-      try {
-        sound.setOnPlaybackStatusUpdate(null);
-        await sound.unloadAsync();
-      } catch {
-        return;
-      }
+      sound.remove();
+      playerRef.current = null;
+      setPlayer(null);
     }
   }, [resetPreloadState]);
 
@@ -435,12 +445,8 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
     const normalized = Math.max(0, Math.min(1, value));
     setVolumeState(normalized);
     void writePersistentValue(VOLUME_STORAGE_KEY, String(normalized));
-    if (soundRef.current) {
-      try {
-        await soundRef.current.setVolumeAsync(normalized);
-      } catch {
-        // ignore
-      }
+    if (playerRef.current) {
+      playerRef.current.volume = normalized;
     }
   }, []);
 
@@ -474,130 +480,53 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
       playRequestIdRef.current += 1;
       const requestId = playRequestIdRef.current;
 
-      setIsLoading(true);
-      setIsPlaying(false);
-
       // Unload previous sound first
-      if (soundRef.current) {
-        const previous = soundRef.current;
-        try {
-          previous.setOnPlaybackStatusUpdate(null);
-          await previous.unloadAsync();
-        } catch {
-          // ignore
-        }
-        soundRef.current = null;
+      if (playerRef.current) {
+        playerRef.current.remove();
+        playerRef.current = null;
+        setPlayer(null);
       }
 
       if (playRequestIdRef.current !== requestId) {
         return;
       }
 
-      setPositionMillis(0);
-      setDurationMillis(0);
+      // Reset derived state implicitly by new player status (handled by hook)
+      // But we can reset stream url
       setCurrentStreamUrl(null);
 
       const wantedKey = getTrackKey(track, qualityRef.current);
-      const maybePreloadedSound = preloadedSoundRef.current;
+      const maybePreloadedPlayer = preloadedPlayerRef.current;
       const maybePreloadedKey = preloadedTrackKeyRef.current;
       const maybePreloadedUrl = preloadedStreamUrlRef.current;
 
       if (
-        maybePreloadedSound &&
+        maybePreloadedPlayer &&
         maybePreloadedKey === wantedKey &&
         typeof maybePreloadedUrl === "string" &&
         maybePreloadedUrl.length > 0
       ) {
-        preloadedSoundRef.current = null;
+        preloadedPlayerRef.current = null;
         preloadedTrackKeyRef.current = null;
         preloadedStreamUrlRef.current = null;
 
-        let status: AVPlaybackStatus;
-        try {
-          status = await maybePreloadedSound.getStatusAsync();
-        } catch {
-          try {
-            await maybePreloadedSound.unloadAsync();
-          } catch {
-            return;
-          }
+        const player = maybePreloadedPlayer;
+        playerRef.current = player;
+        setPlayer(player);
+
+        player.volume = volume;
+
+        if (playRequestIdRef.current !== requestId) {
+          player.remove();
           return;
         }
 
-        if (!status.isLoaded) {
-          try {
-            await maybePreloadedSound.unloadAsync();
-          } catch {
-            return;
-          }
-          return;
-        }
+        setCurrentStreamUrl(maybePreloadedUrl);
+        void analyzeTrack(maybePreloadedUrl, requestId);
+        player.play();
 
-        const sound = maybePreloadedSound;
-        soundRef.current = sound;
-
-        try {
-          sound.setOnPlaybackStatusUpdate((nextStatus: AVPlaybackStatus) => {
-            if (playRequestIdRef.current !== requestId) return;
-            if (!nextStatus.isLoaded) return;
-            setIsPlaying(nextStatus.isPlaying);
-            setPositionMillis(nextStatus.positionMillis);
-            setDurationMillis(nextStatus.durationMillis ?? 0);
-            if (nextStatus.didJustFinish) {
-              if (repeatModeRef.current === "one") {
-                void (async () => {
-                  try {
-                    await sound.setPositionAsync(0);
-                    await sound.playAsync();
-                  } catch {
-                    return;
-                  }
-                })();
-                return;
-              }
-              void playNextRef.current();
-            }
-          });
-
-          await sound.setVolumeAsync(volume);
-
-          if (soundRef.current !== sound) {
-            await sound.unloadAsync();
-            return;
-          }
-
-          if (playRequestIdRef.current !== requestId) {
-            await sound.unloadAsync();
-            return;
-          }
-
-          setCurrentStreamUrl(maybePreloadedUrl);
-          void analyzeTrack(maybePreloadedUrl, requestId);
-          await sound.playAsync();
-
-          if (playRequestIdRef.current !== requestId) {
-            await sound.unloadAsync();
-            return;
-          }
-
-          setIsLoading(false);
-          void preloadNextForTrack(
-            track,
-            requestId,
-            `${qualityRef.current}|${repeatModeRef.current}|${shuffleEnabledRef.current}|${queueRef.current.length}`
-          );
-          return;
-        } catch {
-          if (playRequestIdRef.current === requestId) {
-            if (soundRef.current === sound) {
-              soundRef.current = null;
-              setIsPlaying(false);
-              setCurrentStreamUrl(null);
-            }
-            setIsLoading(false);
-          }
-          return;
-        }
+        // Preloading is now handled by the useEffect watching status.playing
+        return;
       }
 
       void resetPreloadState();
@@ -610,85 +539,36 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
 
       if (!streamUrl) {
         if (playRequestIdRef.current === requestId) {
-          setIsPlaying(false);
-          setIsLoading(false);
           setCurrentStreamUrl(null);
         }
         return;
       }
 
       // Create new sound instance
-      const sound = new Audio.Sound();
-      soundRef.current = sound;
+      // Chunked loading / streaming enabled by downloadFirst: false (default)
+      const player = createAudioPlayer(streamUrl, {
+        downloadFirst: false,
+        updateInterval: 250,
+      });
 
-      try {
-        sound.setOnPlaybackStatusUpdate((status: AVPlaybackStatus) => {
-          if (playRequestIdRef.current !== requestId) return;
-          if (!status.isLoaded) return;
-          setIsPlaying(status.isPlaying);
-          setPositionMillis(status.positionMillis);
-          setDurationMillis(status.durationMillis ?? 0);
-          if (status.didJustFinish) {
-            if (repeatModeRef.current === "one") {
-              void (async () => {
-                try {
-                  await sound.setPositionAsync(0);
-                  await sound.playAsync();
-                } catch {
-                  return;
-                }
-              })();
-              return;
-            }
-            void playNextRef.current();
-          }
-        });
+      playerRef.current = player;
+      setPlayer(player);
+      player.volume = volume;
 
-        await sound.loadAsync(
-          { uri: streamUrl },
-          { shouldPlay: false, progressUpdateIntervalMillis: 250 }
-        );
-
-        // Apply current volume
-        await sound.setVolumeAsync(volume);
-
-        // Check if we were interrupted
-        if (soundRef.current !== sound) {
-          await sound.unloadAsync();
-          return;
-        }
-
-        if (playRequestIdRef.current !== requestId) {
-          await sound.unloadAsync();
-          return;
-        }
-
-        setCurrentStreamUrl(streamUrl);
-        void analyzeTrack(streamUrl, requestId);
-        await sound.playAsync();
-
-        if (playRequestIdRef.current !== requestId) {
-          await sound.unloadAsync();
-          return;
-        }
-
-        setIsLoading(false);
-        void preloadNextForTrack(
-          track,
-          requestId,
-          `${qualityRef.current}|${repeatModeRef.current}|${shuffleEnabledRef.current}|${queueRef.current.length}`
-        );
-      } catch (error) {
-        console.error("Error loading sound", error);
-        if (playRequestIdRef.current === requestId) {
-          if (soundRef.current === sound) {
-            soundRef.current = null;
-            setIsPlaying(false);
-            setCurrentStreamUrl(null);
-          }
-          setIsLoading(false);
-        }
+      if (playRequestIdRef.current !== requestId) {
+        player.remove();
+        return;
       }
+
+      setCurrentStreamUrl(streamUrl);
+      void analyzeTrack(streamUrl, requestId);
+      player.play();
+
+      void preloadNextForTrack(
+        track,
+        requestId,
+        `${qualityRef.current}|${repeatModeRef.current}|${shuffleEnabledRef.current}|${queueRef.current.length}`
+      );
     },
     [
       volume,
@@ -722,7 +602,6 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
       if (!startTrack) {
         setCurrentTrack(null);
         currentTrackRef.current = null;
-        setIsPlaying(false);
         return;
       }
       setCurrentTrack(startTrack);
@@ -733,17 +612,10 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
   );
 
   const pauseTrack = useCallback(async () => {
-    const sound = soundRef.current;
-    if (!sound) return;
-    try {
-      const status = await sound.getStatusAsync();
-      if (status.isLoaded) {
-        await sound.pauseAsync();
-      }
-    } catch (e) {
-      // ignore errors if sound is not loaded
+    const player = playerRef.current;
+    if (player) {
+      player.pause();
     }
-    setIsPlaying(false);
   }, []);
 
   const cancelSleepTimer = useCallback(() => {
@@ -782,16 +654,9 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
   );
 
   const resumeTrack = useCallback(async () => {
-    const sound = soundRef.current;
-    if (!sound) return;
-    try {
-      const status = await sound.getStatusAsync();
-      if (status.isLoaded) {
-        await sound.playAsync();
-        setIsPlaying(true);
-      }
-    } catch (e) {
-      // ignore errors if sound is not loaded
+    const player = playerRef.current;
+    if (player) {
+      player.play();
     }
   }, []);
 
@@ -859,27 +724,13 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
     [playSound]
   );
 
-  const seekToMillis = useCallback(
-    async (nextPositionMillis: number) => {
-      const sound = soundRef.current;
-      if (!sound) return;
+  const seekToMillis = useCallback(async (nextPositionMillis: number) => {
+    const player = playerRef.current;
+    if (!player) return;
 
-      try {
-        const status = await sound.getStatusAsync();
-        if (!status.isLoaded) return;
-
-        const clamped = Math.min(
-          Math.max(0, Math.floor(nextPositionMillis)),
-          durationMillis > 0 ? durationMillis : Number.MAX_SAFE_INTEGER
-        );
-        await sound.setPositionAsync(clamped);
-        setPositionMillis(clamped);
-      } catch (e) {
-        // ignore errors if sound is not loaded
-      }
-    },
-    [durationMillis]
-  );
+    const seconds = nextPositionMillis / 1000;
+    player.seekTo(seconds);
+  }, []);
 
   const seekByMillis = useCallback(
     async (deltaMillis: number) => {
@@ -925,7 +776,6 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
       const nextQueue = queueRef.current;
       const nextTrack = nextQueue[nextIndex];
       if (!nextTrack) {
-        setIsPlaying(false);
         return;
       }
       setCurrentTrack(nextTrack);
@@ -939,12 +789,10 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
     const active = currentTrackRef.current;
     const nextQueue = queueRef.current;
     if (!active || nextQueue.length === 0) {
-      setIsPlaying(false);
       return;
     }
     const currentIndex = nextQueue.findIndex((t) => t.id === active.id);
     if (currentIndex === -1) {
-      setIsPlaying(false);
       return;
     }
 
@@ -987,8 +835,6 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
       await playFromQueueIndex(0);
       return;
     }
-
-    setIsPlaying(false);
   }, [getTrackKey, playFromQueueIndex]);
 
   useEffect(() => {
@@ -1028,17 +874,6 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
       clearSleepTimerHandles();
     };
   }, [clearSleepTimerHandles, unloadSound]);
-
-  useEffect(() => {
-    if (!isPlaying) return;
-    const active = currentTrackRef.current;
-    if (!active) return;
-    void preloadNextForTrack(
-      active,
-      playRequestIdRef.current,
-      preloadTriggerKey
-    );
-  }, [isPlaying, preloadNextForTrack, preloadTriggerKey]);
 
   return (
     <PlayerContext.Provider

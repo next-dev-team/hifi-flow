@@ -17,6 +17,8 @@
     "slug": "hifi-flow",
     "plugins": [
       "expo-font",
+      "expo-audio",
+      "@siteed/expo-audio-studio",
       [
         "expo-speech-recognition",
         {
