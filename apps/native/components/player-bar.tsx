@@ -879,6 +879,7 @@ export const PlayerBar = () => {
     volume,
     setVolume,
     audioAnalysis,
+    loadingTrackId,
   } = usePlayer();
   const insets = useSafeAreaInsets();
   const bottomSheetRef = useRef<BottomSheetModal | null>(null);
@@ -952,6 +953,8 @@ export const PlayerBar = () => {
       dragY.value = withSpring(0);
     }
   }, [isSheetOpen, miniPlayerOpacity, dragX, dragY]);
+
+  const isTrackLoading = loadingTrackId === String(currentTrack?.id);
 
   const handleOpenFullPlayer = useCallback(() => {
     setIsSheetOpen(true);
@@ -1669,10 +1672,10 @@ export const PlayerBar = () => {
                     (isPlaying ? pauseTrack : resumeTrack)();
                   }}
                   className="p-2"
-                  disabled={isLoading}
+                  disabled={isLoading || isTrackLoading}
                 >
                   {({ pressed }) =>
-                    isLoading ? (
+                    isLoading || isTrackLoading ? (
                       <ActivityIndicator size="small" color="#fff" />
                     ) : (
                       <Ionicons
@@ -2116,9 +2119,9 @@ export const PlayerBar = () => {
                   <TouchableOpacity
                     onPress={isPlaying ? pauseTrack : resumeTrack}
                     className="w-20 h-20 rounded-full bg-white items-center justify-center shadow-lg"
-                    disabled={isLoading}
+                    disabled={isLoading || isTrackLoading}
                   >
-                    {isLoading ? (
+                    {isLoading || isTrackLoading ? (
                       <ActivityIndicator size="large" color="#000" />
                     ) : (
                       <Ionicons

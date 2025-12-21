@@ -76,6 +76,8 @@ export default function Home() {
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<SearchFilter>("songs");
   const [debouncedQuery, setDebouncedQuery] = useState("");
+  const [favViewMode, setFavViewMode] = useState<"songs" | "artists">("songs");
+  const [favArtistFilter, setFavArtistFilter] = useState<string | null>(null);
 
   const [selectedArtist, setSelectedArtist] = useState<Artist | null>(null);
   const [selectedAlbum, setSelectedAlbum] = useState<any | null>(null);

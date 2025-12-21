@@ -22,8 +22,14 @@ const StyledText = withUniwind(Text);
 
 export default function SongPage() {
   const { id } = useLocalSearchParams<{ id: string }>();
-  const { playTrack, isPlaying, pauseTrack, resumeTrack, currentTrack } =
-    usePlayer();
+  const {
+    playTrack,
+    isPlaying,
+    pauseTrack,
+    resumeTrack,
+    currentTrack,
+    loadingTrackId,
+  } = usePlayer();
 
   const { data: trackDetails, isLoading } = useQuery({
     queryKey: ["track", id],
@@ -68,8 +74,10 @@ export default function SongPage() {
   const album = (track as any)?.album?.title || "Single";
 
   const isCurrentTrack = String(currentTrack?.id ?? "") === String(id);
+  const isTrackLoading = loadingTrackId === String(id);
 
   const handlePlay = () => {
+    if (isTrackLoading) return;
     if (isCurrentTrack) {
       if (isPlaying) void pauseTrack();
       else void resumeTrack();
@@ -124,13 +132,18 @@ export default function SongPage() {
             <TouchableOpacity
               onPress={handlePlay}
               className="w-20 h-20 bg-primary rounded-full items-center justify-center shadow-lg"
+              disabled={isTrackLoading}
             >
-              <Ionicons
-                name={isCurrentTrack && isPlaying ? "pause" : "play"}
-                size={45}
-                color="#fff"
-                style={{ marginLeft: isCurrentTrack && isPlaying ? 0 : 4 }}
-              />
+              {isTrackLoading ? (
+                <ActivityIndicator size="large" color="#fff" />
+              ) : (
+                <Ionicons
+                  name={isCurrentTrack && isPlaying ? "pause" : "play"}
+                  size={45}
+                  color="#fff"
+                  style={{ marginLeft: isCurrentTrack && isPlaying ? 0 : 4 }}
+                />
+              )}
             </TouchableOpacity>
 
             <TouchableOpacity onPress={() => {}}>

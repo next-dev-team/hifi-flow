@@ -10,6 +10,7 @@ import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { KeyboardProvider } from "react-native-keyboard-controller";
 import type {} from "uniwind/types";
 import { PlayerBar } from "@/components/player-bar";
+import { TimerStatus } from "@/components/timer-status";
 import { AppThemeProvider } from "@/contexts/app-theme-context";
 import { PlayerProvider } from "@/contexts/player-context";
 
@@ -55,6 +56,7 @@ export default function Layout() {
                   <BottomSheetModalProvider>
                     <View className="flex-1 bg-background">
                       <View style={appShellStyle}>
+                        <TimerStatus />
                         <StackLayout />
                         <PlayerBar />
                         <PortalHost name="PlayerBarHost" />
