@@ -11,8 +11,10 @@ import { KeyboardProvider } from "react-native-keyboard-controller";
 import type {} from "uniwind/types";
 import { PlayerBar } from "@/components/player-bar";
 import { TimerStatus } from "@/components/timer-status";
+import { ToastContainer } from "@/components/toast-container";
 import { AppThemeProvider } from "@/contexts/app-theme-context";
 import { PlayerProvider } from "@/contexts/player-context";
+import { ToastProvider } from "@/contexts/toast-context";
 
 export const unstable_settings = {
   initialRouteName: "(tabs)",
@@ -51,19 +53,22 @@ export default function Layout() {
         <KeyboardProvider>
           <QueryClientProvider client={queryClient}>
             <AppThemeProvider>
-              <HeroUINativeProvider>
-                <PlayerProvider>
-                  <BottomSheetModalProvider>
-                    <View className="flex-1 bg-background">
-                      <View style={appShellStyle}>
-                        <StackLayout />
-                        <PlayerBar />
-                        <PortalHost name="PlayerBarHost" />
+              <ToastProvider>
+                <HeroUINativeProvider>
+                  <PlayerProvider>
+                    <BottomSheetModalProvider>
+                      <View className="flex-1 bg-background">
+                        <View style={appShellStyle}>
+                          <StackLayout />
+                          <PlayerBar />
+                          <PortalHost name="PlayerBarHost" />
+                        </View>
+                        <ToastContainer />
                       </View>
-                    </View>
-                  </BottomSheetModalProvider>
-                </PlayerProvider>
-              </HeroUINativeProvider>
+                    </BottomSheetModalProvider>
+                  </PlayerProvider>
+                </HeroUINativeProvider>
+              </ToastProvider>
             </AppThemeProvider>
           </QueryClientProvider>
         </KeyboardProvider>

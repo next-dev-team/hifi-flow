@@ -16,7 +16,9 @@ import {
   View,
 } from "react-native";
 import { withUniwind } from "uniwind";
+import { useToast } from "@/contexts/toast-context";
 import { fetchRelatedKeywords } from "../utils/ai";
+import { ThinkingDots } from "./thinking-dots";
 
 const StyledView = withUniwind(View);
 const StyledScrollView = withUniwind(ScrollView);
@@ -53,6 +55,7 @@ export function SearchComposer({
   multiline = false,
 }: SearchComposerProps) {
   const themeColorMuted = useThemeColor("muted");
+  const { showToast } = useToast();
   const voiceSearchOwnerRef = useRef(false);
   const [isListening, setIsListening] = useState(false);
   const [selectedLang, setSelectedLang] = useState(LANGUAGES[0]);
@@ -197,6 +200,10 @@ export function SearchComposer({
     }
 
     setErrorMessage(msg);
+    showToast({
+      message: msg,
+      type: "error",
+    });
 
     setTimeout(() => {
       setStatus("idle");
@@ -380,10 +387,14 @@ export function SearchComposer({
         >
           {isLoadingKeywords ? (
             <StyledView className="flex-row items-center ml-2">
-              <ActivityIndicator size="small" color={themeColorMuted} />
-              <StyledText className="text-[12px] text-foreground/40 font-medium ml-2 italic">
-                Suggesting...
+              <StyledText className="text-[12px] text-foreground/40 font-medium italic">
+                Suggesting
               </StyledText>
+              <ThinkingDots
+                size={12}
+                color={themeColorMuted}
+                className="opacity-40"
+              />
             </StyledView>
           ) : (
             relatedKeywords.map((keyword) => (

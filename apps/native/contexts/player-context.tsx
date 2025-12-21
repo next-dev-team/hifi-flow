@@ -20,6 +20,7 @@ import {
   useState,
 } from "react";
 import { Platform } from "react-native";
+import { useToast } from "@/contexts/toast-context";
 import { losslessAPI } from "@/utils/api";
 import type { AudioQuality as ApiAudioQuality } from "@/utils/types";
 
@@ -175,6 +176,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
   const [sleepTimerEndsAt, setSleepTimerEndsAt] = useState<number | null>(null);
   const [sleepTimerRemainingMs, setSleepTimerRemainingMs] = useState(0);
   const [loadingTrackId, setLoadingTrackId] = useState<string | null>(null);
+  const { showToast } = useToast();
 
   const setQuality = useCallback((newQuality: AudioQuality) => {
     setQualityState(newQuality);
@@ -610,6 +612,10 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
         if (playRequestIdRef.current === requestId) {
           setCurrentStreamUrl(null);
           setLoadingTrackId(null);
+          showToast({
+            message: "Stream URL not found",
+            type: "error",
+          });
         }
         return;
       }
@@ -636,6 +642,10 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
         player.play();
       } catch (error) {
         console.error("Playback failed", error);
+        showToast({
+          message: "Playback failed",
+          type: "error",
+        });
       } finally {
         if (playRequestIdRef.current === requestId) {
           setLoadingTrackId(null);
@@ -648,6 +658,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
       getStreamUrlForTrack,
       getTrackKey,
       resetPreloadState,
+      showToast,
     ]
   );
 
@@ -768,6 +779,10 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
       if (existing) {
         const next = favorites.filter((entry) => entry.id !== favoriteId);
         await persistFavorites(next);
+        showToast({
+          message: "Removed from favorites",
+          type: "info",
+        });
         return;
       }
 
@@ -784,8 +799,12 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
       ].slice(0, 200);
 
       await persistFavorites(next);
+      showToast({
+        message: "Added to favorites",
+        type: "success",
+      });
     },
-    [favorites, persistFavorites]
+    [favorites, persistFavorites, showToast]
   );
 
   const removeFavorite = useCallback(
@@ -793,8 +812,12 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
       const favoriteId = normalizeFavoriteId(id);
       const next = favorites.filter((entry) => entry.id !== favoriteId);
       await persistFavorites(next);
+      showToast({
+        message: "Favorite removed",
+        type: "info",
+      });
     },
-    [favorites, persistFavorites]
+    [favorites, persistFavorites, showToast]
   );
 
   const playSaved = useCallback(

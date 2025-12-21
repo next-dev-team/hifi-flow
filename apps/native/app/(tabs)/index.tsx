@@ -9,14 +9,14 @@ import {
 } from "@gorhom/bottom-sheet";
 import { useQuery } from "@tanstack/react-query";
 import {
-  ExpoSpeechRecognitionModule,
-  useSpeechRecognitionEvent,
-} from "expo-speech-recognition";
-import {
   useGetPlaylistPlaylistGet,
   useSearchSearchGet,
 } from "api-hifi/src/gen/hooks";
 import type { SearchSearchGetQueryParams } from "api-hifi/src/gen/types/SearchSearchGet";
+import {
+  ExpoSpeechRecognitionModule,
+  useSpeechRecognitionEvent,
+} from "expo-speech-recognition";
 import { Card, Chip, useThemeColor } from "heroui-native";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -31,7 +31,14 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-import { Easing } from "react-native-reanimated";
+import Animated, {
+  Easing,
+  useAnimatedStyle,
+  useSharedValue,
+  withDelay,
+  withRepeat,
+  withTiming,
+} from "react-native-reanimated";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { withUniwind } from "uniwind";
 import type {} from "uniwind/types";
@@ -40,10 +47,12 @@ import { type Artist, ArtistItem } from "@/components/artist-item";
 import { PlaylistDiscovery } from "@/components/playlist-discovery";
 import { type Playlist, PlaylistItem } from "@/components/playlist-item";
 import { SearchComposer } from "@/components/search-composer";
+import { ThinkingDots } from "@/components/thinking-dots";
 import { TimerStatus } from "@/components/timer-status";
 import { type Track, TrackItem } from "@/components/track-item";
 import { useAppTheme } from "@/contexts/app-theme-context";
 import { type SavedTrack, usePlayer } from "@/contexts/player-context";
+import { useToast } from "@/contexts/toast-context";
 import { detectThemeVoiceAction } from "@/utils/ai";
 import { getSuggestedArtists, losslessAPI } from "@/utils/api";
 import { resolveArtwork, resolveName } from "@/utils/resolvers";
@@ -77,6 +86,7 @@ export default function Home() {
     cancelSleepTimer,
   } = usePlayer();
   const { isDark, setTheme } = useAppTheme();
+  const { showToast } = useToast();
   const themeColorBackground = useThemeColor("background");
   const themeColorForeground = useThemeColor("foreground");
 
@@ -122,18 +132,36 @@ export default function Home() {
         const action = await detectThemeVoiceAction(transcript);
         if (action.action === "set_theme") {
           setTheme(action.theme);
+          showToast({
+            message: `Theme changed to ${action.theme}`,
+            type: "success",
+          });
+        } else {
+          showToast({
+            message: "Action not recognized",
+            type: "info",
+          });
         }
+      } catch (error) {
+        showToast({
+          message: "Failed to process voice action",
+          type: "error",
+        });
       } finally {
         setVoiceActionStatus("idle");
       }
     })();
   });
 
-  useSpeechRecognitionEvent("error", () => {
+  useSpeechRecognitionEvent("error", (event) => {
     if (!voiceActionOwnerRef.current) return;
     voiceActionOwnerRef.current = false;
     setIsVoiceActionListening(false);
     setVoiceActionStatus("error");
+    showToast({
+      message: event.message || "Voice recognition error",
+      type: "error",
+    });
     setTimeout(() => setVoiceActionStatus("idle"), 1500);
   });
 
@@ -651,7 +679,9 @@ export default function Home() {
           <View className="flex-row items-center">
             <TimerStatus absolute={false} />
             <TouchableOpacity
-              className="p-2"
+              className={`p-2 rounded-full flex-row items-center ${
+                voiceActionStatus === "processing" ? "bg-primary/10 px-3" : ""
+              }`}
               onPress={() => {
                 void handleVoiceAction();
               }}
@@ -659,7 +689,7 @@ export default function Home() {
               <Ionicons
                 name={
                   voiceActionStatus === "processing"
-                    ? "sparkles-outline"
+                    ? "sparkles"
                     : isVoiceActionListening
                     ? "mic"
                     : "mic-outline"
@@ -668,11 +698,20 @@ export default function Home() {
                 color={
                   voiceActionStatus === "error"
                     ? "#FF3B30"
-                    : isVoiceActionListening
+                    : isVoiceActionListening ||
+                      voiceActionStatus === "processing"
                     ? "#007AFF"
                     : themeColorForeground
                 }
               />
+              {voiceActionStatus === "processing" && (
+                <View className="flex-row items-center ml-2">
+                  <StyledText className="text-[#007AFF] font-bold text-sm">
+                    Thinking
+                  </StyledText>
+                  <ThinkingDots />
+                </View>
+              )}
             </TouchableOpacity>
             <TouchableOpacity
               className="p-2"
