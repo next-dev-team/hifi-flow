@@ -62,19 +62,39 @@ export function SearchComposer({
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [relatedKeywords, setRelatedKeywords] = useState<string[]>([]);
   const [isLoadingKeywords, setIsLoadingKeywords] = useState(false);
+  const keywordsRequestIdRef = useRef(0);
+  const keywordsAbortRef = useRef<AbortController | null>(null);
 
   // Fetch related keywords when value changes (debounced-ish)
   useEffect(() => {
     const timer = setTimeout(async () => {
       if (value.trim().length >= 2) {
+        keywordsAbortRef.current?.abort();
+        const controller = new AbortController();
+        keywordsAbortRef.current = controller;
+        keywordsRequestIdRef.current += 1;
+        const requestId = keywordsRequestIdRef.current;
         setIsLoadingKeywords(true);
         try {
-          const keywords = await fetchRelatedKeywords(value);
-          setRelatedKeywords(keywords);
+          const keywords = await fetchRelatedKeywords(value, {
+            signal: controller.signal,
+          });
+          if (keywordsRequestIdRef.current === requestId) {
+            setRelatedKeywords(keywords);
+          }
         } catch (e) {
-          console.error("Failed to fetch keywords:", e);
+          const error = e as any;
+          const isAbort =
+            error?.name === "AbortError" ||
+            error?.message?.includes?.("aborted") ||
+            error?.message?.includes?.("AbortError");
+          if (!isAbort) {
+            console.error("Failed to fetch keywords:", e);
+          }
         } finally {
-          setIsLoadingKeywords(false);
+          if (keywordsRequestIdRef.current === requestId) {
+            setIsLoadingKeywords(false);
+          }
         }
       } else {
         setRelatedKeywords([]);
@@ -82,7 +102,10 @@ export function SearchComposer({
       }
     }, 800);
 
-    return () => clearTimeout(timer);
+    return () => {
+      clearTimeout(timer);
+      keywordsAbortRef.current?.abort();
+    };
   }, [value]);
 
   // Auto-stop timer

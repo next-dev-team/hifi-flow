@@ -955,6 +955,7 @@ export const PlayerBar = () => {
   }, [isSheetOpen, miniPlayerOpacity, dragX, dragY]);
 
   const isTrackLoading = loadingTrackId === String(currentTrack?.id);
+  const controlsDisabled = isLoading || isTrackLoading;
 
   const handleOpenFullPlayer = useCallback(() => {
     setIsSheetOpen(true);
@@ -1656,12 +1657,19 @@ export const PlayerBar = () => {
                     playPrevious();
                   }}
                   className="p-2"
+                  disabled={controlsDisabled}
                 >
                   {({ pressed }) => (
                     <Ionicons
                       name="play-skip-back"
                       size={20}
-                      color={pressed ? "#ef4444" : "#fff"}
+                      color={
+                        controlsDisabled
+                          ? "rgba(255,255,255,0.35)"
+                          : pressed
+                          ? "#ef4444"
+                          : "#fff"
+                      }
                     />
                   )}
                 </Pressable>
@@ -1693,12 +1701,19 @@ export const PlayerBar = () => {
                     playNext();
                   }}
                   className="p-2"
+                  disabled={controlsDisabled}
                 >
                   {({ pressed }) => (
                     <Ionicons
                       name="play-skip-forward"
                       size={20}
-                      color={pressed ? "#ef4444" : "#fff"}
+                      color={
+                        controlsDisabled
+                          ? "rgba(255,255,255,0.35)"
+                          : pressed
+                          ? "#ef4444"
+                          : "#fff"
+                      }
                     />
                   )}
                 </Pressable>
@@ -2112,7 +2127,12 @@ export const PlayerBar = () => {
 
               <View className="w-full flex-row items-center justify-center px-6 mt-6">
                 <View className="flex-row items-center justify-center flex-1">
-                  <TouchableOpacity onPress={playPrevious} className="p-4">
+                  <TouchableOpacity
+                    onPress={playPrevious}
+                    className="p-4"
+                    disabled={controlsDisabled}
+                    style={{ opacity: controlsDisabled ? 0.35 : 1 }}
+                  >
                     <Ionicons name="play-skip-back" size={38} color="#fff" />
                   </TouchableOpacity>
 
@@ -2132,7 +2152,12 @@ export const PlayerBar = () => {
                     )}
                   </TouchableOpacity>
 
-                  <TouchableOpacity onPress={playNext} className="p-4">
+                  <TouchableOpacity
+                    onPress={playNext}
+                    className="p-4"
+                    disabled={controlsDisabled}
+                    style={{ opacity: controlsDisabled ? 0.35 : 1 }}
+                  >
                     <Ionicons name="play-skip-forward" size={38} color="#fff" />
                   </TouchableOpacity>
                 </View>

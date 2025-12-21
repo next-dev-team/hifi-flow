@@ -589,8 +589,14 @@ class PollinationsAI extends Client {
       list: async () => {
         if (this._models.length > 0) return this._models;
         try {
-          let textModelsResponse;
-          let imageModelsResponse;
+          let textModelsResponse: Response;
+          let imageModelsResponse: Response;
+          const emptyResponse = new Response(JSON.stringify({ data: [] }), {
+            status: 200,
+            headers: {
+              "Content-Type": "application/json",
+            },
+          });
           try {
             await this._sleep();
             textModelsResponse = await fetch(this.modelsEndpoint);
@@ -610,7 +616,7 @@ class PollinationsAI extends Client {
               "https://text.pollinations.ai/models"
             ).catch((e) => {
               console.error("Failed to fetch text models from all proxies:", e);
-              return { data: [] };
+              return emptyResponse;
             });
           }
           try {
@@ -619,7 +625,10 @@ class PollinationsAI extends Client {
               : "https://g4f.dev/api/pollinations/image/models";
             imageModelsResponse = await fetch(imageModelsUrl);
             if (!imageModelsResponse.ok) {
-              const delay = parseInt(response.headers.get("Retry-After"), 10);
+              const delay = parseInt(
+                imageModelsResponse.headers.get("Retry-After"),
+                10
+              );
               if (delay > 0) {
                 console.log(`Retrying after ${delay} seconds...`);
                 await new Promise((resolve) =>
@@ -647,7 +656,7 @@ class PollinationsAI extends Client {
                 "Failed to fetch image models from all proxies:",
                 e
               );
-              return { data: [] };
+              return emptyResponse;
             });
           }
           textModelsResponse = await textModelsResponse.json();
@@ -731,7 +740,7 @@ class Audio extends Client {
             body: JSON.stringify(options),
             signal: signal,
           };
-          let response;
+          let response: Response;
           try {
             if (!this.baseUrl) {
               throw new Error("No baseUrl defined");
@@ -924,7 +933,7 @@ class Puter {
     )) {
       item.model = model;
       this.logCallback && this.logCallback({ response: item, type: "chat" });
-      if (item.choices == undefined && item.text !== undefined) {
+      if (item.choices === undefined && item.text !== undefined) {
         yield {
           ...item,
           get choices() {
@@ -1060,7 +1069,7 @@ class HuggingFace extends Client {
 
           let apiBase = this.apiBase;
           for (const providerKey in providerMapping) {
-            let apiPath;
+            let apiPath: string;
             if (providerKey === "zai-org") apiPath = "zai-org/api/paas/v4";
             else if (providerKey === "novita") apiPath = "novita/v3/openai";
             else if (providerKey === "groq") apiPath = "groq/openai/v1";
@@ -1112,7 +1121,10 @@ export const pollinations = new Pollinations();
  * Fetches 3 related search keywords for a given query using LLM.
  * Returns an array of 3 strings.
  */
-export async function fetchRelatedKeywords(query: string): Promise<string[]> {
+export async function fetchRelatedKeywords(
+  query: string,
+  options?: { signal?: AbortSignal }
+): Promise<string[]> {
   if (!query || query.trim().length < 2) return [];
 
   try {
@@ -1129,6 +1141,7 @@ export async function fetchRelatedKeywords(query: string): Promise<string[]> {
         },
       ],
       model: "openai",
+      signal: options?.signal,
     });
 
     const content = response.choices?.[0]?.message?.content;
