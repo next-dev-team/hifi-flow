@@ -175,6 +175,17 @@ export default function Home() {
         } else if (action.action === "previous") {
           await playPrevious();
           showToast({ message: "Playing previous track", type: "success" });
+        } else if (action.action === "refresh_suggestions") {
+          await refetchSuggestedArtists();
+          showToast({ message: "Suggestions refreshed", type: "success" });
+        } else if (action.action === "change_filter") {
+          if (action.filter) {
+            setFilter(action.filter);
+            showToast({
+              message: `Search filter changed to ${action.filter}`,
+              type: "success",
+            });
+          }
         } else {
           showToast({
             message: "Action not recognized",
@@ -323,6 +334,8 @@ export default function Home() {
   const settingsSheetRef = useRef<BottomSheetModal | null>(null);
   const favoritesSnapPoints = useMemo(() => ["100%"], []);
   const settingsSnapPoints = useMemo(() => ["55%"], []);
+  const aiHelpSheetRef = useRef<BottomSheetModal | null>(null);
+  const aiHelpSnapPoints = useMemo(() => ["80%"], []);
   const favoritesAnimationConfigs = useBottomSheetTimingConfigs({
     duration: 320,
     easing: Easing.bezier(0.2, 0.9, 0.2, 1),
@@ -359,36 +372,38 @@ export default function Home() {
     []
   );
 
-  const { data: suggestedArtists } = useQuery({
-    queryKey: ["suggested-artists"],
-    queryFn: async () => {
-      const response = await getSuggestedArtists();
-      const df = [
-        {
-          name: "Vannda",
-          genre: "rapper",
-          era: "2000s",
-        },
-        {
-          name: "Tep piseth",
-          genre: "rapper",
-          era: "2000s",
-        },
-        {
-          name: "Sin Sisamut",
-          genre: "unknown",
-          era: "1960",
-        },
-      ] as SuggestedArtist[];
-      if (!Array.isArray(response)) {
-        return df;
-      }
-      return [...df, ...response] as SuggestedArtist[];
-    },
-    staleTime: 1000 * 60 * 5,
-    gcTime: 1000 * 60 * 5,
-    retry: 2,
-  });
+  const { data: suggestedArtists, refetch: refetchSuggestedArtists } = useQuery(
+    {
+      queryKey: ["suggested-artists"],
+      queryFn: async () => {
+        const response = await getSuggestedArtists();
+        const df = [
+          {
+            name: "Vannda",
+            genre: "rapper",
+            era: "2000s",
+          },
+          {
+            name: "Tep piseth",
+            genre: "rapper",
+            era: "2000s",
+          },
+          {
+            name: "Sin Sisamut",
+            genre: "unknown",
+            era: "1960",
+          },
+        ] as SuggestedArtist[];
+        if (!Array.isArray(response)) {
+          return df;
+        }
+        return [...df, ...response] as SuggestedArtist[];
+      },
+      staleTime: 1000 * 60 * 5,
+      gcTime: 1000 * 60 * 5,
+      retry: 2,
+    }
+  );
 
   const suggestedArtistNames = useMemo(() => {
     if (!suggestedArtists || suggestedArtists.length === 0) return [];
@@ -715,60 +730,73 @@ export default function Home() {
               HiFi Flow
             </StyledText>
           </TouchableOpacity>
-          <View className="flex-row items-center">
+          <View className="flex-row items-center gap-x-1.5">
             <TimerStatus absolute={false} />
+            <View className="flex-row items-center bg-content2 border border-default-200 rounded-full overflow-hidden">
+              <TouchableOpacity
+                className={`p-1 flex-row items-center border-r border-default-200 active:bg-default-100 ${
+                  voiceActionStatus === "processing" ? "bg-primary/5 px-2" : ""
+                }`}
+                onPress={() => {
+                  void handleVoiceAction();
+                }}
+              >
+                <Ionicons
+                  name={
+                    voiceActionStatus === "processing"
+                      ? "sparkles"
+                      : isVoiceActionListening
+                      ? "mic"
+                      : "sparkles-outline"
+                  }
+                  size={18}
+                  color={
+                    voiceActionStatus === "error"
+                      ? "#FF3B30"
+                      : isVoiceActionListening ||
+                        voiceActionStatus === "processing"
+                      ? "#007AFF"
+                      : themeColorForeground
+                  }
+                />
+                {voiceActionStatus === "processing" && (
+                  <View className="flex-row items-center ml-1">
+                    <StyledText className="text-[#007AFF] font-bold text-[10px]">
+                      Thinking
+                    </StyledText>
+                    <ThinkingDots />
+                  </View>
+                )}
+              </TouchableOpacity>
+              <TouchableOpacity
+                className="p-1 active:bg-default-100"
+                onPress={() => aiHelpSheetRef.current?.present()}
+              >
+                <Ionicons
+                  name="help-circle-outline"
+                  size={16}
+                  color={themeColorForeground}
+                  style={{ opacity: 0.6 }}
+                />
+              </TouchableOpacity>
+            </View>
             <TouchableOpacity
-              className={`p-2 rounded-full flex-row items-center ${
-                voiceActionStatus === "processing" ? "bg-primary/10 px-3" : ""
-              }`}
-              onPress={() => {
-                void handleVoiceAction();
-              }}
-            >
-              <Ionicons
-                name={
-                  voiceActionStatus === "processing"
-                    ? "sparkles"
-                    : isVoiceActionListening
-                    ? "mic"
-                    : "sparkles-outline"
-                }
-                size={22}
-                color={
-                  voiceActionStatus === "error"
-                    ? "#FF3B30"
-                    : isVoiceActionListening ||
-                      voiceActionStatus === "processing"
-                    ? "#007AFF"
-                    : themeColorForeground
-                }
-              />
-              {voiceActionStatus === "processing" && (
-                <View className="flex-row items-center ml-2">
-                  <StyledText className="text-[#007AFF] font-bold text-sm">
-                    Thinking
-                  </StyledText>
-                  <ThinkingDots />
-                </View>
-              )}
-            </TouchableOpacity>
-            <TouchableOpacity
-              className="p-2"
+              className="p-1.5 active:bg-default-100 rounded-full"
               onPress={() => settingsSheetRef.current?.present()}
             >
               <Ionicons
                 name="settings"
-                size={22}
+                size={20}
                 color={themeColorForeground}
               />
             </TouchableOpacity>
             <TouchableOpacity
-              className="p-2"
+              className="p-1.5 active:bg-default-100 rounded-full"
               onPress={() => favoritesSheetRef.current?.present()}
             >
               <Ionicons
                 name={favorites.length > 0 ? "heart" : "heart-outline"}
-                size={22}
+                size={20}
                 color="red"
               />
             </TouchableOpacity>
@@ -1428,6 +1456,98 @@ export default function Home() {
               </View>
             </View>
           </View>
+        </StyledBottomSheetView>
+      </BottomSheetModal>
+
+      <BottomSheetModal
+        ref={aiHelpSheetRef}
+        snapPoints={aiHelpSnapPoints}
+        index={0}
+        enablePanDownToClose
+        enableDismissOnClose
+        backdropComponent={favoritesBackdrop}
+        animationConfigs={favoritesAnimationConfigs}
+        handleIndicatorStyle={{ backgroundColor: "#ccc" }}
+        backgroundStyle={{ backgroundColor: themeColorBackground }}
+      >
+        <StyledBottomSheetView className="flex-1 bg-background px-4">
+          <View className="pt-3 pb-4 flex-row items-center justify-between">
+            <View className="flex-row items-center">
+              <Ionicons name="sparkles" size={20} color="#007AFF" />
+              <Text className="text-xl font-bold text-foreground ml-2">
+                AI Assistant
+              </Text>
+            </View>
+            <TouchableOpacity
+              className="p-2"
+              onPress={() => aiHelpSheetRef.current?.dismiss()}
+            >
+              <Ionicons name="close" size={22} color={themeColorForeground} />
+            </TouchableOpacity>
+          </View>
+
+          <StyledScrollView showsVerticalScrollIndicator={false}>
+            <View className="mb-6">
+              <Text className="text-default-500 text-sm mb-4">
+                You can control HiFi Flow using natural voice commands. Tap the
+                sparkle icon to start listening.
+              </Text>
+
+              <View className="bg-content2 rounded-2xl p-4 mb-4">
+                <Text className="text-foreground font-bold mb-3">
+                  Playback Controls
+                </Text>
+                <View className="space-y-2">
+                  <Text className="text-default-600 text-sm">
+                    • "Pause the music" or "Stop"
+                  </Text>
+                  <Text className="text-default-600 text-sm">
+                    • "Play", "Resume", or "Continue"
+                  </Text>
+                  <Text className="text-default-600 text-sm">
+                    • "Next song" or "Skip this"
+                  </Text>
+                  <Text className="text-default-600 text-sm">
+                    • "Previous track" or "Go back"
+                  </Text>
+                </View>
+              </View>
+
+              <View className="bg-content2 rounded-2xl p-4 mb-4">
+                <Text className="text-foreground font-bold mb-3">
+                  Search & Discovery
+                </Text>
+                <View className="space-y-2">
+                  <Text className="text-default-600 text-sm">
+                    • "Search for Vannda"
+                  </Text>
+                  <Text className="text-default-600 text-sm">
+                    • "Play and search for Lo-fi beats"
+                  </Text>
+                  <Text className="text-default-600 text-sm">
+                    • "Switch filter to artists"
+                  </Text>
+                  <Text className="text-default-600 text-sm">
+                    • "Refresh suggested artists"
+                  </Text>
+                </View>
+              </View>
+
+              <View className="bg-content2 rounded-2xl p-4">
+                <Text className="text-foreground font-bold mb-3">
+                  System Settings
+                </Text>
+                <View className="space-y-2">
+                  <Text className="text-default-600 text-sm">
+                    • "Turn on dark mode"
+                  </Text>
+                  <Text className="text-default-600 text-sm">
+                    • "Switch to light theme"
+                  </Text>
+                </View>
+              </View>
+            </View>
+          </StyledScrollView>
         </StyledBottomSheetView>
       </BottomSheetModal>
     </StyledSafeAreaView>

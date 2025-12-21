@@ -1126,12 +1126,15 @@ export type VoiceAction =
   | "stop"
   | "next"
   | "previous"
+  | "refresh_suggestions"
+  | "change_filter"
   | "unknown";
 
 export interface ThemeVoiceActionResult {
   action: VoiceAction;
   theme?: "dark" | "light";
   query?: string;
+  filter?: "songs" | "artists" | "albums" | "playlists";
   confidence?: number;
   correctedText?: string;
 }
@@ -1208,11 +1211,16 @@ export async function detectThemeVoiceAction(
     previous: "previous",
     prev: "previous",
     back: "previous",
+    refresh: "refresh_suggestions",
+    update: "refresh_suggestions",
+    reload: "refresh_suggestions",
+    "change filter": "change_filter",
+    "switch filter": "change_filter",
   };
 
   const words = normalized.split(" ");
-  if (words.length <= 2) {
-    // Check if it's a simple command like "pause", "next song", etc.
+  if (words.length <= 3) {
+    // Check if it's a simple command like "pause", "next song", "refresh suggestions", etc.
     for (const [key, action] of Object.entries(playerControls)) {
       if (normalized.includes(key) && !normalized.includes("search")) {
         // Special case for "play" - only treat as resume if no other words suggest a search
@@ -1223,6 +1231,19 @@ export async function detectThemeVoiceAction(
         ) {
           continue;
         }
+
+        // Heuristic for change_filter
+        if (action === "change_filter") {
+          if (normalized.includes("song"))
+            return { action, filter: "songs", confidence: 0.9 };
+          if (normalized.includes("artist"))
+            return { action, filter: "artists", confidence: 0.9 };
+          if (normalized.includes("album"))
+            return { action, filter: "albums", confidence: 0.9 };
+          if (normalized.includes("playlist"))
+            return { action, filter: "playlists", confidence: 0.9 };
+        }
+
         return { action, confidence: 0.9 };
       }
     }
@@ -1269,7 +1290,9 @@ export async function detectThemeVoiceAction(
             "6. stop()\n" +
             "7. next()\n" +
             "8. previous()\n" +
-            "Return ONLY valid JSON with keys: action, theme, query, confidence, correctedText. Confidence is 0 to 1.",
+            "9. refresh_suggestions()\n" +
+            "10. change_filter(filter: 'songs'|'artists'|'albums'|'playlists')\n" +
+            "Return ONLY valid JSON with keys: action, theme, query, filter, confidence, correctedText. Confidence is 0 to 1.",
         },
         {
           role: "user",
@@ -1288,6 +1311,7 @@ export async function detectThemeVoiceAction(
         const action = String(parsed?.action || "unknown") as VoiceAction;
         const theme = parsed?.theme;
         const query = parsed?.query;
+        const filter = parsed?.filter;
         const confidenceRaw = parsed?.confidence;
         const correctedText =
           typeof parsed?.correctedText === "string"
@@ -1314,11 +1338,21 @@ export async function detectThemeVoiceAction(
             return { action, query: query.trim(), confidence, correctedText };
           }
           if (
+            action === "change_filter" &&
+            (filter === "songs" ||
+              filter === "artists" ||
+              filter === "albums" ||
+              filter === "playlists")
+          ) {
+            return { action, filter, confidence, correctedText };
+          }
+          if (
             action === "pause" ||
             action === "resume" ||
             action === "stop" ||
             action === "next" ||
-            action === "previous"
+            action === "previous" ||
+            action === "refresh_suggestions"
           ) {
             return { action, confidence, correctedText };
           }
