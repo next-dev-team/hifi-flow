@@ -2,7 +2,7 @@
 
 Music player app with uniwind for Android, iOS and web
 
-> **Disclaimer**: This project is for educational purposes only, testing `hero-native` with `uniwind` to build universal Expo apps (Android, iOS, and Web) with one codebase.
+> **Disclaimer**: This project is for educational purposes only, testing `hero-native` with `uniwind` to build universal Expo apps (Android, iOS, and Web) with one codebase. We do not own the API used in this project. For any feedback or copyright concerns, please contact us via email. We will review and take action according to your request.
 
 ## Feature
 
@@ -54,3 +54,8 @@ my-better-t-app/
 - `pnpm run dev:web`: Start only the web application
 - `pnpm run check-types`: Check TypeScript types across all apps
 - `pnpm run dev:native`: Start the React Native/Expo development server
+
+## Related resources
+
+- API used in this project Thanks to  Open source project [sachinsenal0x64](https://github.com/sachinsenal0x64/hifi)
+- <https://github.com/uimaxbai/tidal-ui>
