@@ -56,7 +56,6 @@ export default function Layout() {
                   <BottomSheetModalProvider>
                     <View className="flex-1 bg-background">
                       <View style={appShellStyle}>
-                        <TimerStatus />
                         <StackLayout />
                         <PlayerBar />
                         <PortalHost name="PlayerBarHost" />

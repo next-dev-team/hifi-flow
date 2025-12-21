@@ -1,4 +1,3 @@
-import { resolveArtwork, resolveName } from "@/utils/resolvers";
 import { Ionicons } from "@expo/vector-icons";
 import { useSearchSearchGet } from "api-hifi/src/gen/hooks";
 import { router } from "expo-router";
@@ -7,6 +6,8 @@ import React from "react";
 import { FlatList, Image, Pressable, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { ApiDebug } from "@/components/api-debug";
+import { TimerStatus } from "@/components/timer-status";
+import { resolveArtwork, resolveName } from "@/utils/resolvers";
 
 export default function Library() {
   const { data, isLoading, error } = useSearchSearchGet({ p: "mix" });
@@ -69,9 +70,16 @@ export default function Library() {
 
   return (
     <SafeAreaView className="flex-1 bg-background" edges={["top"]}>
-      <View className="px-4 py-4">
-        <Text className="text-3xl font-bold text-foreground mb-2">Library</Text>
-        <Text className="text-default-500 mb-4">Your playlists and mixes</Text>
+      <View className="px-4 py-4 flex-row items-center justify-between">
+        <View>
+          <Text className="text-3xl font-bold text-foreground mb-2">
+            Library
+          </Text>
+          <Text className="text-default-500 mb-4">
+            Your playlists and mixes
+          </Text>
+        </View>
+        <TimerStatus absolute={false} />
       </View>
 
       <ApiDebug title="Library search" data={data} error={error} />
@@ -93,7 +101,7 @@ export default function Library() {
           renderItem={renderItem}
           contentContainerStyle={{
             paddingHorizontal: 16,
-            paddingBottom: 100,
+            paddingBottom: 20,
           }}
         />
       )}

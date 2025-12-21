@@ -2,6 +2,8 @@
 
 Music player app with uniwind for Android, iOS and web
 
+> **Disclaimer**: This project is for educational purposes only, testing `hero-native` with `uniwind` to build universal Expo apps (Android, iOS, and Web) with one codebase.
+
 ## Feature
 
 - Simple with Hifi audio quality

@@ -1,14 +1,22 @@
+import { Ionicons } from "@expo/vector-icons";
 import React from "react";
-import { View, Text } from "react-native";
-import { usePlayer } from "@/contexts/player-context";
+import { Text, TouchableOpacity, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { withUniwind } from "uniwind";
+import { usePlayer } from "@/contexts/player-context";
 
 const StyledView = withUniwind(View);
 const StyledText = withUniwind(Text);
+const StyledTouchableOpacity = withUniwind(TouchableOpacity);
+const StyledIonicons = withUniwind(Ionicons);
 
-export const TimerStatus = () => {
-  const { sleepTimerRemainingMs, sleepTimerEndsAt } = usePlayer();
+interface TimerStatusProps {
+  absolute?: boolean;
+}
+
+export const TimerStatus = ({ absolute = true }: TimerStatusProps) => {
+  const { sleepTimerRemainingMs, sleepTimerEndsAt, cancelSleepTimer } =
+    usePlayer();
   const insets = useSafeAreaInsets();
 
   if (!sleepTimerEndsAt || sleepTimerRemainingMs <= 0) {
@@ -26,14 +34,40 @@ export const TimerStatus = () => {
           .padStart(2, "0")}`
       : `${minutes}:${seconds.toString().padStart(2, "0")}`;
 
+  if (!absolute) {
+    return (
+      <StyledTouchableOpacity
+        onPress={cancelSleepTimer}
+        className="flex-row items-center bg-black/40 px-2 py-0.5 rounded-full mr-2"
+      >
+        <StyledText className="text-white text-[10px] font-bold">
+          💤 {formatted}
+        </StyledText>
+        <StyledIonicons
+          name="close-circle"
+          size={12}
+          color="white"
+          className="ml-1 opacity-70"
+        />
+      </StyledTouchableOpacity>
+    );
+  }
+
   return (
-    <StyledView
-      className="absolute top-0 right-0 z-50 bg-black/80 px-3 py-1 rounded-bl-lg"
+    <StyledTouchableOpacity
+      onPress={cancelSleepTimer}
+      className="absolute top-0 right-0 z-50 bg-black/80 px-3 py-1 rounded-bl-lg flex-row items-center"
       style={{ top: insets.top }}
     >
       <StyledText className="text-white text-xs font-bold">
         💤 {formatted}
       </StyledText>
-    </StyledView>
+      <StyledIonicons
+        name="close-circle"
+        size={14}
+        color="white"
+        className="ml-2 opacity-70"
+      />
+    </StyledTouchableOpacity>
   );
 };

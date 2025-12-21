@@ -4,6 +4,7 @@ import { ActivityIndicator, FlatList, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { withUniwind } from "uniwind";
 import { ApiDebug } from "@/components/api-debug";
+import { TimerStatus } from "@/components/timer-status";
 import { type Track, TrackItem } from "@/components/track-item";
 import { usePlayer } from "@/contexts/player-context";
 import { resolveArtwork, resolveName } from "@/utils/resolvers";
@@ -75,13 +76,16 @@ export default function Explore() {
 
   return (
     <StyledSafeAreaView className="flex-1 bg-background" edges={["top"]}>
-      <StyledView className="px-4 py-4 mb-2">
-        <StyledText className="text-2xl font-bold text-foreground">
-          Explore
-        </StyledText>
-        <StyledText className="text-default-500">
-          Discover new music and trends
-        </StyledText>
+      <StyledView className="px-4 py-4 mb-2 flex-row items-center justify-between">
+        <View>
+          <StyledText className="text-2xl font-bold text-foreground">
+            Explore
+          </StyledText>
+          <StyledText className="text-default-500">
+            Discover new music and trends
+          </StyledText>
+        </View>
+        <TimerStatus absolute={false} />
       </StyledView>
 
       <ApiDebug title="Explore search" data={data} error={error} />
@@ -103,7 +107,7 @@ export default function Explore() {
           renderItem={renderItem}
           contentContainerStyle={{
             paddingHorizontal: 16,
-            paddingBottom: 100,
+            paddingBottom: 20,
           }}
         />
       )}

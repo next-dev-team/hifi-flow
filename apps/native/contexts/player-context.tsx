@@ -710,6 +710,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
     clearSleepTimerHandles();
     setSleepTimerEndsAt(null);
     setSleepTimerRemainingMs(0);
+    void writePersistentValue(SLEEP_TIMER_KEY, "");
   }, [clearSleepTimerHandles]);
 
   const startSleepTimer = useCallback(

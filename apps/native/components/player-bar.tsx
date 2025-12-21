@@ -1755,7 +1755,7 @@ export const PlayerBar = () => {
           )}
           <View className="flex-1 max-w-md w-full mx-auto relative">
             <View
-              className="flex-1 items-center justify-between pb-10"
+              className="flex-1 items-center justify-between pb-5"
               style={{ paddingTop: insets.top + 12 }}
             >
               <View className="w-full px-5 flex-row items-center justify-between">

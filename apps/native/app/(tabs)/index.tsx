@@ -36,6 +36,7 @@ import { type Artist, ArtistItem } from "@/components/artist-item";
 import { PlaylistDiscovery } from "@/components/playlist-discovery";
 import { type Playlist, PlaylistItem } from "@/components/playlist-item";
 import { SearchComposer } from "@/components/search-composer";
+import { TimerStatus } from "@/components/timer-status";
 import { type Track, TrackItem } from "@/components/track-item";
 import { useAppTheme } from "@/contexts/app-theme-context";
 import { type SavedTrack, usePlayer } from "@/contexts/player-context";
@@ -546,6 +547,7 @@ export default function Home() {
             </StyledText>
           </TouchableOpacity>
           <View className="flex-row items-center">
+            <TimerStatus absolute={false} />
             <TouchableOpacity
               className="p-2"
               onPress={() => settingsSheetRef.current?.present()}
@@ -658,7 +660,7 @@ export default function Home() {
           key={filter === "artists" ? "grid" : "list"}
           contentContainerStyle={{
             paddingHorizontal: filter === "artists" ? 8 : 16,
-            paddingBottom: 100,
+            paddingBottom: 20,
           }}
           ListHeaderComponent={
             !query ? (
