@@ -984,14 +984,37 @@ export default function Home() {
         backgroundStyle={{ backgroundColor: themeColorBackground }}
       >
         <StyledView className="flex-1 bg-background">
-          <View className="px-4 pt-3 pb-2 flex-row items-center justify-between">
-            <Text className="text-xl font-bold text-foreground">Favorites</Text>
-            <TouchableOpacity
-              className="p-2"
-              onPress={() => favoritesSheetRef.current?.dismiss()}
-            >
-              <Ionicons name="close" size={22} color={themeColorForeground} />
-            </TouchableOpacity>
+          <View className="px-4 pt-3 pb-2 flex-col items-start justify-between">
+            <View className="flex-row items-center justify-between w-full">
+              <Text className="text-xl font-bold text-foreground">
+                Favorites
+              </Text>
+              <TouchableOpacity
+                className="p-2"
+                onPress={() => favoritesSheetRef.current?.dismiss()}
+              >
+                <Ionicons name="close" size={22} color={themeColorForeground} />
+              </TouchableOpacity>
+            </View>
+            <View className="flex-row gap-2 mt-2">
+              <Chip
+                variant={favViewMode === "songs" ? "primary" : "secondary"}
+                color={favViewMode === "songs" ? "accent" : "default"}
+                onPress={() => {
+                  setFavViewMode("songs");
+                  setFavArtistFilter(null);
+                }}
+              >
+                Songs
+              </Chip>
+              <Chip
+                variant={favViewMode === "artists" ? "primary" : "secondary"}
+                color={favViewMode === "artists" ? "accent" : "default"}
+                onPress={() => setFavViewMode("artists")}
+              >
+                Artists
+              </Chip>
+            </View>
           </View>
 
           {favorites.length === 0 ? (
@@ -1003,16 +1026,86 @@ export default function Home() {
                 Tap the heart in the player to save tracks.
               </Text>
             </View>
-          ) : (
+          ) : favViewMode === "artists" ? (
             <BottomSheetFlatList
-              data={favorites}
-              keyExtractor={(item: SavedTrack) => item.id}
-              renderItem={renderSavedItem}
+              data={Array.from(
+                new Set(
+                  favorites
+                    .map((t) => t.artist)
+                    .filter((a): a is string => typeof a === "string" && !!a)
+                )
+              ).sort()}
+              keyExtractor={(item: string) => item}
+              renderItem={({ item: artistName }: { item: string }) => (
+                <TouchableOpacity
+                  onPress={() => {
+                    setFavArtistFilter(artistName);
+                    setFavViewMode("songs");
+                  }}
+                  className="flex-row items-center px-4 py-3 active:bg-content2"
+                >
+                  <View className="w-12 h-12 rounded-full bg-content3 items-center justify-center mr-3 overflow-hidden">
+                    {/* Try to find artwork from the first track of this artist */}
+                    <Image
+                      source={{
+                        uri: resolveArtwork(
+                          favorites.find((t) => t.artist === artistName)
+                        ),
+                      }}
+                      className="w-full h-full"
+                    />
+                  </View>
+                  <View className="flex-1">
+                    <Text className="text-foreground font-medium text-lg">
+                      {artistName}
+                    </Text>
+                    <Text className="text-default-500 text-sm">
+                      {favorites.filter((t) => t.artist === artistName).length}{" "}
+                      songs
+                    </Text>
+                  </View>
+                  <Ionicons
+                    name="chevron-forward"
+                    size={20}
+                    color={themeColorForeground}
+                  />
+                </TouchableOpacity>
+              )}
               contentContainerStyle={{
-                paddingHorizontal: 16,
                 paddingBottom: 24,
               }}
             />
+          ) : (
+            <>
+              {favArtistFilter && (
+                <View className="px-4 py-2 flex-row items-center">
+                  <Text className="text-foreground text-sm mr-2">
+                    Filtered by:{" "}
+                    <Text className="font-bold">{favArtistFilter}</Text>
+                  </Text>
+                  <TouchableOpacity onPress={() => setFavArtistFilter(null)}>
+                    <Ionicons
+                      name="close-circle"
+                      size={18}
+                      color={themeColorForeground}
+                    />
+                  </TouchableOpacity>
+                </View>
+              )}
+              <BottomSheetFlatList
+                data={
+                  favArtistFilter
+                    ? favorites.filter((t) => t.artist === favArtistFilter)
+                    : favorites
+                }
+                keyExtractor={(item: SavedTrack) => item.id}
+                renderItem={renderSavedItem}
+                contentContainerStyle={{
+                  paddingHorizontal: 16,
+                  paddingBottom: 24,
+                }}
+              />
+            </>
           )}
         </StyledView>
       </BottomSheetModal>
