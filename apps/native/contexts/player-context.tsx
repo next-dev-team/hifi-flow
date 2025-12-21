@@ -75,9 +75,11 @@ interface PlayerContextType {
   playNext: () => Promise<void>;
   playPrevious: () => Promise<void>;
   favorites: SavedTrack[];
+  recentlyPlayed: SavedTrack[];
   isCurrentFavorited: boolean;
   toggleCurrentFavorite: (artwork?: string) => Promise<void>;
   removeFavorite: (id: string) => Promise<void>;
+  removeFromRecentlyPlayed: (id: string) => Promise<void>;
   playSaved: (saved: SavedTrack) => Promise<void>;
   volume: number;
   setVolume: (volume: number) => Promise<void>;
@@ -87,6 +89,7 @@ interface PlayerContextType {
 const PlayerContext = createContext<PlayerContextType | undefined>(undefined);
 
 const FAVORITES_STORAGE_KEY = "hififlow:favorites:v1";
+const RECENTLY_PLAYED_STORAGE_KEY = "hififlow:recently_played:v1";
 const QUALITY_STORAGE_KEY = "hififlow:quality:v1";
 const SHUFFLE_STORAGE_KEY = "hififlow:shuffle:v1";
 const REPEAT_STORAGE_KEY = "hififlow:repeat:v1";
@@ -172,6 +175,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
   );
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [favorites, setFavorites] = useState<SavedTrack[]>([]);
+  const [recentlyPlayed, setRecentlyPlayed] = useState<SavedTrack[]>([]);
   const [volume, setVolumeState] = useState(1.0);
   const [sleepTimerEndsAt, setSleepTimerEndsAt] = useState<number | null>(null);
   const [sleepTimerRemainingMs, setSleepTimerRemainingMs] = useState(0);
@@ -281,24 +285,42 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
     return preloadRequestIdRef.current;
   }, []);
 
-  const getStreamUrlForTrack = useCallback(async (track: Track) => {
-    const trackId = Number(track.id);
-    let streamUrl: string | null = null;
+  const getStreamUrlForTrack = useCallback(
+    async (track: Track) => {
+      const trackId = Number(track.id);
+      let streamUrl: string | null = null;
 
-    if (Number.isFinite(trackId)) {
-      try {
-        streamUrl = await losslessAPI.getStreamUrl(trackId, qualityRef.current);
-      } catch {
-        streamUrl = null;
+      // Optimization: Check if track is in recently played or favorites and has a stream URL
+      // This avoids fetching from API if we already have the URL
+      const savedTrack =
+        recentlyPlayed.find((t) => String(t.id) === String(track.id)) ||
+        favorites.find((t) => String(t.id) === String(track.id));
+
+      if (savedTrack?.streamUrl) {
+        // You might want to verify if the URL is still valid or expired if they are signed URLs
+        // For now we assume they are valid or long-lived
+        return savedTrack.streamUrl;
       }
-    }
 
-    if (!streamUrl && track.url) {
-      streamUrl = track.url;
-    }
+      if (Number.isFinite(trackId)) {
+        try {
+          streamUrl = await losslessAPI.getStreamUrl(
+            trackId,
+            qualityRef.current
+          );
+        } catch {
+          streamUrl = null;
+        }
+      }
 
-    return streamUrl;
-  }, []);
+      if (!streamUrl && track.url) {
+        streamUrl = track.url;
+      }
+
+      return streamUrl;
+    },
+    [recentlyPlayed, favorites]
+  );
 
   const preloadNextForTrack = useCallback(
     async (activeTrack: Track, playRequestId: number, triggerKey: string) => {
@@ -409,6 +431,33 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
           })
           .slice(0, 500);
         setFavorites(loaded);
+      })
+      .catch(() => {
+        return;
+      });
+
+    // Load Recently Played
+    readPersistentValue(RECENTLY_PLAYED_STORAGE_KEY)
+      .then((value) => {
+        if (!value) return;
+        const parsed = JSON.parse(value) as unknown;
+        if (!Array.isArray(parsed)) return;
+        const loaded = parsed
+          .filter((entry): entry is SavedTrack => {
+            if (!entry || typeof entry !== "object") return false;
+            const record = entry as Record<string, unknown>;
+            return (
+              typeof record.id === "string" &&
+              typeof record.title === "string" &&
+              typeof record.artist === "string" &&
+              typeof record.streamUrl === "string" &&
+              typeof record.addedAt === "number" &&
+              (record.artwork === undefined ||
+                typeof record.artwork === "string")
+            );
+          })
+          .slice(0, 50); // Keep last 50
+        setRecentlyPlayed(loaded);
       })
       .catch(() => {
         return;
@@ -538,6 +587,56 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
     analyzeTrack,
   ]);
 
+  const addToRecentlyPlayed = useCallback(
+    async (track: Track, streamUrl: string) => {
+      setRecentlyPlayed((prev) => {
+        const existingIndex = prev.findIndex(
+          (t) => String(t.id) === String(track.id)
+        );
+        const newTrack: SavedTrack = {
+          id: String(track.id),
+          title: track.title,
+          artist: track.artist,
+          artwork: track.artwork,
+          streamUrl: streamUrl,
+          addedAt: Date.now(),
+        };
+
+        let newHistory: SavedTrack[];
+        if (existingIndex !== -1) {
+          // Move to top
+          newHistory = [
+            newTrack,
+            ...prev.filter((_, i) => i !== existingIndex),
+          ];
+        } else {
+          newHistory = [newTrack, ...prev];
+        }
+
+        // Limit to 50
+        newHistory = newHistory.slice(0, 50);
+
+        void writePersistentValue(
+          RECENTLY_PLAYED_STORAGE_KEY,
+          JSON.stringify(newHistory)
+        );
+        return newHistory;
+      });
+    },
+    []
+  );
+
+  const removeFromRecentlyPlayed = useCallback(async (id: string) => {
+    setRecentlyPlayed((prev) => {
+      const newHistory = prev.filter((t) => String(t.id) !== String(id));
+      void writePersistentValue(
+        RECENTLY_PLAYED_STORAGE_KEY,
+        JSON.stringify(newHistory)
+      );
+      return newHistory;
+    });
+  }, []);
+
   const playSound = useCallback(
     async (track: Track) => {
       playRequestIdRef.current += 1;
@@ -640,6 +739,9 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
         setCurrentStreamUrl(streamUrl);
         // Analysis will be triggered by the useEffect when playing starts
         player.play();
+
+        // Add to recently played
+        void addToRecentlyPlayed(track, streamUrl);
       } catch (error) {
         console.error("Playback failed", error);
         showToast({
@@ -659,6 +761,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
       getTrackKey,
       resetPreloadState,
       showToast,
+      addToRecentlyPlayed,
     ]
   );
 
@@ -1061,6 +1164,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
       }
     },
     favorites,
+    recentlyPlayed,
     isCurrentFavorited: useMemo(() => {
       if (!currentTrack) return false;
       return favorites.some(
@@ -1106,6 +1210,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
         JSON.stringify(nextFavorites)
       );
     },
+    removeFromRecentlyPlayed,
     playSaved: async (saved) => {
       const track: Track = {
         id: saved.id,
