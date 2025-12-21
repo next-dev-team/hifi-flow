@@ -54,6 +54,7 @@ import { type Track, TrackItem } from "@/components/track-item";
 import { useAppTheme } from "@/contexts/app-theme-context";
 import { type SavedTrack, usePlayer } from "@/contexts/player-context";
 import { useToast } from "@/contexts/toast-context";
+import { usePersistentState } from "@/hooks/use-persistent-state";
 import { detectThemeVoiceAction } from "@/utils/ai";
 import { getSuggestedArtists, losslessAPI } from "@/utils/api";
 import { resolveArtwork, resolveName } from "@/utils/resolvers";
@@ -101,7 +102,17 @@ export default function Home() {
   const [voiceActionStatus, setVoiceActionStatus] = useState<
     "idle" | "listening" | "processing" | "error"
   >("idle");
-  const [speechLang, setSpeechLang] = useState<"en-US" | "km-KH">("en-US");
+  const [speechLang, setSpeechLang] = usePersistentState<"en-US" | "km-KH">(
+    "app-speech-lang",
+    (() => {
+      try {
+        const locale = Intl.DateTimeFormat().resolvedOptions().locale;
+        return locale.startsWith("km") ? "km-KH" : "en-US";
+      } catch {
+        return "en-US";
+      }
+    })()
+  );
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<SearchFilter>("songs");
   const [debouncedQuery, setDebouncedQuery] = useState("");
@@ -774,14 +785,14 @@ export default function Home() {
               </TouchableOpacity>
               <TouchableOpacity
                 className="px-2 py-1 flex-row items-center justify-center border-r border-default-200 active:bg-default-100 h-full"
-                onPress={() =>
+                onPress={() => {
                   setSpeechLang((prev) =>
                     prev === "en-US" ? "km-KH" : "en-US"
-                  )
-                }
+                  );
+                }}
               >
                 <StyledText className="text-[10px] font-bold text-foreground opacity-60 uppercase">
-                  {speechLang === "en-US" ? "EN" : "KM"}
+                  {speechLang === "en-US" ? "EN" : "KH"}
                 </StyledText>
               </TouchableOpacity>
               <TouchableOpacity
@@ -858,6 +869,7 @@ export default function Home() {
                 : "ស្វែងរកបទចម្រៀង, សិល្បករ, អាល់ប៊ុម..."
             }
             className="mb-4"
+            voiceLang={speechLang}
           />
           <StyledScrollView
             horizontal

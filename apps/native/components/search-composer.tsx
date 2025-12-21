@@ -17,6 +17,7 @@ import {
 } from "react-native";
 import { withUniwind } from "uniwind";
 import { useToast } from "@/contexts/toast-context";
+import { usePersistentState } from "@/hooks/use-persistent-state";
 import { fetchRelatedKeywords } from "../utils/ai";
 import { ThinkingDots } from "./thinking-dots";
 
@@ -31,6 +32,7 @@ interface SearchComposerProps {
   placeholder?: string;
   className?: string;
   multiline?: boolean;
+  voiceLang?: "en-US" | "km-KH";
 }
 
 interface LanguageOption {
@@ -53,13 +55,28 @@ export function SearchComposer({
   placeholder = "Search songs, artists, albums",
   className = "",
   multiline = false,
+  voiceLang,
 }: SearchComposerProps) {
   const themeColorMuted = useThemeColor("muted");
   const { showToast } = useToast();
   const voiceSearchOwnerRef = useRef(false);
   const [isListening, setIsListening] = useState(false);
-  const [selectedLang, setSelectedLang] = useState(LANGUAGES[0]);
+  const [selectedLang, setSelectedLang] = usePersistentState<LanguageOption>(
+    "search-composer-lang",
+    LANGUAGES[0]
+  );
   const selectedLangRef = useRef(selectedLang);
+  const prevVoiceLangRef = useRef(voiceLang);
+
+  // Sync selectedLang with voiceLang prop ONLY if voiceLang has changed
+  useEffect(() => {
+    if (voiceLang && voiceLang !== prevVoiceLangRef.current) {
+      const lang = LANGUAGES.find((l) => l.value === voiceLang) || LANGUAGES[0];
+      setSelectedLang(lang);
+      prevVoiceLangRef.current = voiceLang;
+    }
+  }, [voiceLang, setSelectedLang]);
+
   selectedLangRef.current = selectedLang;
 
   const [status, setStatus] = useState<"idle" | "listening" | "error">("idle");
@@ -135,7 +152,7 @@ export function SearchComposer({
     );
     const nextIndex = (currentIndex + 1) % LANGUAGES.length;
     setSelectedLang(LANGUAGES[nextIndex]);
-  }, [selectedLang]);
+  }, [selectedLang, setSelectedLang]);
 
   // Voice Search Event Listeners
   useSpeechRecognitionEvent("start", () => {
