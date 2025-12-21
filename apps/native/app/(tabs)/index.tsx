@@ -228,7 +228,7 @@ export default function Home() {
         },
       ] as SuggestedArtist[];
       if (!Array.isArray(response)) {
-        return;
+        return df;
       }
       return [...df, ...response] as SuggestedArtist[];
     },
@@ -238,12 +238,28 @@ export default function Home() {
   });
 
   const suggestedArtistNames = useMemo(() => {
-    const names = (suggestedArtists ?? [])
+    if (!suggestedArtists || suggestedArtists.length === 0) return [];
+
+    // Mock artists are the first 3 in the current implementation of queryFn
+    const mockNames = ["Vannda", "Tep piseth", "Sin Sisamut"];
+
+    const allNames = suggestedArtists
       .map((entry) =>
         typeof entry?.name === "string" ? entry.name.trim() : ""
       )
       .filter((name) => name.length > 0);
-    return Array.from(new Set(names)).slice(0, 12);
+
+    const uniqueNames = Array.from(new Set(allNames));
+
+    // Separate mock names from the rest
+    const mocks = uniqueNames.filter((name) => mockNames.includes(name));
+    const others = uniqueNames.filter((name) => !mockNames.includes(name));
+
+    // Randomize the "others" pool
+    const randomizedOthers = others.sort(() => Math.random() - 0.5);
+
+    // Combine mocks first, then randomized others, total 10
+    return [...mocks, ...randomizedOthers].slice(0, 10);
   }, [suggestedArtists]);
 
   useEffect(() => {
