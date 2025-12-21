@@ -1140,11 +1140,7 @@ export interface ThemeVoiceActionResult {
 }
 
 const normalizeVoiceText = (text: string) => {
-  return text
-    .toLowerCase()
-    .replace(/[^a-z0-9\s]+/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
+  return text.toLowerCase().replace(/\s+/g, " ").trim();
 };
 
 const heuristicThemeFromText = (
@@ -1154,17 +1150,21 @@ const heuristicThemeFromText = (
 
   const wantsDark =
     /\b(dark|night|black)\b/.test(t) ||
-    /\b(dark\s+mode|night\s+mode|black\s+theme)\b/.test(t);
+    /\b(dark\s+mode|night\s+mode|black\s+theme)\b/.test(t) ||
+    /ងងឹត/.test(t);
   const wantsLight =
     /\b(light|day|white)\b/.test(t) ||
-    /\b(light\s+mode|day\s+mode|white\s+theme)\b/.test(t);
+    /\b(light\s+mode|day\s+mode|white\s+theme)\b/.test(t) ||
+    /ភ្លឺ/.test(t);
 
   const negatesDark =
     /\b(turn\s+off|disable|remove|stop)\s+dark\b/.test(t) ||
-    /\b(exit|leave)\s+dark\b/.test(t);
+    /\b(exit|leave)\s+dark\b/.test(t) ||
+    /(បិទ|ឈប់).*ងងឹត/.test(t);
   const negatesLight =
     /\b(turn\s+off|disable|remove|stop)\s+light\b/.test(t) ||
-    /\b(exit|leave)\s+light\b/.test(t);
+    /\b(exit|leave)\s+light\b/.test(t) ||
+    /(បិទ|ឈប់).*ភ្លឺ/.test(t);
 
   if (negatesDark && !negatesLight) return "light";
   if (negatesLight && !negatesDark) return "dark";
@@ -1216,6 +1216,18 @@ export async function detectThemeVoiceAction(
     reload: "refresh_suggestions",
     "change filter": "change_filter",
     "switch filter": "change_filter",
+    // Khmer
+    ផ្អាក: "pause",
+    ឈប់: "stop",
+    បន្ត: "resume",
+    ចាក់: "resume",
+    លេង: "resume",
+    បទបន្ទាប់: "next",
+    រំលង: "next",
+    បទមុន: "previous",
+    ត្រឡប់ក្រោយ: "previous",
+    ផ្ទុកឡើងវិញ: "refresh_suggestions",
+    ប្តូរតម្រង: "change_filter",
   };
 
   const words = normalized.split(" ");
@@ -1234,13 +1246,20 @@ export async function detectThemeVoiceAction(
 
         // Heuristic for change_filter
         if (action === "change_filter") {
-          if (normalized.includes("song"))
+          if (
+            normalized.includes("song") ||
+            normalized.includes("បទ") ||
+            normalized.includes("ចម្រៀង")
+          )
             return { action, filter: "songs", confidence: 0.9 };
-          if (normalized.includes("artist"))
+          if (normalized.includes("artist") || normalized.includes("សិល្បករ"))
             return { action, filter: "artists", confidence: 0.9 };
-          if (normalized.includes("album"))
+          if (normalized.includes("album") || normalized.includes("អាល់ប៊ុម"))
             return { action, filter: "albums", confidence: 0.9 };
-          if (normalized.includes("playlist"))
+          if (
+            normalized.includes("playlist") ||
+            normalized.includes("បញ្ជីចាក់")
+          )
             return { action, filter: "playlists", confidence: 0.9 };
         }
 
@@ -1250,13 +1269,24 @@ export async function detectThemeVoiceAction(
   }
 
   // Simple heuristic for search/play
-  if (normalized.includes("search") || normalized.includes("play")) {
+  if (
+    normalized.includes("search") ||
+    normalized.includes("play") ||
+    normalized.includes("ស្វែងរក") ||
+    normalized.includes("ចាក់") ||
+    normalized.includes("លេង")
+  ) {
     const playAndSearchRegex =
       /^(?:please\s+)?(?:search\s+and\s+play|play\s+and\s+search|search\s+for\s+and\s+play|play)\s+(?:song\s+|music\s+)?(.+)$/i;
     const searchRegex =
       /^(?:please\s+)?(?:search\s+for|search|find|lookup)\s+(?:song\s+|music\s+)?(.+)$/i;
 
-    const playMatch = normalized.match(playAndSearchRegex);
+    // Khmer regex
+    const khmerPlayRegex = /^(?:ចាក់|លេង)\s*(?:បទ|ចម្រៀង)?\s*(.+)$/i;
+    const khmerSearchRegex = /^(?:ស្វែងរក|រក)\s*(?:បទ|ចម្រៀង)?\s*(.+)$/i;
+
+    const playMatch =
+      normalized.match(playAndSearchRegex) || normalized.match(khmerPlayRegex);
     if (playMatch && playMatch[1]) {
       return {
         action: "search_and_play",
@@ -1265,7 +1295,8 @@ export async function detectThemeVoiceAction(
       };
     }
 
-    const searchMatch = normalized.match(searchRegex);
+    const searchMatch =
+      normalized.match(searchRegex) || normalized.match(khmerSearchRegex);
     if (searchMatch && searchMatch[1]) {
       return {
         action: "search",
@@ -1281,7 +1312,7 @@ export async function detectThemeVoiceAction(
         {
           role: "system",
           content:
-            "You map user speech to an app action. Supported actions:\n" +
+            "You map user speech to an app action. Support English and Khmer (Cambodian) languages. Supported actions:\n" +
             "1. set_theme(theme: 'dark'|'light')\n" +
             "2. search(query: string)\n" +
             "3. search_and_play(query: string)\n" +
