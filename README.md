@@ -60,3 +60,7 @@ my-better-t-app/
 - API used in this project Thanks to  Open source project [sachinsenal0x64](https://github.com/sachinsenal0x64/hifi)
 - <https://github.com/uimaxbai/tidal-ui>
 - Better-t-stack: <https://github.com/uimaxbai/better-t-stack>
+
+## License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
