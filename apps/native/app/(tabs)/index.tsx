@@ -1,3 +1,4 @@
+/** biome-ignore-all lint/style/noNonNullAssertion: <explanation> */
 import { Ionicons } from "@expo/vector-icons";
 import {
   BottomSheetBackdrop,
@@ -84,6 +85,10 @@ export default function Home() {
     sleepTimerRemainingMs,
     startSleepTimer,
     cancelSleepTimer,
+    pauseTrack,
+    resumeTrack,
+    playNext,
+    playPrevious,
   } = usePlayer();
   const { isDark, setTheme } = useAppTheme();
   const { showToast } = useToast();
@@ -131,11 +136,45 @@ export default function Home() {
       try {
         const action = await detectThemeVoiceAction(transcript);
         if (action.action === "set_theme") {
-          setTheme(action.theme);
+          setTheme(action.theme!);
           showToast({
             message: `Theme changed to ${action.theme}`,
             type: "success",
           });
+        } else if (action.action === "search") {
+          setQuery(action.query!);
+          showToast({
+            message: `Searching for "${action.query}"`,
+            type: "success",
+          });
+        } else if (action.action === "search_and_play") {
+          setQuery(action.query!);
+          showToast({
+            message: `Playing "${action.query}"`,
+            type: "success",
+          });
+
+          // Wait a bit for search to trigger and then try to play first item
+          setTimeout(async () => {
+            if (tracks && tracks.length > 0) {
+              await playQueue(tracks, 0);
+            }
+          }, 1500);
+        } else if (action.action === "pause") {
+          await pauseTrack();
+          showToast({ message: "Music paused", type: "success" });
+        } else if (action.action === "resume") {
+          await resumeTrack();
+          showToast({ message: "Music resumed", type: "success" });
+        } else if (action.action === "stop") {
+          await pauseTrack();
+          showToast({ message: "Music stopped", type: "success" });
+        } else if (action.action === "next") {
+          await playNext();
+          showToast({ message: "Playing next track", type: "success" });
+        } else if (action.action === "previous") {
+          await playPrevious();
+          showToast({ message: "Playing previous track", type: "success" });
         } else {
           showToast({
             message: "Action not recognized",
@@ -692,7 +731,7 @@ export default function Home() {
                     ? "sparkles"
                     : isVoiceActionListening
                     ? "mic"
-                    : "mic-outline"
+                    : "sparkles-outline"
                 }
                 size={22}
                 color={

@@ -1117,18 +1117,24 @@ class HuggingFace extends Client {
 
 export const pollinations = new Pollinations();
 
-type ThemeVoiceActionResult =
-  | {
-      action: "set_theme";
-      theme: "dark" | "light";
-      confidence?: number;
-      correctedText?: string;
-    }
-  | {
-      action: "unknown";
-      confidence?: number;
-      correctedText?: string;
-    };
+export type VoiceAction =
+  | "set_theme"
+  | "search"
+  | "search_and_play"
+  | "pause"
+  | "resume"
+  | "stop"
+  | "next"
+  | "previous"
+  | "unknown";
+
+export interface ThemeVoiceActionResult {
+  action: VoiceAction;
+  theme?: "dark" | "light";
+  query?: string;
+  confidence?: number;
+  correctedText?: string;
+}
 
 const normalizeVoiceText = (text: string) => {
   return text
@@ -1191,13 +1197,79 @@ export async function detectThemeVoiceAction(
     return { action: "unknown" };
   }
 
+  // Simple heuristic for player controls
+  const playerControls: Record<string, VoiceAction> = {
+    pause: "pause",
+    resume: "resume",
+    play: "resume", // if no query, play means resume
+    stop: "stop",
+    next: "next",
+    skip: "next",
+    previous: "previous",
+    prev: "previous",
+    back: "previous",
+  };
+
+  const words = normalized.split(" ");
+  if (words.length <= 2) {
+    // Check if it's a simple command like "pause", "next song", etc.
+    for (const [key, action] of Object.entries(playerControls)) {
+      if (normalized.includes(key) && !normalized.includes("search")) {
+        // Special case for "play" - only treat as resume if no other words suggest a search
+        if (
+          key === "play" &&
+          words.length > 1 &&
+          words.some((w) => !["song", "music", "please"].includes(w))
+        ) {
+          continue;
+        }
+        return { action, confidence: 0.9 };
+      }
+    }
+  }
+
+  // Simple heuristic for search/play
+  if (normalized.includes("search") || normalized.includes("play")) {
+    const playAndSearchRegex =
+      /^(?:please\s+)?(?:search\s+and\s+play|play\s+and\s+search|search\s+for\s+and\s+play|play)\s+(?:song\s+|music\s+)?(.+)$/i;
+    const searchRegex =
+      /^(?:please\s+)?(?:search\s+for|search|find|lookup)\s+(?:song\s+|music\s+)?(.+)$/i;
+
+    const playMatch = normalized.match(playAndSearchRegex);
+    if (playMatch && playMatch[1]) {
+      return {
+        action: "search_and_play",
+        query: playMatch[1].trim(),
+        confidence: 0.8,
+      };
+    }
+
+    const searchMatch = normalized.match(searchRegex);
+    if (searchMatch && searchMatch[1]) {
+      return {
+        action: "search",
+        query: searchMatch[1].trim(),
+        confidence: 0.8,
+      };
+    }
+  }
+
   try {
     const response = await pollinations.chat.completions.create({
       messages: [
         {
           role: "system",
           content:
-            "You map user speech to an app action. Only supported actions are: set_theme(dark|light). Return ONLY valid JSON with keys: action, theme, confidence, correctedText. action must be set_theme or unknown. theme must be dark, light, or unknown. confidence is a number 0 to 1.",
+            "You map user speech to an app action. Supported actions:\n" +
+            "1. set_theme(theme: 'dark'|'light')\n" +
+            "2. search(query: string)\n" +
+            "3. search_and_play(query: string)\n" +
+            "4. pause()\n" +
+            "5. resume()\n" +
+            "6. stop()\n" +
+            "7. next()\n" +
+            "8. previous()\n" +
+            "Return ONLY valid JSON with keys: action, theme, query, confidence, correctedText. Confidence is 0 to 1.",
         },
         {
           role: "user",
@@ -1213,8 +1285,9 @@ export async function detectThemeVoiceAction(
       const jsonText = extractFirstJsonObject(content);
       if (jsonText) {
         const parsed = JSON.parse(jsonText);
-        const action = String(parsed?.action || "unknown");
-        const theme = String(parsed?.theme || "unknown");
+        const action = String(parsed?.action || "unknown") as VoiceAction;
+        const theme = parsed?.theme;
+        const query = parsed?.query;
         const confidenceRaw = parsed?.confidence;
         const correctedText =
           typeof parsed?.correctedText === "string"
@@ -1224,16 +1297,30 @@ export async function detectThemeVoiceAction(
         const confidence =
           typeof confidenceRaw === "number" && isFinite(confidenceRaw)
             ? Math.max(0, Math.min(1, confidenceRaw))
-            : undefined;
+            : 0.5;
 
-        if (action === "set_theme" && (theme === "dark" || theme === "light")) {
-          if (confidence === undefined || confidence >= 0.55) {
-            return {
-              action: "set_theme",
-              theme,
-              confidence,
-              correctedText,
-            };
+        if (confidence >= 0.55) {
+          if (
+            action === "set_theme" &&
+            (theme === "dark" || theme === "light")
+          ) {
+            return { action, theme, confidence, correctedText };
+          }
+          if (
+            (action === "search" || action === "search_and_play") &&
+            typeof query === "string" &&
+            query.trim().length > 0
+          ) {
+            return { action, query: query.trim(), confidence, correctedText };
+          }
+          if (
+            action === "pause" ||
+            action === "resume" ||
+            action === "stop" ||
+            action === "next" ||
+            action === "previous"
+          ) {
+            return { action, confidence, correctedText };
           }
         }
       }
