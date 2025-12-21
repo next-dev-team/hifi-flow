@@ -26,7 +26,7 @@ export const ArtistItem: React.FC<ArtistItemProps> = ({ artist, onPress }) => {
       className="items-center mb-6 px-2"
       style={{ width: "50%" }}
     >
-      <View className="w-36 h-36 rounded-full overflow-hidden mb-3 bg-content3 shadow-lg">
+      <View className="w-32 h-32 rounded-full overflow-hidden mb-3 bg-black/5 dark:bg-white/5 border border-black/10 dark:border-white/10 shadow-sm">
         {artwork ? (
           <Image
             source={{ uri: artwork }}
@@ -35,17 +35,17 @@ export const ArtistItem: React.FC<ArtistItemProps> = ({ artist, onPress }) => {
           />
         ) : (
           <View className="w-full h-full items-center justify-center">
-            <Text className="text-4xl">👤</Text>
+            <Text className="text-3xl">👤</Text>
           </View>
         )}
       </View>
       <Text
-        className="font-bold text-lg text-foreground text-center"
+        className="font-bold text-[15px] text-foreground text-center"
         numberOfLines={1}
       >
         {artist.name}
       </Text>
-      <Text className="text-default-500 text-sm text-center">
+      <Text className="text-default-500 text-[12px] font-medium text-center">
         {artist.subscribers || "Artist"}
       </Text>
     </TouchableOpacity>

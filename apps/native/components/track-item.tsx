@@ -1,3 +1,4 @@
+import { Ionicons } from "@expo/vector-icons";
 import { Card } from "heroui-native";
 import type React from "react";
 import { ActivityIndicator, Image, Text, TouchableOpacity, View } from "react-native";
@@ -18,13 +19,21 @@ interface TrackItemProps {
 }
 
 export const TrackItem: React.FC<TrackItemProps> = ({ track, onPress }) => {
-  const { playTrack, loadingTrackId, currentTrack, isPlaying } = usePlayer();
+  const { playTrack, loadingTrackId, currentTrack, isPlaying, pauseTrack, resumeTrack } = usePlayer();
   
   const isLoading = loadingTrackId === String(track.id);
   const isActive = currentTrack?.id === String(track.id);
   
   const handlePress = () => {
     if (isLoading) return;
+    if (isActive) {
+      if (isPlaying) {
+        void pauseTrack();
+      } else {
+        void resumeTrack();
+      }
+      return;
+    }
     if (onPress) {
       onPress();
     } else {
@@ -32,51 +41,69 @@ export const TrackItem: React.FC<TrackItemProps> = ({ track, onPress }) => {
     }
   };
 
+  const handleIconPress = (e: any) => {
+    e.stopPropagation();
+    handlePress();
+  };
+
   return (
     <TouchableOpacity onPress={handlePress} disabled={isLoading}>
-      <Card className={`flex-row items-center p-3 mb-2 border-none shadow-sm ${isActive ? 'bg-primary/10' : 'bg-content2'}`}>
+      <View className={`flex-row items-center p-2 mb-2 rounded-xl border border-black/5 dark:border-white/5 ${isActive ? 'bg-primary/10' : 'bg-black/5 dark:bg-white/5'}`}>
         {track.artwork ? (
-          <View className="relative mr-4">
+          <View className="relative mr-3">
             <Image
               source={{ uri: track.artwork }}
-              className="w-14 h-14 rounded-md"
+              className="w-12 h-12 rounded-lg"
               resizeMode="cover"
             />
             {isLoading && (
-              <View className="absolute inset-0 bg-black/50 items-center justify-center rounded-md">
+              <View className="absolute inset-0 bg-black/50 items-center justify-center rounded-lg">
                 <ActivityIndicator size="small" color="#fff" />
               </View>
             )}
             {!isLoading && isActive && isPlaying && (
-               <View className="absolute inset-0 bg-black/30 items-center justify-center rounded-md">
-                  <Text className="text-white text-xs font-bold">PLAYING</Text>
+               <View className="absolute inset-0 bg-black/30 items-center justify-center rounded-lg">
+                  <View className="flex-row items-center gap-0.5">
+                    <View className="w-1 h-3 bg-white rounded-full" />
+                    <View className="w-1 h-4 bg-white rounded-full" />
+                    <View className="w-1 h-2 bg-white rounded-full" />
+                  </View>
                </View>
             )}
           </View>
         ) : (
-          <View className="w-14 h-14 rounded-md mr-4 bg-default-300 items-center justify-center">
+          <View className="w-12 h-12 rounded-lg mr-3 bg-default-200 items-center justify-center">
             {isLoading ? (
                <ActivityIndicator size="small" color="#000" />
             ) : (
-               <Text className="text-xl">🎵</Text>
+               <Text className="text-lg">🎵</Text>
             )}
           </View>
         )}
         <View className="flex-1 justify-center">
           <Text
-            className={`font-semibold text-base ${isActive ? 'text-primary' : 'text-foreground'}`}
+            className={`font-semibold text-[15px] ${isActive ? 'text-primary' : 'text-foreground'}`}
             numberOfLines={1}
           >
             {track.title}
           </Text>
-          <Text className="text-default-500 text-sm" numberOfLines={1}>
+          <Text className="text-default-500 text-[13px]" numberOfLines={1}>
             {track.artist}
           </Text>
         </View>
-        <View className="px-2">
-          {isLoading ? null : <Text className="text-default-400">⋮</Text>}
-        </View>
-      </Card>
+        <TouchableOpacity 
+          className="px-2 h-10 items-center justify-center" 
+          onPress={handleIconPress}
+        >
+          {isLoading ? null : (
+            <Ionicons 
+              name={isActive && isPlaying ? "pause" : "play"} 
+              size={20} 
+              color={isActive ? "#007AFF" : "#888"} 
+            />
+          )}
+        </TouchableOpacity>
+      </View>
     </TouchableOpacity>
   );
 };

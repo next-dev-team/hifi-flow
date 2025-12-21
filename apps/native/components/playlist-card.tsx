@@ -10,31 +10,29 @@ interface PlaylistCardProps {
 
 export const PlaylistCard: React.FC<PlaylistCardProps> = ({ playlist, onPress }) => {
   return (
-    <TouchableOpacity onPress={onPress} className="mr-4 w-36">
-      <Card className="p-0 border-none bg-transparent shadow-none">
-        <View className="w-36 h-36 rounded-md overflow-hidden mb-2 bg-default-300 items-center justify-center shadow-sm">
-          {playlist.artwork ? (
-            <Image
-              source={{ uri: playlist.artwork }}
-              className="w-full h-full"
-              resizeMode="cover"
-            />
-          ) : (
-            <Text className="text-4xl">📜</Text>
-          )}
-        </View>
-        <View>
-          <Text
-            className="font-semibold text-base text-foreground"
-            numberOfLines={1}
-          >
-            {playlist.title}
-          </Text>
-          <Text className="text-default-500 text-xs" numberOfLines={1}>
-            {playlist.creator ? `By ${playlist.creator}` : "Playlist"}
-          </Text>
-        </View>
-      </Card>
+    <TouchableOpacity onPress={onPress} className="mr-4 w-32">
+      <View className="w-32 h-32 rounded-xl overflow-hidden mb-2 bg-black/5 dark:bg-white/5 border border-black/10 dark:border-white/10 items-center justify-center">
+        {playlist.artwork ? (
+          <Image
+            source={{ uri: playlist.artwork }}
+            className="w-full h-full"
+            resizeMode="cover"
+          />
+        ) : (
+          <Text className="text-3xl">📜</Text>
+        )}
+      </View>
+      <View className="px-1">
+        <Text
+          className="font-bold text-[14px] text-foreground"
+          numberOfLines={1}
+        >
+          {playlist.title}
+        </Text>
+        <Text className="text-default-500 text-[11px] font-medium" numberOfLines={1}>
+          {playlist.creator ? `By ${playlist.creator}` : "Playlist"}
+        </Text>
+      </View>
     </TouchableOpacity>
   );
 };

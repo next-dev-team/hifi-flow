@@ -805,27 +805,27 @@ export default function Home() {
 
         {suggestedArtistNames.length > 0 ? (
           <StyledView className="mb-3">
-            <StyledText className="text-default-500 text-xs mb-2">
+            <StyledText className="text-default-500 text-[11px] font-semibold uppercase tracking-wider mb-2 px-1">
               Suggested artists
             </StyledText>
             <StyledScrollView
               horizontal
               showsHorizontalScrollIndicator={false}
-              style={{ maxHeight: 40 }}
+              style={{ maxHeight: 38 }}
             >
               {suggestedArtistNames.map((name) => (
-                <Chip
+                <StyledTouchableOpacity
                   key={name}
                   onPress={() => {
                     setFilter("artists");
                     setQuery(name);
                   }}
-                  variant="secondary"
-                  color="default"
-                  className="mr-2"
+                  className="mr-2 h-8 px-3 flex-row items-center justify-center rounded-lg bg-black/5 dark:bg-white/5 border border-black/10 dark:border-white/10"
                 >
-                  <StyledText className="text-default-700">{name}</StyledText>
-                </Chip>
+                  <StyledText className="text-[13px] font-medium text-default-700 dark:text-default-300">
+                    {name}
+                  </StyledText>
+                </StyledTouchableOpacity>
               ))}
             </StyledScrollView>
           </StyledView>
@@ -840,27 +840,32 @@ export default function Home() {
           <StyledScrollView
             horizontal
             showsHorizontalScrollIndicator={false}
-            style={{ maxHeight: 40 }}
+            style={{ maxHeight: 38 }}
           >
-            {filters.map((f) => (
-              <Chip
-                key={f.key}
-                onPress={() => setFilter(f.key)}
-                color={filter === f.key ? "accent" : "default"}
-                variant={filter === f.key ? "primary" : "secondary"}
-                className="mr-2 h-9"
-              >
-                <StyledText
-                  className={
-                    filter === f.key
-                      ? "text-accent-foreground font-medium"
-                      : "text-default-600"
-                  }
+            {filters.map((f) => {
+              const isActive = filter === f.key;
+              return (
+                <StyledTouchableOpacity
+                  key={f.key}
+                  onPress={() => setFilter(f.key)}
+                  className={`mr-2 h-8 px-3 flex-row items-center justify-center rounded-lg border ${
+                    isActive
+                      ? "bg-foreground border-foreground shadow-sm"
+                      : "bg-black/5 dark:bg-white/5 border-black/10 dark:border-white/10"
+                  }`}
                 >
-                  {f.label}
-                </StyledText>
-              </Chip>
-            ))}
+                  <StyledText
+                    className={`text-[13px] font-semibold ${
+                      isActive
+                        ? "text-background"
+                        : "text-default-600 dark:text-default-400"
+                    }`}
+                  >
+                    {f.label}
+                  </StyledText>
+                </StyledTouchableOpacity>
+              );
+            })}
           </StyledScrollView>
         </StyledView>
         <ApiDebug title="Home search" data={data} error={error} />
@@ -896,11 +901,11 @@ export default function Home() {
           }}
           ListHeaderComponent={
             !query ? (
-              <StyledView className="mb-4">
-                <StyledText className="text-xl font-bold mb-2">
+              <StyledView className="mb-2">
+                <StyledText className="text-lg font-bold mb-1.5">
                   Made for you
                 </StyledText>
-                <StyledText className="text-default-500 mb-4">
+                <StyledText className="text-default-500 text-[13px] mb-2">
                   Fresh tunes to get you started
                 </StyledText>
               </StyledView>

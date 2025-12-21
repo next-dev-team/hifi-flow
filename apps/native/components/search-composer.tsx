@@ -270,27 +270,24 @@ export function SearchComposer({
 
   return (
     <StyledView className={`relative ${className}`}>
-      <StyledView
-        className="relative max-h-full w-full bg-linear-to-b from-default-400/5 to-default-400/8 dark:from-default-200/65 dark:to-default-200/65 p-1.5 rounded-[32px]"
-        style={{ boxShadow: "rgb(255, 255, 255) 0px 0px 0px 1px inset" } as any}
-      >
-        <StyledView className="bg-white/90 dark:bg-background/45 rounded-[26px]">
-          <StyledView className="relative flex-col overflow-hidden w-auto rounded-[24px] border-2 border-transparent">
-            <StyledView className="flex-row items-center min-h-[44px] w-auto px-3">
+      <StyledView className="relative max-h-full w-full bg-black/5 dark:bg-white/5 border border-black/10 dark:border-white/10 p-1 rounded-2xl shadow-sm">
+        <StyledView className="bg-white/60 dark:bg-black/20 rounded-xl">
+          <StyledView className="relative flex-col overflow-hidden w-auto rounded-xl">
+            <StyledView className="flex-row items-center min-h-[42px] w-auto px-3">
               <StyledView className="justify-center mr-2">
                 <Ionicons
                   name="search"
                   size={18}
                   color={themeColorMuted}
-                  className="opacity-60"
+                  className="opacity-50"
                 />
               </StyledView>
               <StyledView className="flex-1 justify-center">
                 <StyledTextInput
-                  className="w-full bg-transparent text-foreground text-[16px] py-2"
+                  className="w-full bg-transparent text-foreground text-[14px] py-1.5 font-medium"
                   style={
                     {
-                      minHeight: 44,
+                      minHeight: 42,
                       textAlignVertical: "center",
                       includeFontPadding: false,
                     } as any
@@ -317,19 +314,19 @@ export function SearchComposer({
               </StyledView>
 
               {/* Actions Group */}
-              <StyledView className="flex-row items-center gap-x-0.5">
+              <StyledView className="flex-row items-center gap-x-1">
                 {/* Clear Button */}
                 {value.length > 0 && (
                   <TouchableOpacity
                     onPress={() => onChangeText("")}
-                    className="p-1"
+                    className="p-1.5"
                     activeOpacity={0.7}
                   >
                     <Ionicons
                       name="close-circle"
                       size={18}
                       color={themeColorMuted}
-                      className="opacity-50"
+                      className="opacity-40"
                     />
                   </TouchableOpacity>
                 )}
@@ -337,10 +334,10 @@ export function SearchComposer({
                 {/* Language Toggle Button */}
                 <TouchableOpacity
                   onPress={toggleLanguage}
-                  className="px-2 py-0.5 rounded-full bg-default-100/50 flex-row items-center justify-center"
+                  className="px-2 py-0.5 rounded-lg bg-black/5 dark:bg-white/10 flex-row items-center justify-center"
                   activeOpacity={0.7}
                 >
-                  <StyledText className="text-[10px] font-bold text-foreground opacity-70">
+                  <StyledText className="text-[10px] font-bold text-foreground opacity-60 uppercase">
                     {selectedLang.label}
                   </StyledText>
                 </TouchableOpacity>
@@ -349,8 +346,8 @@ export function SearchComposer({
                 <TouchableOpacity
                   onPress={handleVoiceSearch}
                   activeOpacity={0.7}
-                  className={`p-1 rounded-full ${
-                    isListening ? "bg-primary/20" : ""
+                  className={`p-1 rounded-lg ${
+                    isListening ? "bg-primary/15" : ""
                   }`}
                 >
                   <Ionicons
@@ -363,7 +360,7 @@ export function SearchComposer({
                         ? "#007AFF"
                         : themeColorMuted
                     }
-                    className={isListening ? "opacity-100" : "opacity-80"}
+                    className={isListening ? "opacity-100" : "opacity-70"}
                   />
                 </TouchableOpacity>
               </StyledView>
@@ -377,7 +374,7 @@ export function SearchComposer({
         <StyledScrollView
           horizontal
           showsHorizontalScrollIndicator={false}
-          className="mt-1 px-2"
+          className="mt-2 px-1"
           contentContainerStyle={{
             alignItems: "center",
             minHeight: 44,
@@ -387,8 +384,8 @@ export function SearchComposer({
         >
           {isLoadingKeywords ? (
             <StyledView className="flex-row items-center ml-2">
-              <StyledText className="text-[12px] text-foreground/40 font-medium italic">
-                Suggesting
+              <StyledText className="text-[12px] text-foreground/40 font-semibold uppercase tracking-tighter">
+                Thinking
               </StyledText>
               <ThinkingDots
                 size={12}
@@ -403,17 +400,10 @@ export function SearchComposer({
                 onPress={() => {
                   onChangeText(keyword);
                 }}
-                className="bg-default-100 dark:bg-default-200/30 px-4 py-2 rounded-full mr-2 border border-default-300/50 dark:border-default-400/30 shadow-md"
+                className="bg-black/5 dark:bg-white/5 px-4 py-2 rounded-xl mr-2 border border-black/10 dark:border-white/10"
                 activeOpacity={0.6}
-                style={{
-                  elevation: 4,
-                  shadowColor: "#000",
-                  shadowOffset: { width: 0, height: 2 },
-                  shadowOpacity: 0.2,
-                  shadowRadius: 4,
-                }}
               >
-                <StyledText className="text-[14px] text-foreground font-bold">
+                <StyledText className="text-[13px] text-foreground font-semibold">
                   {keyword}
                 </StyledText>
               </TouchableOpacity>

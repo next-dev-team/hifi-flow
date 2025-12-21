@@ -1,10 +1,10 @@
 import { useSearchSearchGet } from "api-hifi/src/gen/hooks";
 import type React from "react";
+import { useMemo } from "react";
 import { ActivityIndicator, ScrollView, Text, View } from "react-native";
+import { resolveArtwork, resolveName } from "@/utils/resolvers";
 import { PlaylistCard } from "./playlist-card";
 import type { Playlist } from "./playlist-item";
-import { resolveArtwork, resolveName } from "@/utils/resolvers";
-import { useMemo } from "react";
 
 interface PlaylistSectionProps {
   title: string;
@@ -24,14 +24,14 @@ export const PlaylistSection: React.FC<PlaylistSectionProps> = ({
     const response = data as any;
 
     let items: any[] = [];
-    
+
     // Attempt to find playlist items in response
     if (response.playlists?.items) items = response.playlists.items;
     else if (response.playlists?.results) items = response.playlists.results;
     else if (response.items) items = response.items;
     else if (response.results) items = response.results;
     else if (response.data?.items) items = response.data.items;
-    
+
     if (!items) return [];
 
     return items.map((item, index): Playlist => {
@@ -48,8 +48,10 @@ export const PlaylistSection: React.FC<PlaylistSectionProps> = ({
 
   if (isLoading) {
     return (
-      <View className="mb-6 h-48 justify-center">
-         <Text className="text-xl font-bold text-foreground mb-3 px-4">{title}</Text>
+      <View className="mb-6 h-40 justify-center">
+        <Text className="text-lg font-bold text-foreground mb-2 px-4">
+          {title}
+        </Text>
         <ActivityIndicator size="small" />
       </View>
     );
@@ -59,7 +61,7 @@ export const PlaylistSection: React.FC<PlaylistSectionProps> = ({
 
   return (
     <View className="mb-6">
-      <Text className="text-xl font-bold text-foreground mb-3 px-4">
+      <Text className="text-lg font-bold text-foreground mb-2 px-4">
         {title}
       </Text>
       <ScrollView
@@ -68,11 +70,7 @@ export const PlaylistSection: React.FC<PlaylistSectionProps> = ({
         contentContainerStyle={{ paddingHorizontal: 16 }}
       >
         {playlists.map((p) => (
-          <PlaylistCard
-            key={p.id}
-            playlist={p}
-            onPress={() => onSelect(p)}
-          />
+          <PlaylistCard key={p.id} playlist={p} onPress={() => onSelect(p)} />
         ))}
       </ScrollView>
     </View>
