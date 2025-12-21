@@ -53,6 +53,7 @@ export function SearchComposer({
   multiline = false,
 }: SearchComposerProps) {
   const themeColorMuted = useThemeColor("muted");
+  const voiceSearchOwnerRef = useRef(false);
   const [isListening, setIsListening] = useState(false);
   const [selectedLang, setSelectedLang] = useState(LANGUAGES[0]);
   const selectedLangRef = useRef(selectedLang);
@@ -135,21 +136,25 @@ export function SearchComposer({
 
   // Voice Search Event Listeners
   useSpeechRecognitionEvent("start", () => {
+    if (!voiceSearchOwnerRef.current) return;
     setIsListening(true);
     setStatus("listening");
     setErrorMessage(null);
   });
 
   useSpeechRecognitionEvent("end", () => {
+    if (!voiceSearchOwnerRef.current) return;
     setIsListening(false);
     setStatus((prev) => (prev === "error" ? "error" : "idle"));
     if (silenceTimerRef.current) {
       clearTimeout(silenceTimerRef.current);
       silenceTimerRef.current = null;
     }
+    voiceSearchOwnerRef.current = false;
   });
 
   useSpeechRecognitionEvent("result", (event) => {
+    if (!voiceSearchOwnerRef.current) return;
     const transcript = event.results.map((r) => r.transcript).join(" ");
     if (transcript) {
       onChangeText(transcript);
@@ -166,9 +171,11 @@ export function SearchComposer({
   });
 
   useSpeechRecognitionEvent("error", (event) => {
+    if (!voiceSearchOwnerRef.current) return;
     console.error("Speech recognition error:", event.error, event.message);
     setIsListening(false);
     setStatus("error");
+    voiceSearchOwnerRef.current = false;
 
     if (silenceTimerRef.current) {
       clearTimeout(silenceTimerRef.current);
@@ -233,6 +240,7 @@ export function SearchComposer({
 
     try {
       setStatus("listening");
+      voiceSearchOwnerRef.current = true;
       ExpoSpeechRecognitionModule.start({
         lang: selectedLangRef.current.value,
         interimResults: true,
@@ -245,6 +253,7 @@ export function SearchComposer({
       setIsListening(false);
       setStatus("error");
       setErrorMessage("Failed to start");
+      voiceSearchOwnerRef.current = false;
       setTimeout(() => {
         setStatus("idle");
         setErrorMessage(null);

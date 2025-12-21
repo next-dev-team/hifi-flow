@@ -9,12 +9,16 @@ import {
 } from "@gorhom/bottom-sheet";
 import { useQuery } from "@tanstack/react-query";
 import {
+  ExpoSpeechRecognitionModule,
+  useSpeechRecognitionEvent,
+} from "expo-speech-recognition";
+import {
   useGetPlaylistPlaylistGet,
   useSearchSearchGet,
 } from "api-hifi/src/gen/hooks";
 import type { SearchSearchGetQueryParams } from "api-hifi/src/gen/types/SearchSearchGet";
 import { Card, Chip, useThemeColor } from "heroui-native";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   DeviceEventEmitter,
@@ -40,6 +44,7 @@ import { TimerStatus } from "@/components/timer-status";
 import { type Track, TrackItem } from "@/components/track-item";
 import { useAppTheme } from "@/contexts/app-theme-context";
 import { type SavedTrack, usePlayer } from "@/contexts/player-context";
+import { detectThemeVoiceAction } from "@/utils/ai";
 import { getSuggestedArtists, losslessAPI } from "@/utils/api";
 import { resolveArtwork, resolveName } from "@/utils/resolvers";
 
@@ -74,11 +79,92 @@ export default function Home() {
   const { isDark, setTheme } = useAppTheme();
   const themeColorBackground = useThemeColor("background");
   const themeColorForeground = useThemeColor("foreground");
+
+  const voiceActionOwnerRef = useRef(false);
+  const voiceActionTranscriptRef = useRef("");
+  const [isVoiceActionListening, setIsVoiceActionListening] = useState(false);
+  const [voiceActionStatus, setVoiceActionStatus] = useState<
+    "idle" | "listening" | "processing" | "error"
+  >("idle");
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<SearchFilter>("songs");
   const [debouncedQuery, setDebouncedQuery] = useState("");
   const [favViewMode, setFavViewMode] = useState<"songs" | "artists">("songs");
   const [favArtistFilter, setFavArtistFilter] = useState<string | null>(null);
+
+  useSpeechRecognitionEvent("start", () => {
+    if (!voiceActionOwnerRef.current) return;
+    setIsVoiceActionListening(true);
+    setVoiceActionStatus("listening");
+    voiceActionTranscriptRef.current = "";
+  });
+
+  useSpeechRecognitionEvent("result", (event) => {
+    if (!voiceActionOwnerRef.current) return;
+    const transcript = event.results.map((r) => r.transcript).join(" ");
+    voiceActionTranscriptRef.current = transcript;
+  });
+
+  useSpeechRecognitionEvent("end", () => {
+    if (!voiceActionOwnerRef.current) return;
+    const transcript = voiceActionTranscriptRef.current.trim();
+    voiceActionOwnerRef.current = false;
+    setIsVoiceActionListening(false);
+
+    if (!transcript) {
+      setVoiceActionStatus("idle");
+      return;
+    }
+
+    setVoiceActionStatus("processing");
+    void (async () => {
+      try {
+        const action = await detectThemeVoiceAction(transcript);
+        if (action.action === "set_theme") {
+          setTheme(action.theme);
+        }
+      } finally {
+        setVoiceActionStatus("idle");
+      }
+    })();
+  });
+
+  useSpeechRecognitionEvent("error", () => {
+    if (!voiceActionOwnerRef.current) return;
+    voiceActionOwnerRef.current = false;
+    setIsVoiceActionListening(false);
+    setVoiceActionStatus("error");
+    setTimeout(() => setVoiceActionStatus("idle"), 1500);
+  });
+
+  const handleVoiceAction = useCallback(async () => {
+    if (isVoiceActionListening) {
+      ExpoSpeechRecognitionModule.stop();
+      return;
+    }
+
+    try {
+      ExpoSpeechRecognitionModule.stop();
+    } catch {}
+
+    const isAvailable =
+      await ExpoSpeechRecognitionModule.isRecognitionAvailable();
+    if (!isAvailable) return;
+
+    const result = await ExpoSpeechRecognitionModule.requestPermissionsAsync();
+    if (!result.granted) return;
+
+    voiceActionOwnerRef.current = true;
+    setVoiceActionStatus("listening");
+    ExpoSpeechRecognitionModule.start({
+      lang: "en-US",
+      interimResults: true,
+      continuous: false,
+      androidIntentOptions: {
+        EXTRA_LANGUAGE_MODEL: "web_search",
+      },
+    });
+  }, [isVoiceActionListening]);
 
   const [selectedArtist, setSelectedArtist] = useState<Artist | null>(null);
   const [selectedAlbum, setSelectedAlbum] = useState<any | null>(null);
@@ -564,6 +650,30 @@ export default function Home() {
           </TouchableOpacity>
           <View className="flex-row items-center">
             <TimerStatus absolute={false} />
+            <TouchableOpacity
+              className="p-2"
+              onPress={() => {
+                void handleVoiceAction();
+              }}
+            >
+              <Ionicons
+                name={
+                  voiceActionStatus === "processing"
+                    ? "sparkles-outline"
+                    : isVoiceActionListening
+                    ? "mic"
+                    : "mic-outline"
+                }
+                size={22}
+                color={
+                  voiceActionStatus === "error"
+                    ? "#FF3B30"
+                    : isVoiceActionListening
+                    ? "#007AFF"
+                    : themeColorForeground
+                }
+              />
+            </TouchableOpacity>
             <TouchableOpacity
               className="p-2"
               onPress={() => settingsSheetRef.current?.present()}

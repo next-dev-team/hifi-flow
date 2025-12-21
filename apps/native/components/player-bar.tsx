@@ -1220,16 +1220,35 @@ export const PlayerBar = () => {
                 bottom: 0,
               }}
             />
-            <View
-              style={{
-                position: "absolute",
-                top: 0,
-                left: 0,
-                right: 0,
-                bottom: 0,
-                backgroundColor: "rgba(0,0,0,0.3)",
-              }}
-            />
+            {Platform.OS === "web" && typeof document !== "undefined"
+              ? (require("react-dom") as any).createPortal(
+                  <View
+                    pointerEvents="none"
+                    style={{
+                      position: "fixed",
+                      top: 0,
+                      left: 0,
+                      right: 0,
+                      bottom: 0,
+                      backgroundColor: "rgba(0,0,0,0.3)",
+                      zIndex: 2147483647,
+                    }}
+                  />,
+                  document.body
+                )
+              : (
+                  <View
+                    pointerEvents="none"
+                    style={{
+                      position: "absolute",
+                      top: 0,
+                      left: 0,
+                      right: 0,
+                      bottom: 0,
+                      backgroundColor: "rgba(0,0,0,0.3)",
+                    }}
+                  />
+                )}
           </View>
         ) : null}
       </View>

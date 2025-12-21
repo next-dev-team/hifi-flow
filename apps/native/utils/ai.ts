@@ -1117,6 +1117,136 @@ class HuggingFace extends Client {
 
 export const pollinations = new Pollinations();
 
+type ThemeVoiceActionResult =
+  | {
+      action: "set_theme";
+      theme: "dark" | "light";
+      confidence?: number;
+      correctedText?: string;
+    }
+  | {
+      action: "unknown";
+      confidence?: number;
+      correctedText?: string;
+    };
+
+const normalizeVoiceText = (text: string) => {
+  return text
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+};
+
+const heuristicThemeFromText = (
+  normalizedText: string
+): "dark" | "light" | null => {
+  const t = normalizedText;
+
+  const wantsDark =
+    /\b(dark|night|black)\b/.test(t) ||
+    /\b(dark\s+mode|night\s+mode|black\s+theme)\b/.test(t);
+  const wantsLight =
+    /\b(light|day|white)\b/.test(t) ||
+    /\b(light\s+mode|day\s+mode|white\s+theme)\b/.test(t);
+
+  const negatesDark =
+    /\b(turn\s+off|disable|remove|stop)\s+dark\b/.test(t) ||
+    /\b(exit|leave)\s+dark\b/.test(t);
+  const negatesLight =
+    /\b(turn\s+off|disable|remove|stop)\s+light\b/.test(t) ||
+    /\b(exit|leave)\s+light\b/.test(t);
+
+  if (negatesDark && !negatesLight) return "light";
+  if (negatesLight && !negatesDark) return "dark";
+
+  if (wantsDark && !wantsLight) return "dark";
+  if (wantsLight && !wantsDark) return "light";
+
+  if (wantsDark && wantsLight) {
+    const lastDarkIndex = t.lastIndexOf("dark");
+    const lastLightIndex = t.lastIndexOf("light");
+    if (lastDarkIndex > lastLightIndex) return "dark";
+    if (lastLightIndex > lastDarkIndex) return "light";
+  }
+
+  return null;
+};
+
+const extractFirstJsonObject = (input: string): string | null => {
+  const start = input.indexOf("{");
+  const end = input.lastIndexOf("}");
+  if (start === -1 || end === -1 || end <= start) return null;
+  return input.slice(start, end + 1);
+};
+
+export async function detectThemeVoiceAction(
+  rawText: string,
+  options?: { signal?: AbortSignal }
+): Promise<ThemeVoiceActionResult> {
+  const normalized = normalizeVoiceText(rawText || "");
+  const heuristic = heuristicThemeFromText(normalized);
+
+  if (!normalized) {
+    return { action: "unknown" };
+  }
+
+  try {
+    const response = await pollinations.chat.completions.create({
+      messages: [
+        {
+          role: "system",
+          content:
+            "You map user speech to an app action. Only supported actions are: set_theme(dark|light). Return ONLY valid JSON with keys: action, theme, confidence, correctedText. action must be set_theme or unknown. theme must be dark, light, or unknown. confidence is a number 0 to 1.",
+        },
+        {
+          role: "user",
+          content: rawText,
+        },
+      ],
+      model: "openai",
+      signal: options?.signal,
+    });
+
+    const content = response.choices?.[0]?.message?.content;
+    if (content) {
+      const jsonText = extractFirstJsonObject(content);
+      if (jsonText) {
+        const parsed = JSON.parse(jsonText);
+        const action = String(parsed?.action || "unknown");
+        const theme = String(parsed?.theme || "unknown");
+        const confidenceRaw = parsed?.confidence;
+        const correctedText =
+          typeof parsed?.correctedText === "string"
+            ? parsed.correctedText
+            : undefined;
+
+        const confidence =
+          typeof confidenceRaw === "number" && isFinite(confidenceRaw)
+            ? Math.max(0, Math.min(1, confidenceRaw))
+            : undefined;
+
+        if (action === "set_theme" && (theme === "dark" || theme === "light")) {
+          if (confidence === undefined || confidence >= 0.55) {
+            return {
+              action: "set_theme",
+              theme,
+              confidence,
+              correctedText,
+            };
+          }
+        }
+      }
+    }
+  } catch {}
+
+  if (heuristic) {
+    return { action: "set_theme", theme: heuristic, confidence: 0.5 };
+  }
+
+  return { action: "unknown" };
+}
+
 /**
  * Fetches 3 related search keywords for a given query using LLM.
  * Returns an array of 3 strings.
