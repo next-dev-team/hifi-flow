@@ -2,6 +2,7 @@
   "name": "hifi-flow",
   "private": true,
   "type": "module",
+  "license": "MIT",
   "workspaces": [
     "apps/*",
     "packages/*"
