@@ -629,6 +629,9 @@ export default function Home() {
             setSelectedArtist(artist);
             artistSheetRef.current?.present();
           }}
+          isLoading={
+            isArtistLoading && String(selectedArtist?.id) === String(artist.id)
+          }
         />
       );
     }
@@ -644,6 +647,11 @@ export default function Home() {
             setSelectedPlaylist(item);
             artistSheetRef.current?.present();
           }}
+          isLoading={
+            isPlaylistLoading &&
+            String(selectedPlaylist?.uuid || selectedPlaylist?.id) ===
+              String(playlist.id)
+          }
         />
       );
     }
@@ -660,6 +668,9 @@ export default function Home() {
             setSelectedAlbum(item);
             artistSheetRef.current?.present();
           }}
+          isLoading={
+            isAlbumLoading && String(selectedAlbum?.id) === String(track.id)
+          }
         />
       );
     }
@@ -842,20 +853,32 @@ export default function Home() {
               showsHorizontalScrollIndicator={false}
               style={{ maxHeight: 38 }}
             >
-              {suggestedArtistNames.map((name) => (
-                <StyledTouchableOpacity
-                  key={name}
-                  onPress={() => {
-                    setFilter("artists");
-                    setQuery(name);
-                  }}
-                  className="mr-2 h-8 px-3 flex-row items-center justify-center rounded-lg bg-black/5 dark:bg-white/5 border border-black/10 dark:border-white/10"
-                >
-                  <StyledText className="text-[13px] font-medium text-default-700 dark:text-default-300">
-                    {name}
-                  </StyledText>
-                </StyledTouchableOpacity>
-              ))}
+              {suggestedArtistNames.map((name) => {
+                const isCurrentLoading =
+                  isLoading && filter === "artists" && query === name;
+                return (
+                  <StyledTouchableOpacity
+                    key={name}
+                    onPress={() => {
+                      setFilter("artists");
+                      setQuery(name);
+                    }}
+                    disabled={isCurrentLoading}
+                    className="mr-2 h-8 px-3 flex-row items-center justify-center rounded-lg bg-black/5 dark:bg-white/5 border border-black/10 dark:border-white/10"
+                  >
+                    {isCurrentLoading && (
+                      <ActivityIndicator
+                        size="small"
+                        color={themeColorForeground}
+                        className="mr-1.5"
+                      />
+                    )}
+                    <StyledText className="text-[13px] font-medium text-default-700 dark:text-default-300">
+                      {name}
+                    </StyledText>
+                  </StyledTouchableOpacity>
+                );
+              })}
             </StyledScrollView>
           </StyledView>
         ) : null}
@@ -911,6 +934,8 @@ export default function Home() {
             setSelectedPlaylist(p);
             artistSheetRef.current?.present();
           }}
+          loadingPlaylistId={selectedPlaylist?.uuid || selectedPlaylist?.id}
+          isPlaylistLoading={isPlaylistLoading}
         />
       ) : isLoading ? (
         <StyledView className="flex-1 justify-center items-center">
@@ -1096,13 +1121,28 @@ export default function Home() {
                                       setSelectedPlaylist(null);
                                       setSelectedArtist(artist);
                                     }}
+                                    disabled={
+                                      isArtistLoading &&
+                                      String(selectedArtist?.id) ===
+                                        String(artist.id)
+                                    }
                                   >
-                                    <View className="w-16 h-16 rounded-full overflow-hidden bg-content3 mb-1">
+                                    <View className="w-16 h-16 rounded-full overflow-hidden bg-content3 mb-1 relative">
                                       <Image
                                         source={{ uri: resolveArtwork(artist) }}
                                         className="w-full h-full"
                                         resizeMode="cover"
                                       />
+                                      {isArtistLoading &&
+                                        String(selectedArtist?.id) ===
+                                          String(artist.id) && (
+                                          <View className="absolute inset-0 bg-black/40 items-center justify-center">
+                                            <ActivityIndicator
+                                              color="#fff"
+                                              size="small"
+                                            />
+                                          </View>
+                                        )}
                                     </View>
                                     <Text
                                       className="text-xs text-foreground text-center"
@@ -1249,13 +1289,27 @@ export default function Home() {
                           onPress={() => {
                             setSelectedAlbum(album);
                           }}
+                          disabled={
+                            isAlbumLoading &&
+                            String(selectedAlbum?.id) === String(album.id)
+                          }
                         >
-                          <View className="w-32 h-32 rounded-lg overflow-hidden bg-content3 mb-2 shadow-sm">
+                          <View className="w-32 h-32 rounded-lg overflow-hidden bg-content3 mb-2 shadow-sm relative">
                             <Image
                               source={{ uri: resolveArtwork(album) }}
                               className="w-full h-full"
                               resizeMode="cover"
                             />
+                            {isAlbumLoading &&
+                              String(selectedAlbum?.id) ===
+                                String(album.id) && (
+                                <View className="absolute inset-0 bg-black/40 items-center justify-center">
+                                  <ActivityIndicator
+                                    color="#fff"
+                                    size="small"
+                                  />
+                                </View>
+                              )}
                           </View>
                           <Text
                             className="text-foreground font-medium text-sm"

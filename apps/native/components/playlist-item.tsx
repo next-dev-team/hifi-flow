@@ -1,6 +1,6 @@
 import { Card } from "heroui-native";
 import type React from "react";
-import { Image, Text, TouchableOpacity, View } from "react-native";
+import { Image, Text, TouchableOpacity, View, ActivityIndicator } from "react-native";
 
 export interface Playlist {
   id: string;
@@ -13,23 +13,31 @@ export interface Playlist {
 interface PlaylistItemProps {
   playlist: Playlist;
   onPress?: () => void;
+  isLoading?: boolean;
 }
 
-export const PlaylistItem: React.FC<PlaylistItemProps> = ({ playlist, onPress }) => {
+export const PlaylistItem: React.FC<PlaylistItemProps> = ({ playlist, onPress, isLoading }) => {
   return (
-    <TouchableOpacity onPress={onPress}>
+    <TouchableOpacity onPress={onPress} disabled={isLoading}>
       <Card className="flex-row items-center p-3 mb-2 bg-content2 border-none shadow-sm">
-        {playlist.artwork ? (
-          <Image
-            source={{ uri: playlist.artwork }}
-            className="w-14 h-14 rounded-md mr-4"
-            resizeMode="cover"
-          />
-        ) : (
-          <View className="w-14 h-14 rounded-md mr-4 bg-default-300 items-center justify-center">
-            <Text className="text-xl">📜</Text>
-          </View>
-        )}
+        <View className="relative mr-4">
+          {playlist.artwork ? (
+            <Image
+              source={{ uri: playlist.artwork }}
+              className="w-14 h-14 rounded-md"
+              resizeMode="cover"
+            />
+          ) : (
+            <View className="w-14 h-14 rounded-md bg-default-300 items-center justify-center">
+              <Text className="text-xl">📜</Text>
+            </View>
+          )}
+          {isLoading && (
+            <View className="absolute inset-0 bg-black/40 items-center justify-center rounded-md">
+              <ActivityIndicator color="#fff" size="small" />
+            </View>
+          )}
+        </View>
         <View className="flex-1 justify-center">
           <Text
             className="font-semibold text-base text-foreground"

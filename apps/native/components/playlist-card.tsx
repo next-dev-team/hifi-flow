@@ -1,17 +1,18 @@
 import { Card } from "heroui-native";
 import type React from "react";
-import { Image, Text, TouchableOpacity, View } from "react-native";
+import { Image, Text, TouchableOpacity, View, ActivityIndicator } from "react-native";
 import type { Playlist } from "./playlist-item";
 
 interface PlaylistCardProps {
   playlist: Playlist;
   onPress?: () => void;
+  isLoading?: boolean;
 }
 
-export const PlaylistCard: React.FC<PlaylistCardProps> = ({ playlist, onPress }) => {
+export const PlaylistCard: React.FC<PlaylistCardProps> = ({ playlist, onPress, isLoading }) => {
   return (
-    <TouchableOpacity onPress={onPress} className="mr-4 w-32">
-      <View className="w-32 h-32 rounded-xl overflow-hidden mb-2 bg-black/5 dark:bg-white/5 border border-black/10 dark:border-white/10 items-center justify-center">
+    <TouchableOpacity onPress={onPress} className="mr-4 w-32" disabled={isLoading}>
+      <View className="w-32 h-32 rounded-xl overflow-hidden mb-2 bg-black/5 dark:bg-white/5 border border-black/10 dark:border-white/10 items-center justify-center relative">
         {playlist.artwork ? (
           <Image
             source={{ uri: playlist.artwork }}
@@ -20,6 +21,11 @@ export const PlaylistCard: React.FC<PlaylistCardProps> = ({ playlist, onPress })
           />
         ) : (
           <Text className="text-3xl">📜</Text>
+        )}
+        {isLoading && (
+          <View className="absolute inset-0 bg-black/40 items-center justify-center">
+            <ActivityIndicator color="#fff" size="small" />
+          </View>
         )}
       </View>
       <View className="px-1">

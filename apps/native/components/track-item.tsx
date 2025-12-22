@@ -24,6 +24,7 @@ export interface TrackItemProps {
   onPress?: () => void;
   onLongPress?: () => void;
   onRemove?: () => void;
+  isLoading?: boolean;
 }
 
 export const TrackItem: React.FC<TrackItemProps> = ({
@@ -31,6 +32,7 @@ export const TrackItem: React.FC<TrackItemProps> = ({
   onPress,
   onLongPress,
   onRemove,
+  isLoading: propLoading,
 }) => {
   const {
     playTrack,
@@ -41,7 +43,8 @@ export const TrackItem: React.FC<TrackItemProps> = ({
     resumeTrack,
   } = usePlayer();
 
-  const isLoading = loadingTrackId === String(track.id);
+  const isPlayerLoading = loadingTrackId === String(track.id);
+  const isLoading = propLoading || isPlayerLoading;
   const isActive = currentTrack?.id === String(track.id);
 
   const handlePress = () => {

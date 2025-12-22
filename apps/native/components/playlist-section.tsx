@@ -10,12 +10,16 @@ interface PlaylistSectionProps {
   title: string;
   query: string;
   onSelect: (playlist: Playlist) => void;
+  loadingPlaylistId?: string | null;
+  isPlaylistLoading?: boolean;
 }
 
 export const PlaylistSection: React.FC<PlaylistSectionProps> = ({
   title,
   query,
   onSelect,
+  loadingPlaylistId,
+  isPlaylistLoading,
 }) => {
   const { data, isLoading } = useSearchSearchGet({ p: query });
 
@@ -35,7 +39,7 @@ export const PlaylistSection: React.FC<PlaylistSectionProps> = ({
     if (!items) return [];
 
     return items.map((item, index): Playlist => {
-      const id = item.id || `playlist-${index}`;
+      const id = item.id || item.uuid || `playlist-${index}`;
       return {
         id: String(id),
         title: item.title || "Unknown Playlist",
@@ -70,7 +74,12 @@ export const PlaylistSection: React.FC<PlaylistSectionProps> = ({
         contentContainerStyle={{ paddingHorizontal: 16 }}
       >
         {playlists.map((p) => (
-          <PlaylistCard key={p.id} playlist={p} onPress={() => onSelect(p)} />
+          <PlaylistCard
+            key={p.id}
+            playlist={p}
+            onPress={() => onSelect(p)}
+            isLoading={isPlaylistLoading && String(loadingPlaylistId) === String(p.id)}
+          />
         ))}
       </ScrollView>
     </View>

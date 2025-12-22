@@ -196,6 +196,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
   const sleepTimerIntervalRef = useRef<ReturnType<typeof setInterval> | null>(
     null
   );
+  const playNextRef = useRef<() => Promise<void>>(async () => {});
 
   const clearSleepTimerHandles = useCallback(() => {
     if (sleepTimerTimeoutRef.current) {
@@ -294,6 +295,38 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
     []
   );
 
+  // Helper to prevent infinite loops when all tracks are failing
+  const failureCountRef = useRef(0);
+  const lastFailureTimeRef = useRef(0);
+
+  const handlePlaybackError = useCallback(async () => {
+    const now = Date.now();
+    // Reset counter if last failure was more than 10 seconds ago
+    if (now - lastFailureTimeRef.current > 10000) {
+      failureCountRef.current = 0;
+    }
+
+    failureCountRef.current += 1;
+    lastFailureTimeRef.current = now;
+
+    if (failureCountRef.current > 5) {
+      showToast({
+        message: "Too many playback errors, stopping.",
+        type: "error",
+      });
+      setLoadingTrackId(null);
+      failureCountRef.current = 0;
+      return;
+    }
+
+    console.warn("Playback failed, trying next track...");
+    showToast({ message: "Playback failed, skipping...", type: "info" });
+
+    // Slight delay to prevent rapid-fire skipping
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    await playNextRef.current();
+  }, [showToast]);
+
   const playSound = useCallback(
     async (track: Track) => {
       setLoadingTrackId(String(track.id));
@@ -321,6 +354,9 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
         newPlayer.play();
         setLoadingTrackId(null);
 
+        // Reset failure count on success
+        failureCountRef.current = 0;
+
         // Remove from preloaded map as we are using it
         preloadedPlayersRef.current.delete(String(track.id));
         return;
@@ -329,8 +365,8 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
       // If not preloaded, fetch and play
       const streamUrl = await getStreamUrlForTrack(track, quality);
       if (!streamUrl) {
-        setLoadingTrackId(null);
-        showToast({ message: "Stream URL not found", type: "error" });
+        console.warn(`No stream URL for track ${track.id}, skipping.`);
+        await handlePlaybackError();
         return;
       }
 
@@ -345,15 +381,24 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
         setCurrentStreamUrl(streamUrl);
         newPlayer.play();
 
+        // Reset failure count on success
+        failureCountRef.current = 0;
+
         void addToRecentlyPlayed(track, streamUrl);
       } catch (error) {
         console.error("Playback failed", error);
-        showToast({ message: "Playback failed", type: "error" });
+        await handlePlaybackError();
       } finally {
         setLoadingTrackId(null);
       }
     },
-    [volume, quality, getStreamUrlForTrack, showToast, addToRecentlyPlayed]
+    [
+      volume,
+      quality,
+      getStreamUrlForTrack,
+      addToRecentlyPlayed,
+      handlePlaybackError,
+    ]
   );
 
   // Preloading Logic
@@ -535,6 +580,11 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
       await playSound(nextTrack);
     }
   }, [currentTrack, queue, shuffleEnabled, repeatMode, playSound]);
+
+  // Update playNextRef whenever playNext changes
+  useEffect(() => {
+    playNextRef.current = playNext;
+  }, [playNext]);
 
   const playPrevious = useCallback(async () => {
     if (!currentTrack || queue.length === 0) return;
