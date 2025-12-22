@@ -5,17 +5,23 @@ import {
   useContext,
   useEffect,
   useMemo,
-  useState,
 } from "react";
+import { useColorScheme } from "react-native";
 import { Uniwind } from "uniwind";
+import { usePersistentState } from "@/hooks/use-persistent-state";
 
+type ThemeMode = "light" | "dark" | "auto";
 type ThemeName = "light" | "dark";
 
+const THEME_STORAGE_KEY = "app_theme_mode";
+
 type AppThemeContextType = {
-  currentTheme: string;
+  currentTheme: ThemeName;
+  themeMode: ThemeMode;
   isLight: boolean;
   isDark: boolean;
-  setTheme: (theme: ThemeName) => void;
+  isAuto: boolean;
+  setTheme: (theme: ThemeMode) => void;
   toggleTheme: () => void;
 };
 
@@ -28,29 +34,58 @@ export const AppThemeProvider = ({
 }: {
   children: React.ReactNode;
 }) => {
-  const [currentTheme, setCurrentTheme] = useState<ThemeName>("light");
+  const systemColorScheme = useColorScheme();
+  const [themeMode, setThemeMode, isLoaded] = usePersistentState<ThemeMode>(
+    THEME_STORAGE_KEY,
+    "auto"
+  );
 
+  // Compute actual theme based on mode
+  const currentTheme: ThemeName = useMemo(() => {
+    if (themeMode === "auto") {
+      return systemColorScheme === "dark" ? "dark" : "light";
+    }
+    return themeMode;
+  }, [themeMode, systemColorScheme]);
+
+  // Apply theme to Uniwind when it changes
   useEffect(() => {
-    Uniwind.setTheme(currentTheme);
-  }, [currentTheme]);
+    if (isLoaded) {
+      Uniwind.setTheme(currentTheme);
+    }
+  }, [currentTheme, isLoaded]);
 
-  const setTheme = useCallback((newTheme: ThemeName) => {
-    setCurrentTheme(newTheme);
-  }, []);
+  const setTheme = useCallback(
+    (newMode: ThemeMode) => {
+      setThemeMode(newMode);
+    },
+    [setThemeMode]
+  );
 
   const toggleTheme = useCallback(() => {
-    setCurrentTheme((prev) => (prev === "light" ? "dark" : "light"));
-  }, []);
+    setThemeMode((prev) => {
+      // Cycle: auto -> light -> dark -> auto
+      if (prev === "auto") {
+        return "light";
+      } else if (prev === "light") {
+        return "dark";
+      } else {
+        return "auto";
+      }
+    });
+  }, [setThemeMode]);
 
   const value = useMemo(
     () => ({
       currentTheme,
+      themeMode,
       isLight: currentTheme === "light",
       isDark: currentTheme === "dark",
+      isAuto: themeMode === "auto",
       setTheme,
       toggleTheme,
     }),
-    [currentTheme, setTheme, toggleTheme]
+    [currentTheme, themeMode, setTheme, toggleTheme]
   );
 
   return (

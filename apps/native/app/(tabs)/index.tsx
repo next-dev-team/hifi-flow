@@ -493,25 +493,6 @@ export default function Home() {
     popularity?: number;
   };
 
-  type SearchResponse =
-    | SearchResultItem[]
-    | {
-        data?: {
-          items?: SearchResultItem[];
-          results?: SearchResultItem[];
-          tracks?: { items?: SearchResultItem[] };
-          artists?: { items?: SearchResultItem[] };
-          albums?: { items?: SearchResultItem[] };
-          playlists?: { items?: SearchResultItem[] };
-        };
-        items?: SearchResultItem[];
-        results?: SearchResultItem[];
-        tracks?: { items?: SearchResultItem[] };
-        artists?: { items?: SearchResultItem[] };
-        albums?: { items?: SearchResultItem[] };
-        playlists?: { items?: SearchResultItem[] };
-      };
-
   const filters: { key: SearchFilter; label: string }[] = [
     { key: "songs", label: speechLang === "en-US" ? "Songs" : "បទចម្រៀង" },
     { key: "artists", label: speechLang === "en-US" ? "Artists" : "សិល្បករ" },
@@ -873,7 +854,7 @@ export default function Home() {
                         className="mr-1.5"
                       />
                     )}
-                    <StyledText className="text-[13px] font-medium text-default-700 dark:text-default-300">
+                    <StyledText className="text-[13px] font-medium text-default-700 dark:text-white">
                       {name}
                     </StyledText>
                   </StyledTouchableOpacity>
@@ -915,7 +896,7 @@ export default function Home() {
                     className={`text-[13px] font-semibold ${
                       isActive
                         ? "text-background"
-                        : "text-default-600 dark:text-default-400"
+                        : "text-default-600 dark:text-white"
                     }`}
                   >
                     {f.label}
@@ -925,7 +906,6 @@ export default function Home() {
             })}
           </StyledScrollView>
         </StyledView>
-        <ApiDebug title="Home search" data={data} error={error} />
       </StyledView>
 
       {filter === "playlists" && !query ? (

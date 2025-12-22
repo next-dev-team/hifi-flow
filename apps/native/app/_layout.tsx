@@ -1,7 +1,7 @@
 import "@/global.css";
 
 import { BottomSheetModalProvider } from "@gorhom/bottom-sheet";
-import { PortalHost, PortalProvider } from "@gorhom/portal";
+import { PortalProvider } from "@gorhom/portal";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Stack } from "expo-router";
 import { HeroUINativeProvider } from "heroui-native";
@@ -61,7 +61,6 @@ export default function Layout() {
                         <View style={appShellStyle}>
                           <StackLayout />
                           <PlayerBar />
-                          <PortalHost name="PlayerBarHost" />
                         </View>
                         <ToastContainer />
                       </View>
