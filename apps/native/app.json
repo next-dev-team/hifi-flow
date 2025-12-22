@@ -17,7 +17,12 @@
     "slug": "hifi-flow",
     "plugins": [
       "expo-font",
-      "expo-audio",
+      [
+        "expo-audio",
+        {
+          "microphonePermission": "Allow HiFi Flow to use the microphone for voice search."
+        }
+      ],
       "@siteed/expo-audio-studio",
       [
         "expo-speech-recognition",
@@ -36,10 +41,7 @@
     },
     "ios": {
       "infoPlist": {
-        "UIBackgroundModes": [
-          "audio",
-          "audio"
-        ],
+        "UIBackgroundModes": ["audio"],
         "NSSpeechRecognitionUsageDescription": "Allow HiFi Flow to use speech recognition to find your music.",
         "NSMicrophoneUsageDescription": "Allow HiFi Flow to use the microphone for voice search.",
         "ITSAppUsesNonExemptEncryption": false
@@ -49,7 +51,9 @@
     "android": {
       "permissions": [
         "android.permission.RECORD_AUDIO",
-        "android.permission.MODIFY_AUDIO_SETTINGS"
+        "android.permission.MODIFY_AUDIO_SETTINGS",
+        "android.permission.FOREGROUND_SERVICE",
+        "android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK"
       ],
       "package": "com.nextdevkh.hififlow",
       "adaptiveIcon": {

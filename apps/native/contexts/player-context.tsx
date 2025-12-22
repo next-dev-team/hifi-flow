@@ -21,6 +21,7 @@ import {
 import { Platform } from "react-native";
 import { useToast } from "@/contexts/toast-context";
 import { losslessAPI } from "@/utils/api";
+import { mediaSessionService } from "@/utils/media-session";
 import type { AudioQuality as ApiAudioQuality } from "@/utils/types";
 
 type AudioQuality = ApiAudioQuality;
@@ -175,6 +176,8 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
   const [sleepTimerEndsAt, setSleepTimerEndsAt] = useState<number | null>(null);
   const [sleepTimerRemainingMs, setSleepTimerRemainingMs] = useState(0);
   const [loadingTrackId, setLoadingTrackId] = useState<string | null>(null);
+  // Track if playback has started (to defer preloading)
+  const playbackStartedRef = useRef(false);
   const { showToast } = useToast();
 
   const setQuality = useCallback((newQuality: AudioQuality) => {
@@ -187,6 +190,11 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
   const preloadedPlayersRef = useRef<
     Map<string, { player: AudioPlayer; url: string; trackId: string }>
   >(new Map());
+  // Cache stream URLs to avoid redundant API calls
+  const streamUrlCacheRef = useRef<
+    Map<string, { url: string; timestamp: number }>
+  >(new Map());
+  const STREAM_URL_CACHE_TTL = 30 * 60 * 1000; // 30 minutes
   const shuffleHistoryRef = useRef<number[]>([]);
   const plannedShuffleIndicesRef = useRef<number[]>([]);
 
@@ -217,16 +225,40 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
     plannedShuffleIndicesRef.current = [];
   }, []);
 
+  // Clean up expired cache entries periodically
+  const cleanStreamUrlCache = useCallback(() => {
+    const now = Date.now();
+    for (const [key, value] of streamUrlCacheRef.current.entries()) {
+      if (now - value.timestamp > STREAM_URL_CACHE_TTL) {
+        streamUrlCacheRef.current.delete(key);
+      }
+    }
+  }, []);
+
   const getStreamUrlForTrack = useCallback(
     async (track: Track, currentQuality: AudioQuality) => {
+      const trackIdStr = String(track.id);
       const trackId = Number(track.id);
+      const cacheKey = `${trackIdStr}:${currentQuality}`;
+
+      // Check cache first
+      const cached = streamUrlCacheRef.current.get(cacheKey);
+      if (cached && Date.now() - cached.timestamp < STREAM_URL_CACHE_TTL) {
+        return cached.url;
+      }
+
       let streamUrl: string | null = null;
 
       const savedTrack =
-        recentlyPlayed.find((t) => String(t.id) === String(track.id)) ||
-        favorites.find((t) => String(t.id) === String(track.id));
+        recentlyPlayed.find((t) => String(t.id) === trackIdStr) ||
+        favorites.find((t) => String(t.id) === trackIdStr);
 
       if (savedTrack?.streamUrl) {
+        // Cache the saved URL too
+        streamUrlCacheRef.current.set(cacheKey, {
+          url: savedTrack.streamUrl,
+          timestamp: Date.now(),
+        });
         return savedTrack.streamUrl;
       }
 
@@ -240,6 +272,14 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
 
       if (!streamUrl && track.url) {
         streamUrl = track.url;
+      }
+
+      // Cache the result
+      if (streamUrl) {
+        streamUrlCacheRef.current.set(cacheKey, {
+          url: streamUrl,
+          timestamp: Date.now(),
+        });
       }
 
       return streamUrl;
@@ -327,8 +367,22 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
     await playNextRef.current();
   }, [showToast]);
 
+  // Determine fast-start quality (avoids multiple API calls for HI_RES_LOSSLESS)
+  const getFastStartQuality = useCallback(
+    (requestedQuality: AudioQuality): AudioQuality => {
+      // For first track, use LOSSLESS to avoid DASH manifest resolution which adds latency
+      // HI_RES_LOSSLESS requires: getTrack -> getDashManifest -> parse
+      // LOSSLESS requires: getTrack -> extractManifest (single call)
+      if (requestedQuality === "HI_RES_LOSSLESS") {
+        return "LOSSLESS";
+      }
+      return requestedQuality;
+    },
+    []
+  );
+
   const playSound = useCallback(
-    async (track: Track) => {
+    async (track: Track, useFastStart = false) => {
       setLoadingTrackId(String(track.id));
 
       // Stop current player
@@ -357,13 +411,20 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
         // Reset failure count on success
         failureCountRef.current = 0;
 
+        // Mark playback as started - preloading can now begin
+        playbackStartedRef.current = true;
+
         // Remove from preloaded map as we are using it
         preloadedPlayersRef.current.delete(String(track.id));
         return;
       }
 
       // If not preloaded, fetch and play
-      const streamUrl = await getStreamUrlForTrack(track, quality);
+      // Use fast-start quality if requested to reduce latency
+      const effectiveQuality = useFastStart
+        ? getFastStartQuality(quality)
+        : quality;
+      const streamUrl = await getStreamUrlForTrack(track, effectiveQuality);
       if (!streamUrl) {
         console.warn(`No stream URL for track ${track.id}, skipping.`);
         await handlePlaybackError();
@@ -381,6 +442,9 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
         setCurrentStreamUrl(streamUrl);
         newPlayer.play();
 
+        // Mark playback as started - preloading can now begin
+        playbackStartedRef.current = true;
+
         // Reset failure count on success
         failureCountRef.current = 0;
 
@@ -395,6 +459,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
     [
       volume,
       quality,
+      getFastStartQuality,
       getStreamUrlForTrack,
       addToRecentlyPlayed,
       handlePlaybackError,
@@ -476,8 +541,8 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
       }
     }
 
-    // 2. Add new players
-    for (const track of tracksToPreload) {
+    // 2. Add new players - preload in parallel for faster loading
+    const preloadPromises = tracksToPreload.map(async (track) => {
       const id = String(track.id);
       if (!preloadedPlayersRef.current.has(id)) {
         const url = await getStreamUrlForTrack(track, quality);
@@ -490,7 +555,10 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
           preloadedPlayersRef.current.set(id, { player, url, trackId: id });
         }
       }
-    }
+    });
+
+    // Run all preloads in parallel
+    await Promise.allSettled(preloadPromises);
   }, [
     currentTrack,
     queue,
@@ -500,12 +568,44 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
     getStreamUrlForTrack,
   ]);
 
-  // Trigger preloading
+  // Trigger preloading - only after playback has started to not steal bandwidth from first track
   useEffect(() => {
-    if (isPlaying || isLoading) {
-      void preloadNextTracks();
+    if (
+      currentTrack &&
+      queue.length > 0 &&
+      isPlaying &&
+      playbackStartedRef.current
+    ) {
+      // Delay preloading slightly to ensure first track has buffered enough
+      const timer = setTimeout(() => {
+        void preloadNextTracks();
+      }, 2000); // Wait 2 seconds after playback starts
+      return () => clearTimeout(timer);
     }
-  }, [isPlaying, isLoading, preloadNextTracks]);
+  }, [currentTrack, queue, isPlaying, preloadNextTracks]);
+
+  // Clean up stream URL cache periodically
+  useEffect(() => {
+    const interval = setInterval(cleanStreamUrlCache, 5 * 60 * 1000); // Every 5 minutes
+    return () => clearInterval(interval);
+  }, [cleanStreamUrlCache]);
+
+  // Pre-fetch stream URLs for first few tracks in parallel when queue is set
+  const prefetchQueueStreamUrls = useCallback(
+    async (tracks: Track[], startIndex: number) => {
+      // Prefetch URLs for the first track + next 2 tracks
+      const prefetchIndices = [
+        startIndex,
+        startIndex + 1,
+        startIndex + 2,
+      ].filter((i) => i >= 0 && i < tracks.length);
+
+      await Promise.allSettled(
+        prefetchIndices.map((i) => getStreamUrlForTrack(tracks[i], quality))
+      );
+    },
+    [getStreamUrlForTrack, quality]
+  );
 
   const playQueue = useCallback(
     async (tracks: Track[], startIndex = 0) => {
@@ -513,11 +613,15 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
       // Reset shuffle history when new queue starts
       shuffleHistoryRef.current = [];
       plannedShuffleIndicesRef.current = [];
+      // Reset playback started flag - defer preloading until this track plays
+      playbackStartedRef.current = false;
 
       const startTrack = tracks[startIndex] ?? tracks[0];
       if (startTrack) {
         setCurrentTrack(startTrack);
-        await playSound(startTrack);
+        // DON'T prefetch here - let first track get all bandwidth
+        // Use fast-start mode for first track (uses LOSSLESS to avoid DASH manifest calls)
+        await playSound(startTrack, true);
       }
     },
     [playSound]
@@ -529,7 +633,9 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
       setCurrentTrack(track);
       shuffleHistoryRef.current = [];
       plannedShuffleIndicesRef.current = [];
-      await playSound(track);
+      playbackStartedRef.current = false;
+      // Use fast-start mode for faster initial playback
+      await playSound(track, true);
     },
     [playSound]
   );
@@ -645,6 +751,60 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
       }
     }
   }, [status?.didJustFinish, repeatMode, playNext]);
+
+  // Media session integration for lock screen and notification controls
+  useEffect(() => {
+    mediaSessionService.setHandlers({
+      onPlay: () => playerRef.current?.play(),
+      onPause: () => playerRef.current?.pause(),
+      onStop: () => {
+        playerRef.current?.pause();
+        playerRef.current?.seekTo(0);
+      },
+      onNextTrack: () => void playNext(),
+      onPreviousTrack: () => void playPrevious(),
+      onSeekTo: (positionMs) => playerRef.current?.seekTo(positionMs / 1000),
+      onSeekForward: (offsetMs) => {
+        if (playerRef.current) {
+          playerRef.current.seekTo(
+            playerRef.current.currentTime + offsetMs / 1000
+          );
+        }
+      },
+      onSeekBackward: (offsetMs) => {
+        if (playerRef.current) {
+          playerRef.current.seekTo(
+            Math.max(0, playerRef.current.currentTime - offsetMs / 1000)
+          );
+        }
+      },
+    });
+  }, [playNext, playPrevious]);
+
+  // Update media session track metadata when current track changes
+  useEffect(() => {
+    if (currentTrack) {
+      mediaSessionService.updateTrack({
+        id: String(currentTrack.id),
+        title: currentTrack.title,
+        artist: currentTrack.artist,
+        artwork: currentTrack.artwork,
+        duration: currentTrack.duration,
+      });
+    } else {
+      mediaSessionService.clear();
+    }
+  }, [currentTrack]);
+
+  // Update media session playback state
+  useEffect(() => {
+    mediaSessionService.updatePlaybackState({
+      isPlaying,
+      positionMs: positionMillis,
+      durationMs: durationMillis,
+      playbackRate: 1.0,
+    });
+  }, [isPlaying, positionMillis, durationMillis]);
 
   // ... Rest of the context methods (toggleShuffle, cycleRepeatMode, etc) ...
   // Need to implement the rest of the file logic like persistence etc.
