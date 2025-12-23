@@ -19,8 +19,8 @@ import {
   useState,
 } from "react";
 import { Platform } from "react-native";
-import { usePersistentState } from "@/hooks/use-persistent-state";
 import { useToast } from "@/contexts/toast-context";
+import { usePersistentState } from "@/hooks/use-persistent-state";
 import { losslessAPI } from "@/utils/api";
 import { mediaSessionService } from "@/utils/media-session";
 import type { AudioQuality as ApiAudioQuality } from "@/utils/types";
@@ -250,7 +250,6 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
         setStatus(newStatus);
       }
     );
-    return () => subscription.remove();
     return () => subscription.remove();
   }, [player]);
 
@@ -1031,6 +1030,11 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
   }, [cleanStreamUrlCache]);
 
   // ==================== Media Session Integration ====================
+  // Update media session player reference for native lock screen controls
+  useEffect(() => {
+    mediaSessionService.setPlayer(player);
+  }, [player]);
+
   useEffect(() => {
     mediaSessionService.setHandlers({
       onPlay: () => activePlayerRef.current?.play(),
@@ -1337,14 +1341,14 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
       }, 1000);
 
       sleepTimerTimeoutRef.current = setTimeout(() => {
-        void unloadSound();
+        void pauseTrack();
         clearSleepTimerHandles();
         setSleepTimerEndsAt(null);
         setSleepTimerRemainingMs(0);
         void writePersistentValue(SLEEP_TIMER_KEY, "");
       }, ms);
     },
-    [clearSleepTimerHandles, unloadSound]
+    [clearSleepTimerHandles, pauseTrack]
   );
 
   const cancelSleepTimer = useCallback(() => {

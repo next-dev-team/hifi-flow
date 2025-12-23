@@ -413,6 +413,11 @@ export default function Home() {
             genre: "unknown",
             era: "1960",
           },
+          {
+            name: "Keo veasna",
+            genre: "unknown",
+            era: "2000s",
+          },
         ] as SuggestedArtist[];
         if (!Array.isArray(response)) {
           return df;
@@ -429,7 +434,7 @@ export default function Home() {
     if (!suggestedArtists || suggestedArtists.length === 0) return [];
 
     // Mock artists are the first 3 in the current implementation of queryFn
-    const mockNames = ["Vannda", "Tep piseth", "Sin Sisamut"];
+    const mockNames = ["Vannda", "Tep piseth", "Sin Sisamut", "Keo veasna"];
 
     const allNames = suggestedArtists
       .map((entry) =>

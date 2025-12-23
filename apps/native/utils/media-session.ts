@@ -13,6 +13,7 @@
  */
 
 import { Platform } from "react-native";
+import type { AudioPlayer, AudioMetadata } from "expo-audio";
 
 export interface MediaSessionTrack {
   id: string;
@@ -50,6 +51,21 @@ class MediaSessionService {
     durationMs: 0,
     playbackRate: 1.0,
   };
+  private player: AudioPlayer | null = null;
+
+  /**
+   * Set the AudioPlayer instance for native lock screen controls (Expo Audio)
+   */
+  setPlayer(player: AudioPlayer | null) {
+    this.player = player;
+    if (this.player && Platform.OS !== "web") {
+      // Enable lock screen controls
+      this.player.setActiveForLockScreen(true, undefined, {
+        showSeekBackward: true,
+        showSeekForward: true,
+      });
+    }
+  }
 
   /**
    * Check if Media Session API is available (Web only)
@@ -145,6 +161,17 @@ class MediaSessionService {
         artwork,
       });
     }
+
+    // Native support (Expo Audio)
+    if (this.player && Platform.OS !== "web") {
+      const metadata: AudioMetadata = {
+        title: track.title,
+        artist: track.artist,
+        albumTitle: track.album,
+        artworkUrl: track.artwork,
+      };
+      this.player.updateLockScreenMetadata(metadata);
+    }
   }
 
   /**
@@ -189,6 +216,10 @@ class MediaSessionService {
     if (this.isMediaSessionAvailable()) {
       navigator.mediaSession.metadata = null;
       navigator.mediaSession.playbackState = "none";
+    }
+
+    if (this.player && Platform.OS !== "web") {
+      this.player.setActiveForLockScreen(false);
     }
   }
 
