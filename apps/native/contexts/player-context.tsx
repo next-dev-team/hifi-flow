@@ -140,20 +140,58 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
   const [player, setPlayer] = useState<AudioPlayer | null>(null);
   const [status, setStatus] = useState<AudioStatus | null>(null);
 
-  // Status listener
+  // Track last known position for stuck detection
+  const lastPositionRef = useRef<{ position: number; timestamp: number } | null>(null);
+  const stuckCheckIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const STUCK_THRESHOLD_MS = 10000; // 10 seconds without progress = stuck
+  
+  // Ref to hold error handler to avoid initialization order issues
+  const handlePlaybackErrorRef = useRef<(reason?: string) => Promise<void>>(async () => {});
+
+  // Status listener with error detection
   useEffect(() => {
     if (!player) {
       setStatus(null);
+      lastPositionRef.current = null;
       return;
     }
     setStatus(player.currentStatus);
-    const subscription = player.addListener(
+    
+    const statusSubscription = player.addListener(
       "playbackStatusUpdate",
       (newStatus) => {
         setStatus(newStatus);
+        
+        // Update last known position when playing
+        if (newStatus.playing && newStatus.currentTime != null) {
+          const currentPos = newStatus.currentTime;
+          const now = Date.now();
+          
+          if (lastPositionRef.current === null || 
+              Math.abs(currentPos - lastPositionRef.current.position) > 0.1) {
+            // Position changed, update tracking
+            lastPositionRef.current = { position: currentPos, timestamp: now };
+          }
+        }
       }
     );
-    return () => subscription.remove();
+    
+    // Try to add error listener if supported (expo-audio may support this)
+    let errorSubscription: { remove: () => void } | null = null;
+    try {
+      // @ts-expect-error - 'playbackError' event may or may not exist
+      errorSubscription = player.addListener("playbackError", (error: unknown) => {
+        console.error("Playback error event:", error);
+        void handlePlaybackErrorRef.current("Playback error");
+      });
+    } catch {
+      // Event not supported, that's ok - we have stuck detection as fallback
+    }
+    
+    return () => {
+      statusSubscription.remove();
+      errorSubscription?.remove();
+    };
   }, [player]);
 
   const isPlaying = status?.playing ?? false;
@@ -339,7 +377,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
   const failureCountRef = useRef(0);
   const lastFailureTimeRef = useRef(0);
 
-  const handlePlaybackError = useCallback(async () => {
+  const handlePlaybackError = useCallback(async (reason?: string) => {
     const now = Date.now();
     // Reset counter if last failure was more than 10 seconds ago
     if (now - lastFailureTimeRef.current > 10000) {
@@ -348,6 +386,9 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
 
     failureCountRef.current += 1;
     lastFailureTimeRef.current = now;
+
+    // Reset stuck detection
+    lastPositionRef.current = null;
 
     if (failureCountRef.current > 5) {
       showToast({
@@ -359,13 +400,75 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
       return;
     }
 
-    console.warn("Playback failed, trying next track...");
-    showToast({ message: "Playback failed, skipping...", type: "info" });
+    const message = reason || "Playback failed";
+    console.warn(`${message}, trying next track...`);
+    showToast({ message: `${message}, skipping...`, type: "info" });
 
     // Slight delay to prevent rapid-fire skipping
     await new Promise((resolve) => setTimeout(resolve, 500));
     await playNextRef.current();
   }, [showToast]);
+  
+  // Update the ref whenever handlePlaybackError changes
+  useEffect(() => {
+    handlePlaybackErrorRef.current = handlePlaybackError;
+  }, [handlePlaybackError]);
+  
+  // Stuck playback detection - check if player is stuck
+  useEffect(() => {
+    // Clear any existing interval
+    if (stuckCheckIntervalRef.current) {
+      clearInterval(stuckCheckIntervalRef.current);
+      stuckCheckIntervalRef.current = null;
+    }
+
+    // Only check when we have a current track and player
+    if (!currentTrack || !player) {
+      return;
+    }
+
+    stuckCheckIntervalRef.current = setInterval(() => {
+      // Only check if we're supposed to be playing
+      if (!status?.playing) {
+        return;
+      }
+
+      // Check if we're buffering for too long
+      if (status?.isBuffering) {
+        const lastPos = lastPositionRef.current;
+        if (lastPos) {
+          const timeSinceLastProgress = Date.now() - lastPos.timestamp;
+          if (timeSinceLastProgress > STUCK_THRESHOLD_MS) {
+            console.warn(`Playback stuck while buffering for ${timeSinceLastProgress}ms`);
+            void handlePlaybackErrorRef.current("Playback stuck");
+            return;
+          }
+        }
+      }
+
+      // Check if position hasn't changed while playing (not buffering)
+      const currentTime = status?.currentTime ?? 0;
+      const lastPos = lastPositionRef.current;
+      
+      if (lastPos && !status?.isBuffering) {
+        const positionDelta = Math.abs(currentTime - lastPos.position);
+        const timeDelta = Date.now() - lastPos.timestamp;
+        
+        // If position hasn't changed for threshold duration, consider it stuck
+        if (positionDelta < 0.1 && timeDelta > STUCK_THRESHOLD_MS) {
+          console.warn(`Playback stuck: position unchanged for ${timeDelta}ms`);
+          void handlePlaybackErrorRef.current("Playback stuck");
+        }
+      }
+    }, 2000); // Check every 2 seconds
+
+    return () => {
+      if (stuckCheckIntervalRef.current) {
+        clearInterval(stuckCheckIntervalRef.current);
+        stuckCheckIntervalRef.current = null;
+      }
+    };
+  }, [currentTrack, player, status?.playing, status?.isBuffering, status?.currentTime]);
 
   // Determine fast-start quality (avoids multiple API calls for HI_RES_LOSSLESS)
   const getFastStartQuality = useCallback(
@@ -384,6 +487,9 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
   const playSound = useCallback(
     async (track: Track, useFastStart = false) => {
       setLoadingTrackId(String(track.id));
+
+      // Reset stuck detection when starting new track
+      lastPositionRef.current = null;
 
       // Stop current player
       if (playerRef.current) {
@@ -405,17 +511,24 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
         setPlayer(newPlayer);
         newPlayer.volume = volume;
         setCurrentStreamUrl(preloaded.url);
-        newPlayer.play();
-        setLoadingTrackId(null);
+        
+        try {
+          newPlayer.play();
+          setLoadingTrackId(null);
 
-        // Reset failure count on success
-        failureCountRef.current = 0;
+          // Reset failure count on success
+          failureCountRef.current = 0;
 
-        // Mark playback as started - preloading can now begin
-        playbackStartedRef.current = true;
+          // Mark playback as started - preloading can now begin
+          playbackStartedRef.current = true;
 
-        // Remove from preloaded map as we are using it
-        preloadedPlayersRef.current.delete(String(track.id));
+          // Remove from preloaded map as we are using it
+          preloadedPlayersRef.current.delete(String(track.id));
+        } catch (error) {
+          console.error("Preloaded playback failed", error);
+          preloadedPlayersRef.current.delete(String(track.id));
+          await handlePlaybackError("Preloaded track failed");
+        }
         return;
       }
 
@@ -741,16 +854,44 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
   // Playback finish listener
   useEffect(() => {
     if (status?.didJustFinish) {
+      // Reset stuck detection on finish
+      lastPositionRef.current = null;
+      
       if (repeatMode === "one") {
         if (playerRef.current) {
           playerRef.current.seekTo(0);
           playerRef.current.play();
         }
       } else {
-        void playNext();
+        // Use playNextRef to ensure we always have the latest version
+        void playNextRef.current();
       }
     }
-  }, [status?.didJustFinish, repeatMode, playNext]);
+  }, [status?.didJustFinish, repeatMode]);
+  
+  // Additional safety: detect when playback stops unexpectedly (not finished, not paused by user)
+  const wasPlayingRef = useRef(false);
+  useEffect(() => {
+    const isCurrentlyPlaying = status?.playing ?? false;
+    const didJustFinish = status?.didJustFinish ?? false;
+    const isBuffering = status?.isBuffering ?? false;
+    
+    // If we were playing, now stopped, but didn't finish and not buffering - might be an error
+    if (wasPlayingRef.current && !isCurrentlyPlaying && !didJustFinish && !isBuffering) {
+      // Check if this is likely an error (duration exists but we're not near the end)
+      const duration = status?.duration ?? 0;
+      const currentTime = status?.currentTime ?? 0;
+      
+      // If we stopped but aren't near the end (more than 5 seconds remaining)
+      if (duration > 0 && (duration - currentTime) > 5) {
+        console.warn(`Playback stopped unexpectedly at ${currentTime}s of ${duration}s`);
+        // Don't immediately skip - give it a moment to see if it recovers
+        // The stuck detection will handle it if it doesn't resume
+      }
+    }
+    
+    wasPlayingRef.current = isCurrentlyPlaying;
+  }, [status?.playing, status?.didJustFinish, status?.isBuffering, status?.duration, status?.currentTime]);
 
   // Media session integration for lock screen and notification controls
   useEffect(() => {

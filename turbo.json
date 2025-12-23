@@ -17,6 +17,10 @@
       "cache": false,
       "persistent": true
     },
+    "dev:web": {
+      "cache": false,
+      "persistent": true
+    },
     "gen:api": {
       "dependsOn": ["^gen:api"]
     }

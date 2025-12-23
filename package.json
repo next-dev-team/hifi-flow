@@ -14,7 +14,7 @@
     "build": "turbo build",
     "check-types": "turbo check-types",
     "dev:native": "turbo -F native dev",
-    "dev:web": "turbo -F web dev"
+    "dev:web": "turbo -F native dev:web"
   },
   "dependencies": {
     "dotenv": "catalog:",
@@ -30,7 +30,7 @@
     "@kubb/react": "^4.3.1",
     "@kubb/react-fabric": "^0.5.5",
     "@turbo/gen": "^2.6.3",
-    "turbo": "^2.6.3",
+    "turbo": "^2.7.1",
     "typescript": "catalog:"
   },
   "pnpm": {
