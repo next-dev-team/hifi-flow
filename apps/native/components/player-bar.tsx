@@ -44,6 +44,7 @@ import {
 } from "@/components/queue-sheet";
 import { usePlayer } from "@/contexts/player-context";
 import { losslessAPI } from "@/utils/api";
+import { getSheetMargin, SHEET_MAX_WIDTH } from "@/utils/layout";
 import { resolveArtwork } from "@/utils/resolvers";
 
 const StyledBottomSheetView = withUniwind(BottomSheetView);
@@ -896,6 +897,9 @@ export const PlayerBar = () => {
   const [isSheetOpen, setIsSheetOpen] = useState(false);
   const [showVolume, setShowVolume] = useState(false);
   const [showSpectrumSelector, setShowSpectrumSelector] = useState(false);
+
+  // Desktop: calculate margin to center the sheet
+  const sheetMargin = getSheetMargin(screenWidth);
 
   // Queue sheet handlers
   const handleOpenQueue = useCallback(() => {
@@ -1796,6 +1800,9 @@ export const PlayerBar = () => {
         backdropComponent={renderBackdrop}
         backgroundComponent={renderBackground}
         animationConfigs={animationConfigs}
+        style={{
+          marginHorizontal: sheetMargin,
+        }}
         onChange={(index) => setIsSheetOpen(index >= 0)}
         onDismiss={() => setIsSheetOpen(false)}
         handleIndicatorStyle={{

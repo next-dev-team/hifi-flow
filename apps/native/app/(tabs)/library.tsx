@@ -167,7 +167,7 @@ export default function Library() {
                   title: item.title,
                   artist: item.artist,
                   artwork: item.artwork,
-                  url: item.streamUrl,
+                  url: item.streamUrl || "",
                 }}
                 onLongPress={handleRemove}
                 onRemove={handleRemove}

@@ -13,18 +13,24 @@ import {
   useImperativeHandle,
   useMemo,
   useRef,
+  useState,
 } from "react";
 import {
+  Alert,
   Animated,
   DeviceEventEmitter,
   Image,
   Platform,
+  ScrollView,
   Text,
+  TextInput,
   TouchableOpacity,
+  useWindowDimensions,
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { usePlayer, type PreBufferStatus } from "@/contexts/player-context";
+import { getSheetMargin, SHEET_MAX_WIDTH } from "@/utils/layout";
 import { resolveArtwork } from "@/utils/resolvers";
 
 export interface QueueSheetRef {
@@ -104,6 +110,7 @@ export const QueueSheet = forwardRef<QueueSheetRef, QueueSheetProps>(
   ({ onClose }, ref) => {
     const bottomSheetRef = useRef<BottomSheetModal>(null);
     const insets = useSafeAreaInsets();
+    const { width: screenWidth } = useWindowDimensions();
     const {
       queue,
       currentTrack,
@@ -111,9 +118,65 @@ export const QueueSheet = forwardRef<QueueSheetRef, QueueSheetProps>(
       playQueue,
       clearQueue,
       nextTrackBufferStatus,
+      favorites,
+      toggleFavorite,
+      toggleTracksFavorites,
     } = usePlayer();
 
-    const snapPoints = useMemo(() => ["60%", "90%"], []);
+    // Desktop: calculate margin to center the sheet
+    const sheetMargin = getSheetMargin(screenWidth);
+
+    const snapPoints = useMemo(() => ["85%"], []);
+
+    const [searchQuery, setSearchQuery] = useState("");
+    const [viewMode, setViewMode] = useState<"songs" | "artists">("songs");
+    const [artistFilter, setArtistFilter] = useState<string | null>(null);
+
+    // Filter queue based on search and view mode
+    const filteredQueue = useMemo(() => {
+      const lowerQuery = searchQuery.toLowerCase();
+
+      if (viewMode === "artists") {
+        // Get unique artists
+        const artists = Array.from(new Set(queue.map((t) => t.artist))).sort();
+        if (!searchQuery) return artists;
+        return artists.filter((a) => a.toLowerCase().includes(lowerQuery));
+      }
+
+      // Songs mode
+      return queue.filter((track) => {
+        // 1. apply artist filter if active
+        if (artistFilter && track.artist !== artistFilter) return false;
+
+        // 2. apply search query
+        if (!searchQuery) return true;
+
+        const matchesTitle = track.title.toLowerCase().includes(lowerQuery);
+        const matchesArtist = track.artist.toLowerCase().includes(lowerQuery);
+        return matchesTitle || matchesArtist;
+      });
+    }, [queue, searchQuery, viewMode, artistFilter]);
+
+    // Check if track is favorited
+    const isFavorited = useCallback(
+      (trackId: number | string) => {
+        return favorites.some((f) => String(f.id) === String(trackId));
+      },
+      [favorites]
+    );
+
+    // Handle clearing input when closed
+    useEffect(() => {
+      if (artistFilter && viewMode === "songs") {
+        // If we have an active filter, don't clear it on re-render unless explicitly cleared?
+        // Actually this useEffect runs on mount (empty deps).
+      }
+      return () => {
+        setSearchQuery("");
+        setViewMode("songs");
+        setArtistFilter(null);
+      };
+    }, []);
 
     const open = useCallback(() => {
       bottomSheetRef.current?.present();
@@ -150,9 +213,36 @@ export const QueueSheet = forwardRef<QueueSheetRef, QueueSheetProps>(
     );
 
     const handleClearQueue = useCallback(() => {
-      clearQueue();
-      close();
+      Alert.alert(
+        "Clear Queue",
+        "Are you sure you want to clear the entire queue?",
+        [
+          {
+            text: "Cancel",
+            style: "cancel",
+          },
+          {
+            text: "Clear All",
+            style: "destructive",
+            onPress: () => {
+              clearQueue();
+              close();
+            },
+          },
+        ]
+      );
     }, [clearQueue, close]);
+
+    // Check if all tracks in queue are favorited
+    const areAllFavorited = useMemo(() => {
+      if (queue.length === 0) return false;
+      const favIds = new Set(favorites.map((f) => String(f.id)));
+      return queue.every((t) => favIds.has(String(t.id)));
+    }, [queue, favorites]);
+
+    const handleToggleAllFavorites = useCallback(() => {
+      toggleTracksFavorites(queue);
+    }, [toggleTracksFavorites, queue]);
 
     // Determine the next track index
     const currentIndex = queue.findIndex(
@@ -161,15 +251,86 @@ export const QueueSheet = forwardRef<QueueSheetRef, QueueSheetProps>(
     const nextIndex =
       currentIndex >= 0 ? (currentIndex + 1) % queue.length : -1;
 
-    const renderItem = useCallback(
-      ({ item, index }: { item: any; index: number }) => {
-        const isActive = String(item.id) === String(currentTrack?.id);
-        const isNextTrack = index === nextIndex && queue.length > 1;
-        const artwork = resolveArtwork(item, "160");
+    // Render Artist Item
+    const renderArtistItem = useCallback(
+      (artistName: string) => {
+        // Find artwork from first track of this artist
+        const representativeTrack = queue.find((t) => t.artist === artistName);
+        const artwork = resolveArtwork(representativeTrack, "160");
+        const count = queue.filter((t) => t.artist === artistName).length;
 
         return (
           <TouchableOpacity
-            onPress={() => handleTrackPress(index)}
+            onPress={() => {
+              setArtistFilter(artistName);
+              setViewMode("songs");
+              setSearchQuery(""); // Clear search when drilling down
+            }}
+            style={{
+              flexDirection: "row",
+              alignItems: "center",
+              paddingVertical: 12,
+              paddingHorizontal: 16,
+            }}
+          >
+            <View
+              style={{
+                width: 48,
+                height: 48,
+                borderRadius: 24, // Circle for artist
+                overflow: "hidden",
+                marginRight: 12,
+                backgroundColor: "#333",
+                alignItems: "center",
+                justifyContent: "center",
+              }}
+            >
+              {artwork ? (
+                <Image
+                  source={{ uri: artwork }}
+                  style={{ width: "100%", height: "100%" }}
+                  resizeMode="cover"
+                />
+              ) : (
+                <Ionicons name="person" size={24} color="#666" />
+              )}
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text
+                style={{ color: "#fff", fontSize: 16, fontWeight: "500" }}
+                numberOfLines={1}
+              >
+                {artistName}
+              </Text>
+              <Text style={{ color: "rgba(255,255,255,0.6)", fontSize: 13 }}>
+                {count} {count === 1 ? "song" : "songs"}
+              </Text>
+            </View>
+            <Ionicons
+              name="chevron-forward"
+              size={20}
+              color="rgba(255,255,255,0.4)"
+            />
+          </TouchableOpacity>
+        );
+      },
+      [queue]
+    );
+
+    const renderItem = useCallback(
+      ({ item, index }: { item: any; index: number }) => {
+        // Handle Artist Row
+        if (typeof item === "string") {
+          return renderArtistItem(item);
+        }
+
+        const isActive = String(item.id) === String(currentTrack?.id);
+        const isNextTrack = index === nextIndex && queue.length > 1;
+        const artwork = resolveArtwork(item, "160");
+        const favorited = isFavorited(item.id);
+
+        return (
+          <View
             style={{
               flexDirection: "row",
               alignItems: "center",
@@ -182,116 +343,135 @@ export const QueueSheet = forwardRef<QueueSheetRef, QueueSheetProps>(
                 : "transparent",
             }}
           >
-            <View style={{ position: "relative" }}>
-              {artwork ? (
-                <Image
-                  source={{ uri: artwork }}
-                  style={{
-                    width: 48,
-                    height: 48,
-                    borderRadius: 6,
-                  }}
-                  resizeMode="cover"
-                />
-              ) : (
-                <View
-                  style={{
-                    width: 48,
-                    height: 48,
-                    borderRadius: 6,
-                    backgroundColor: "#333",
-                    alignItems: "center",
-                    justifyContent: "center",
-                  }}
-                >
-                  <Ionicons name="musical-note" size={20} color="#666" />
-                </View>
-              )}
-              {isActive && (
-                <View
-                  style={{
-                    position: "absolute",
-                    top: 0,
-                    left: 0,
-                    right: 0,
-                    bottom: 0,
-                    borderRadius: 6,
-                    backgroundColor: "rgba(0,0,0,0.4)",
-                    alignItems: "center",
-                    justifyContent: "center",
-                  }}
-                >
-                  <Ionicons
-                    name={isPlaying ? "pause" : "play"}
-                    size={20}
-                    color="#fff"
+            <TouchableOpacity
+              onPress={() => handleTrackPress(index)}
+              style={{ flexDirection: "row", alignItems: "center", flex: 1 }}
+            >
+              <View style={{ position: "relative" }}>
+                {artwork ? (
+                  <Image
+                    source={{ uri: artwork }}
+                    style={{
+                      width: 48,
+                      height: 48,
+                      borderRadius: 6,
+                    }}
+                    resizeMode="cover"
                   />
-                </View>
-              )}
-              {/* Buffer status badge for next track */}
-              {isNextTrack && !isActive && (
-                <BufferBadge status={nextTrackBufferStatus} />
-              )}
-            </View>
+                ) : (
+                  <View
+                    style={{
+                      width: 48,
+                      height: 48,
+                      borderRadius: 6,
+                      backgroundColor: "#333",
+                      alignItems: "center",
+                      justifyContent: "center",
+                    }}
+                  >
+                    <Ionicons name="musical-note" size={20} color="#666" />
+                  </View>
+                )}
+                {isActive && (
+                  <View
+                    style={{
+                      position: "absolute",
+                      top: 0,
+                      left: 0,
+                      right: 0,
+                      bottom: 0,
+                      borderRadius: 6,
+                      backgroundColor: "rgba(0,0,0,0.4)",
+                      alignItems: "center",
+                      justifyContent: "center",
+                    }}
+                  >
+                    <Ionicons
+                      name={isPlaying ? "pause" : "play"}
+                      size={20}
+                      color="#fff"
+                    />
+                  </View>
+                )}
+                {/* Buffer status badge for next track */}
+                {isNextTrack && !isActive && (
+                  <BufferBadge status={nextTrackBufferStatus} />
+                )}
+              </View>
 
-            <View style={{ flex: 1, marginLeft: 12 }}>
-              <Text
-                numberOfLines={1}
-                style={{
-                  color: isActive ? "#60a5fa" : "#fff",
-                  fontWeight: "500",
-                  fontSize: 14,
-                }}
-              >
-                {item.title}
-              </Text>
-              <Text
-                numberOfLines={1}
-                style={{
-                  color: "rgba(255,255,255,0.6)",
-                  fontSize: 12,
-                  marginTop: 2,
-                }}
-              >
-                {item.artist}
-              </Text>
-              {/* "Up next" label for next track */}
-              {isNextTrack && !isActive && (
+              <View style={{ flex: 1, marginLeft: 12 }}>
                 <Text
+                  numberOfLines={1}
                   style={{
-                    fontSize: 10,
-                    marginTop: 2,
-                    color:
-                      nextTrackBufferStatus === "ready"
-                        ? "#22c55e"
-                        : nextTrackBufferStatus === "buffering"
-                        ? "#f59e0b"
-                        : "#888",
+                    color: isActive ? "#60a5fa" : "#fff",
+                    fontWeight: "500",
+                    fontSize: 14,
                   }}
                 >
-                  {nextTrackBufferStatus === "ready"
-                    ? "✓ Ready to play instantly"
-                    : nextTrackBufferStatus === "buffering"
-                    ? "● Buffering..."
-                    : "Up next"}
+                  {item.title}
                 </Text>
-              )}
-            </View>
+                <Text
+                  numberOfLines={1}
+                  style={{
+                    color: "rgba(255,255,255,0.6)",
+                    fontSize: 12,
+                    marginTop: 2,
+                  }}
+                >
+                  {item.artist}
+                </Text>
+                {/* "Up next" label for next track */}
+                {isNextTrack && !isActive && (
+                  <Text
+                    style={{
+                      fontSize: 10,
+                      marginTop: 2,
+                      color:
+                        nextTrackBufferStatus === "ready"
+                          ? "#22c55e"
+                          : nextTrackBufferStatus === "buffering"
+                          ? "#f59e0b"
+                          : "#888",
+                    }}
+                  >
+                    {nextTrackBufferStatus === "ready"
+                      ? "✓ Ready to play instantly"
+                      : nextTrackBufferStatus === "buffering"
+                      ? "● Buffering..."
+                      : "Up next"}
+                  </Text>
+                )}
+              </View>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              onPress={() => toggleFavorite(item)}
+              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+              style={{ padding: 8, marginRight: 4 }}
+            >
+              <Ionicons
+                name={favorited ? "heart" : "heart-outline"}
+                size={22}
+                color={favorited ? "#ef4444" : "rgba(255,255,255,0.4)"}
+              />
+            </TouchableOpacity>
 
             <View
               style={{
                 alignItems: "center",
                 justifyContent: "center",
-                paddingHorizontal: 8,
+                paddingHorizontal: 4,
+                width: 30,
               }}
             >
               <Text style={{ color: "rgba(255,255,255,0.4)", fontSize: 12 }}>
                 {index + 1}
               </Text>
             </View>
-          </TouchableOpacity>
+          </View>
         );
       },
+
       [
         currentTrack,
         isPlaying,
@@ -299,6 +479,9 @@ export const QueueSheet = forwardRef<QueueSheetRef, QueueSheetProps>(
         nextIndex,
         nextTrackBufferStatus,
         queue.length,
+        isFavorited,
+        toggleFavorite,
+        renderArtistItem,
       ]
     );
 
@@ -336,9 +519,6 @@ export const QueueSheet = forwardRef<QueueSheetRef, QueueSheetProps>(
       []
     );
 
-    // Fixed header height for proper spacing
-    const HEADER_HEIGHT = 100;
-
     return (
       <BottomSheetModal
         ref={bottomSheetRef}
@@ -347,6 +527,9 @@ export const QueueSheet = forwardRef<QueueSheetRef, QueueSheetProps>(
         enablePanDownToClose
         enableDismissOnClose
         backdropComponent={renderBackdrop}
+        style={{
+          marginHorizontal: sheetMargin,
+        }}
         backgroundStyle={{
           backgroundColor: Platform.OS === "ios" ? "transparent" : "#0a0a0a",
         }}
@@ -404,6 +587,21 @@ export const QueueSheet = forwardRef<QueueSheetRef, QueueSheetProps>(
                   {queue.length} tracks
                 </Text>
                 <TouchableOpacity
+                  onPress={handleToggleAllFavorites}
+                  style={{
+                    padding: 8,
+                    marginRight: 4,
+                  }}
+                  hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                >
+                  <Ionicons
+                    name={areAllFavorited ? "heart" : "heart-outline"}
+                    size={22}
+                    color={areAllFavorited ? "#ef4444" : "#fff"}
+                  />
+                </TouchableOpacity>
+
+                <TouchableOpacity
                   onPress={close}
                   style={{
                     padding: 8,
@@ -416,18 +614,131 @@ export const QueueSheet = forwardRef<QueueSheetRef, QueueSheetProps>(
               </View>
             </View>
 
-            {/* Status Row */}
-            {currentIndex >= 0 && (
-              <Text
+            {/* Search and Filters */}
+            <View style={{ marginTop: 12 }}>
+              <View
                 style={{
-                  color: "rgba(255,255,255,0.4)",
-                  fontSize: 12,
-                  marginTop: 4,
+                  flexDirection: "row",
+                  alignItems: "center",
+                  backgroundColor: "rgba(255,255,255,0.08)",
+                  borderRadius: 10,
+                  paddingHorizontal: 10,
+                  height: 36,
                 }}
               >
-                Now playing: {currentIndex + 1} of {queue.length}
-              </Text>
-            )}
+                <Ionicons
+                  name="search"
+                  size={16}
+                  color="rgba(255,255,255,0.4)"
+                />
+                <TextInput
+                  value={searchQuery}
+                  onChangeText={setSearchQuery}
+                  placeholder="Filter songs or artists..."
+                  placeholderTextColor="rgba(255,255,255,0.3)"
+                  style={{
+                    flex: 1,
+                    marginLeft: 8,
+                    color: "#fff",
+                    fontSize: 14,
+                    height: "100%",
+                  }}
+                />
+                {searchQuery.length > 0 && (
+                  <TouchableOpacity onPress={() => setSearchQuery("")}>
+                    <Ionicons
+                      name="close-circle"
+                      size={16}
+                      color="rgba(255,255,255,0.4)"
+                    />
+                  </TouchableOpacity>
+                )}
+              </View>
+
+              {/* Filter Chips */}
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                style={{ marginTop: 10 }}
+              >
+                {artistFilter ? (
+                  // Show active filter chip to clear it
+                  <TouchableOpacity
+                    onPress={() => setArtistFilter(null)}
+                    style={{
+                      flexDirection: "row",
+                      alignItems: "center",
+                      paddingHorizontal: 12,
+                      paddingVertical: 6,
+                      borderRadius: 14,
+                      backgroundColor: "#fff",
+                      marginRight: 8,
+                    }}
+                  >
+                    <Text
+                      style={{
+                        color: "#000",
+                        fontSize: 13,
+                        fontWeight: "600",
+                        marginRight: 4,
+                      }}
+                    >
+                      Artist: {artistFilter}
+                    </Text>
+                    <Ionicons name="close-circle" size={16} color="#000" />
+                  </TouchableOpacity>
+                ) : (
+                  // Show View Mode chips
+                  [
+                    { id: "songs", label: "Songs" },
+                    { id: "artists", label: "Artists" },
+                  ].map((chip) => {
+                    const isActive = viewMode === chip.id;
+                    return (
+                      <TouchableOpacity
+                        key={chip.id}
+                        onPress={() => setViewMode(chip.id as any)}
+                        style={{
+                          paddingHorizontal: 12,
+                          paddingVertical: 6,
+                          borderRadius: 14,
+                          backgroundColor: isActive
+                            ? "#fff"
+                            : "rgba(255,255,255,0.08)",
+                          marginRight: 8,
+                        }}
+                      >
+                        <Text
+                          style={{
+                            color: isActive ? "#000" : "rgba(255,255,255,0.6)",
+                            fontSize: 13,
+                            fontWeight: isActive ? "600" : "400",
+                          }}
+                        >
+                          {chip.label}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })
+                )}
+              </ScrollView>
+            </View>
+
+            {/* Status Row */}
+            {currentIndex >= 0 &&
+              !searchQuery &&
+              viewMode === "songs" &&
+              !artistFilter && (
+                <Text
+                  style={{
+                    color: "rgba(255,255,255,0.4)",
+                    fontSize: 12,
+                    marginTop: 10,
+                  }}
+                >
+                  Now playing: {currentIndex + 1} of {queue.length}
+                </Text>
+              )}
 
             {/* Clear All Button */}
             {queue.length > 0 && (
@@ -467,7 +778,7 @@ export const QueueSheet = forwardRef<QueueSheetRef, QueueSheetProps>(
 
           {/* Scrollable Track List */}
           <BottomSheetFlatList
-            data={queue}
+            data={filteredQueue}
             keyExtractor={(item: { id: string | number }, index: number) =>
               `${item.id}-${index}`
             }
@@ -477,6 +788,7 @@ export const QueueSheet = forwardRef<QueueSheetRef, QueueSheetProps>(
               paddingBottom: insets.bottom + 20,
             }}
             showsVerticalScrollIndicator={false}
+            keyboardShouldPersistTaps="handled"
           />
         </BlurView>
       </BottomSheetModal>

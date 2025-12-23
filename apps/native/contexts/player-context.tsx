@@ -41,7 +41,7 @@ export type SavedTrack = {
   title: string;
   artist: string;
   artwork?: string;
-  streamUrl: string;
+  streamUrl: string | null;
   addedAt: number;
 };
 
@@ -68,14 +68,17 @@ interface PlayerContextType {
   sleepTimerRemainingMs: number;
   startSleepTimer: (minutes: number) => void;
   cancelSleepTimer: () => void;
-  playTrack: (track: Track) => Promise<void>;
+  playTrack: (
+    track: Track,
+    options?: { skipRecentlyPlayed?: boolean }
+  ) => Promise<void>;
   playQueue: (tracks: Track[], startIndex?: number) => Promise<void>;
   pauseTrack: () => Promise<void>;
   resumeTrack: () => Promise<void>;
   seekToMillis: (positionMillis: number) => Promise<void>;
   seekByMillis: (deltaMillis: number) => Promise<void>;
-  addToQueue: (track: Track) => void;
-  addTracksToQueue: (tracks: Track[]) => void;
+  addToQueue: (track: Track) => boolean;
+  addTracksToQueue: (tracks: Track[]) => number;
   clearQueue: () => void;
   playNext: () => Promise<void>;
   playPrevious: () => Promise<void>;
@@ -83,6 +86,8 @@ interface PlayerContextType {
   recentlyPlayed: SavedTrack[];
   isCurrentFavorited: boolean;
   toggleCurrentFavorite: (artwork?: string) => Promise<void>;
+  toggleFavorite: (track: Track) => Promise<void>;
+  toggleTracksFavorites: (tracks: Track[]) => Promise<void>;
   removeFavorite: (id: string) => Promise<void>;
   removeFromRecentlyPlayed: (id: string) => Promise<void>;
   playSaved: (saved: SavedTrack) => Promise<void>;
@@ -102,6 +107,9 @@ const SHUFFLE_STORAGE_KEY = "hififlow:shuffle:v1";
 const REPEAT_STORAGE_KEY = "hififlow:repeat:v1";
 const VOLUME_STORAGE_KEY = "hififlow:volume:v1";
 const SLEEP_TIMER_KEY = "hififlow:sleeptimer:v1";
+
+// Maximum number of items in queue (keep newest)
+const MAX_QUEUE_SIZE = 500;
 
 async function readPersistentValue(key: string): Promise<string | null> {
   if (Platform.OS === "web") {
@@ -388,9 +396,14 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
    * Core play function - handles single track playback with mutex lock
    * @param track - Track to play
    * @param usePreBuffered - Whether to check pre-buffered player first
+   * @param skipRecentlyPlayed - Skip adding to recently played (for playing from recently played list)
    */
   const playSoundInternal = useCallback(
-    async (track: Track, usePreBuffered = true): Promise<boolean> => {
+    async (
+      track: Track,
+      usePreBuffered = true,
+      skipRecentlyPlayed = false
+    ): Promise<boolean> => {
       // Mutex lock - prevent concurrent play operations
       if (playLockRef.current) {
         console.log("[Player] Play operation already in progress, skipping");
@@ -429,7 +442,9 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
           consecutiveFailuresRef.current = 0;
           setNextTrackBufferStatus("none");
 
-          void addToRecentlyPlayed(track, url);
+          if (!skipRecentlyPlayed) {
+            void addToRecentlyPlayed(track, url);
+          }
           return true;
         }
 
@@ -461,7 +476,9 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
         newPlayer.play();
 
         consecutiveFailuresRef.current = 0;
-        void addToRecentlyPlayed(track, streamUrl);
+        if (!skipRecentlyPlayed) {
+          void addToRecentlyPlayed(track, streamUrl);
+        }
 
         return true;
       } catch (error) {
@@ -725,7 +742,9 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
   // ==================== Public API ====================
 
   const playTrack = useCallback(
-    async (track: Track) => {
+    async (track: Track, options?: { skipRecentlyPlayed?: boolean }) => {
+      const skipRecentlyPlayed = options?.skipRecentlyPlayed ?? false;
+
       // Add track to queue (append, don't replace)
       setQueue((prev) => {
         // Check if track already exists in queue
@@ -739,13 +758,23 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
         }
         // Append new track
         queueIndexRef.current = prev.length;
-        return [...prev, track];
+        const newQueue = [...prev, track];
+        // Limit to MAX_QUEUE_SIZE (keep newest)
+        if (newQueue.length > MAX_QUEUE_SIZE) {
+          const trimAmount = newQueue.length - MAX_QUEUE_SIZE;
+          queueIndexRef.current = Math.max(
+            0,
+            queueIndexRef.current - trimAmount
+          );
+          return newQueue.slice(trimAmount);
+        }
+        return newQueue;
       });
       shuffleHistoryRef.current = [];
       setCurrentTrack(track);
       setAudioAnalysis(null);
 
-      await playSoundInternal(track, false);
+      await playSoundInternal(track, false, skipRecentlyPlayed);
     },
     [playSoundInternal]
   );
@@ -774,12 +803,21 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
         }
 
         // Append all new tracks, set index to the start track in new portion
-        const newQueue = [...prev, ...newTracks];
+        let newQueue = [...prev, ...newTracks];
+
+        // Limit to MAX_QUEUE_SIZE (keep newest)
+        if (newQueue.length > MAX_QUEUE_SIZE) {
+          const trimAmount = newQueue.length - MAX_QUEUE_SIZE;
+          newQueue = newQueue.slice(trimAmount);
+        }
+
         const newTargetIndex = newQueue.findIndex(
           (t) => String(t.id) === String(targetTrack.id)
         );
         queueIndexRef.current =
-          newTargetIndex !== -1 ? newTargetIndex : prev.length;
+          newTargetIndex !== -1
+            ? newTargetIndex
+            : Math.max(0, newQueue.length - 1);
         return newQueue;
       });
 
@@ -815,22 +853,63 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
     }
   }, []);
 
-  const addToQueue = useCallback((track: Track) => {
-    setQueue((prev) => {
-      // Check if track already exists
-      const exists = prev.some((t) => String(t.id) === String(track.id));
-      if (exists) return prev;
-      return [...prev, track];
-    });
-  }, []);
+  const addToQueue = useCallback(
+    (track: Track): boolean => {
+      let added = false;
+      setQueue((prev) => {
+        // Check if track already exists
+        const exists = prev.some((t) => String(t.id) === String(track.id));
+        if (exists) {
+          return prev;
+        }
+        added = true;
+        let newQueue = [...prev, track];
+        // Limit to MAX_QUEUE_SIZE (keep newest)
+        if (newQueue.length > MAX_QUEUE_SIZE) {
+          newQueue = newQueue.slice(newQueue.length - MAX_QUEUE_SIZE);
+        }
+        return newQueue;
+      });
 
-  const addTracksToQueue = useCallback((tracks: Track[]) => {
-    setQueue((prev) => {
-      const existingIds = new Set(prev.map((t) => String(t.id)));
-      const newTracks = tracks.filter((t) => !existingIds.has(String(t.id)));
-      return [...prev, ...newTracks];
-    });
-  }, []);
+      if (!added) {
+        showToast({ message: "Track already in queue", type: "info" });
+      } else {
+        showToast({ message: "Added to queue", type: "success" });
+      }
+      return added;
+    },
+    [showToast]
+  );
+
+  const addTracksToQueue = useCallback(
+    (tracks: Track[]): number => {
+      let addedCount = 0;
+      setQueue((prev) => {
+        const existingIds = new Set(prev.map((t) => String(t.id)));
+        const newTracks = tracks.filter((t) => !existingIds.has(String(t.id)));
+        addedCount = newTracks.length;
+        let newQueue = [...prev, ...newTracks];
+        // Limit to MAX_QUEUE_SIZE (keep newest)
+        if (newQueue.length > MAX_QUEUE_SIZE) {
+          newQueue = newQueue.slice(newQueue.length - MAX_QUEUE_SIZE);
+        }
+        return newQueue;
+      });
+
+      if (addedCount === 0) {
+        showToast({ message: "All tracks already in queue", type: "info" });
+      } else {
+        showToast({
+          message: `Added ${addedCount} track${
+            addedCount > 1 ? "s" : ""
+          } to queue`,
+          type: "success",
+        });
+      }
+      return addedCount;
+    },
+    [showToast]
+  );
 
   const clearQueue = useCallback(() => {
     // Stop playback and clear everything
@@ -1040,6 +1119,92 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
     [currentTrack, currentStreamUrl, favorites, showToast]
   );
 
+  const toggleFavorite = useCallback(
+    async (track: Track) => {
+      const id = normalizeFavoriteId(track.id);
+      const exists = favorites.some((f) => normalizeFavoriteId(f.id) === id);
+      let next: SavedTrack[];
+
+      if (exists) {
+        next = favorites.filter((f) => normalizeFavoriteId(f.id) !== id);
+        showToast({ message: "Removed from favorites", type: "info" });
+      } else {
+        // Use current stream URL if it's the current track, otherwise use track.url or null
+        const playingCurrent =
+          currentTrack?.id === track.id && currentStreamUrl;
+        const streamUrl = playingCurrent ? currentStreamUrl : track.url || null;
+
+        next = [
+          {
+            id: String(track.id),
+            title: track.title,
+            artist: track.artist,
+            artwork: track.artwork,
+            streamUrl: streamUrl,
+            addedAt: Date.now(),
+          },
+          ...favorites,
+        ];
+        showToast({ message: "Added to favorites", type: "success" });
+      }
+      setFavorites(next);
+      await writePersistentValue(FAVORITES_STORAGE_KEY, JSON.stringify(next));
+    },
+    [favorites, currentTrack, currentStreamUrl, showToast]
+  );
+
+  const toggleTracksFavorites = useCallback(
+    async (tracks: Track[]) => {
+      if (tracks.length === 0) return;
+
+      const trackIds = new Set(tracks.map((t) => normalizeFavoriteId(t.id)));
+      const favoritedIds = new Set(
+        favorites.map((f) => normalizeFavoriteId(f.id))
+      );
+
+      // Check if ALL tracks are already favorited
+      const allAreFavorited = tracks.every((t) =>
+        favoritedIds.has(normalizeFavoriteId(t.id))
+      );
+
+      let next: SavedTrack[];
+
+      if (allAreFavorited) {
+        // Remove allowed tracks
+        next = favorites.filter(
+          (f) => !trackIds.has(normalizeFavoriteId(f.id))
+        );
+        showToast({
+          message: `Removed ${tracks.length} tracks from favorites`,
+          type: "info",
+        });
+      } else {
+        // Add missing tracks
+        const timestamp = Date.now();
+        const newEntries = tracks
+          .filter((t) => !favoritedIds.has(normalizeFavoriteId(t.id)))
+          .map((t) => ({
+            id: String(t.id),
+            title: t.title,
+            artist: t.artist,
+            artwork: t.artwork,
+            streamUrl: t.url || null,
+            addedAt: timestamp,
+          }));
+
+        next = [...newEntries, ...favorites];
+        showToast({
+          message: `Added ${newEntries.length} tracks to favorites`,
+          type: "success",
+        });
+      }
+
+      setFavorites(next);
+      await writePersistentValue(FAVORITES_STORAGE_KEY, JSON.stringify(next));
+    },
+    [favorites, showToast]
+  );
+
   const removeFavorite = useCallback(
     async (id: string) => {
       const next = favorites.filter(
@@ -1071,9 +1236,10 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
         title: saved.title,
         artist: saved.artist,
         artwork: saved.artwork,
-        url: saved.streamUrl,
+        url: saved.streamUrl || "",
       };
-      await playTrack(track);
+      // Skip adding to recently played since we're already playing from recently played
+      await playTrack(track, { skipRecentlyPlayed: true });
     },
     [playTrack]
   );
@@ -1164,6 +1330,8 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
       [currentTrack, favorites]
     ),
     toggleCurrentFavorite,
+    toggleFavorite,
+    toggleTracksFavorites,
     removeFavorite,
     removeFromRecentlyPlayed,
     playSaved,

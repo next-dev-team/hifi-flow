@@ -25,11 +25,13 @@ import {
   DeviceEventEmitter,
   FlatList,
   Image,
+  Platform,
   ScrollView,
   Switch,
   Text,
   TextInput,
   TouchableOpacity,
+  useWindowDimensions,
   View,
 } from "react-native";
 import Animated, {
@@ -57,6 +59,7 @@ import { useToast } from "@/contexts/toast-context";
 import { usePersistentState } from "@/hooks/use-persistent-state";
 import { detectThemeVoiceAction } from "@/utils/ai";
 import { getSuggestedArtists, losslessAPI } from "@/utils/api";
+import { getSheetMargin, SHEET_MAX_WIDTH } from "@/utils/layout";
 import { resolveArtwork, resolveName } from "@/utils/resolvers";
 
 type SearchFilter = "songs" | "artists" | "albums" | "playlists";
@@ -93,8 +96,13 @@ export default function Home() {
   } = usePlayer();
   const { isDark, setTheme } = useAppTheme();
   const { showToast } = useToast();
+  const { width: screenWidth } = useWindowDimensions();
   const themeColorBackground = useThemeColor("background");
   const themeColorForeground = useThemeColor("foreground");
+
+  // Desktop max-width container style for sheets
+  // Desktop: calculate margin to center the sheets
+  const sheetMargin = getSheetMargin(screenWidth);
 
   const voiceActionOwnerRef = useRef(false);
   const voiceActionTranscriptRef = useRef("");
@@ -588,15 +596,16 @@ export default function Home() {
   }, [listData, filter]);
 
   const favoriteQueue = useMemo<Track[]>(() => {
-    return favorites.map((saved) => {
-      return {
-        id: `saved:${saved.id}`,
-        title: saved.title,
-        artist: saved.artist,
-        artwork: saved.artwork,
-        url: saved.streamUrl,
-      };
-    });
+    return favorites.map(
+      (saved) =>
+        ({
+          id: saved.id as any,
+          title: saved.title,
+          artist: saved.artist as any,
+          artwork: saved.artwork,
+          url: saved.streamUrl || "",
+        } as any)
+    );
   }, [favorites]);
 
   const renderItem = ({ index }: { index: number }) => {
@@ -978,6 +987,7 @@ export default function Home() {
         enableDismissOnClose
         backdropComponent={favoritesBackdrop}
         animationConfigs={favoritesAnimationConfigs}
+        style={{ marginHorizontal: sheetMargin }}
         handleIndicatorStyle={{ backgroundColor: "#ccc" }}
         backgroundStyle={{ backgroundColor: themeColorBackground }}
       >
@@ -1322,6 +1332,7 @@ export default function Home() {
         enableDismissOnClose
         backdropComponent={favoritesBackdrop}
         animationConfigs={favoritesAnimationConfigs}
+        style={{ marginHorizontal: sheetMargin }}
         handleIndicatorStyle={{ backgroundColor: "#ccc" }}
         backgroundStyle={{ backgroundColor: themeColorBackground }}
       >
@@ -1464,6 +1475,7 @@ export default function Home() {
         enableDismissOnClose
         backdropComponent={favoritesBackdrop}
         animationConfigs={favoritesAnimationConfigs}
+        style={{ marginHorizontal: sheetMargin }}
         handleIndicatorStyle={{ backgroundColor: "#ccc" }}
         backgroundStyle={{ backgroundColor: themeColorBackground }}
       >
@@ -1593,6 +1605,7 @@ export default function Home() {
         enableDismissOnClose
         backdropComponent={favoritesBackdrop}
         animationConfigs={favoritesAnimationConfigs}
+        style={{ marginHorizontal: sheetMargin }}
         handleIndicatorStyle={{ backgroundColor: "#ccc" }}
         backgroundStyle={{ backgroundColor: themeColorBackground }}
       >
