@@ -121,6 +121,7 @@ export const QueueSheet = forwardRef<QueueSheetRef, QueueSheetProps>(
       favorites,
       toggleFavorite,
       toggleTracksFavorites,
+      removeFromQueue,
     } = usePlayer();
 
     // Desktop: calculate margin to center the sheet
@@ -131,6 +132,7 @@ export const QueueSheet = forwardRef<QueueSheetRef, QueueSheetProps>(
     const [searchQuery, setSearchQuery] = useState("");
     const [viewMode, setViewMode] = useState<"songs" | "artists">("songs");
     const [artistFilter, setArtistFilter] = useState<string | null>(null);
+    const [showClearConfirm, setShowClearConfirm] = useState(false);
 
     // Filter queue based on search and view mode
     const filteredQueue = useMemo(() => {
@@ -212,26 +214,9 @@ export const QueueSheet = forwardRef<QueueSheetRef, QueueSheetProps>(
       [queue, playQueue]
     );
 
-    const handleClearQueue = useCallback(() => {
-      Alert.alert(
-        "Clear Queue",
-        "Are you sure you want to clear the entire queue?",
-        [
-          {
-            text: "Cancel",
-            style: "cancel",
-          },
-          {
-            text: "Clear All",
-            style: "destructive",
-            onPress: () => {
-              clearQueue();
-              close();
-            },
-          },
-        ]
-      );
-    }, [clearQueue, close]);
+    const handleClearQueue = () => {
+      setShowClearConfirm(true);
+    };
 
     // Check if all tracks in queue are favorited
     const areAllFavorited = useMemo(() => {
@@ -456,6 +441,21 @@ export const QueueSheet = forwardRef<QueueSheetRef, QueueSheetProps>(
               />
             </TouchableOpacity>
 
+            {/* Remove Button (only for non-active tracks) */}
+            {!isActive && (
+              <TouchableOpacity
+                onPress={() => removeFromQueue(String(item.id))}
+                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                style={{ padding: 8, marginRight: 4 }}
+              >
+                <Ionicons
+                  name="close-circle-outline"
+                  size={20}
+                  color="rgba(255,255,255,0.3)"
+                />
+              </TouchableOpacity>
+            )}
+
             <View
               style={{
                 alignItems: "center",
@@ -482,6 +482,7 @@ export const QueueSheet = forwardRef<QueueSheetRef, QueueSheetProps>(
         isFavorited,
         toggleFavorite,
         renderArtistItem,
+        removeFromQueue,
       ]
     );
 
@@ -574,18 +575,19 @@ export const QueueSheet = forwardRef<QueueSheetRef, QueueSheetProps>(
                   fontWeight: "bold",
                 }}
               >
-                Queue
+                Queue ({queue.length})
               </Text>
               <View style={{ flexDirection: "row", alignItems: "center" }}>
-                <Text
+                <TouchableOpacity
+                  onPress={handleClearQueue}
                   style={{
-                    color: "rgba(255,255,255,0.5)",
-                    fontSize: 14,
-                    marginRight: 12,
+                    padding: 8,
+                    marginRight: 4,
                   }}
+                  hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                 >
-                  {queue.length} tracks
-                </Text>
+                  <Ionicons name="trash-outline" size={22} color="#fff" />
+                </TouchableOpacity>
                 <TouchableOpacity
                   onPress={handleToggleAllFavorites}
                   style={{
@@ -756,41 +758,6 @@ export const QueueSheet = forwardRef<QueueSheetRef, QueueSheetProps>(
                   Now playing: {currentIndex + 1} of {queue.length}
                 </Text>
               )}
-
-            {/* Clear All Button */}
-            {queue.length > 0 && (
-              <TouchableOpacity
-                onPress={handleClearQueue}
-                style={{
-                  flexDirection: "row",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  marginTop: 12,
-                  paddingVertical: 10,
-                  paddingHorizontal: 16,
-                  backgroundColor: "rgba(255, 59, 48, 0.15)",
-                  borderRadius: 8,
-                  borderWidth: 1,
-                  borderColor: "rgba(255, 59, 48, 0.3)",
-                }}
-              >
-                <Ionicons
-                  name="trash-outline"
-                  size={16}
-                  color="#ff3b30"
-                  style={{ marginRight: 8 }}
-                />
-                <Text
-                  style={{
-                    color: "#ff3b30",
-                    fontSize: 14,
-                    fontWeight: "600",
-                  }}
-                >
-                  Clear Queue
-                </Text>
-              </TouchableOpacity>
-            )}
           </View>
 
           {/* Scrollable Track List */}
@@ -807,6 +774,113 @@ export const QueueSheet = forwardRef<QueueSheetRef, QueueSheetProps>(
             showsVerticalScrollIndicator={false}
             keyboardShouldPersistTaps="handled"
           />
+
+          {/* Confirmation Overlay */}
+          {showClearConfirm && (
+            <View
+              style={{
+                position: "absolute",
+                top: 0,
+                left: 0,
+                right: 0,
+                bottom: 0,
+                backgroundColor: "rgba(0,0,0,0.6)",
+                alignItems: "center",
+                justifyContent: "center",
+                zIndex: 100,
+              }}
+            >
+              <View
+                style={{
+                  backgroundColor: "#1c1c1e",
+                  padding: 24,
+                  borderRadius: 20,
+                  width: "80%",
+                  maxWidth: 320,
+                  alignItems: "center",
+                  borderWidth: 1,
+                  borderColor: "rgba(255,255,255,0.1)",
+                }}
+              >
+                <View
+                  style={{
+                    width: 48,
+                    height: 48,
+                    borderRadius: 24,
+                    backgroundColor: "rgba(239, 68, 68, 0.2)",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    marginBottom: 16,
+                  }}
+                >
+                  <Ionicons name="trash" size={24} color="#ef4444" />
+                </View>
+
+                <Text
+                  style={{
+                    fontSize: 20,
+                    fontWeight: "bold",
+                    color: "#fff",
+                    marginBottom: 8,
+                  }}
+                >
+                  Clear Queue?
+                </Text>
+                <Text
+                  style={{
+                    color: "rgba(255,255,255,0.6)",
+                    textAlign: "center",
+                    marginBottom: 24,
+                    fontSize: 15,
+                    lineHeight: 22,
+                  }}
+                >
+                  This will remove all {queue.length} tracks. This action cannot
+                  be undone.
+                </Text>
+
+                <View
+                  style={{ flexDirection: "row", width: "100%", columnGap: 12 }}
+                >
+                  <TouchableOpacity
+                    onPress={() => setShowClearConfirm(false)}
+                    style={{
+                      flex: 1,
+                      paddingVertical: 14,
+                      backgroundColor: "rgba(255,255,255,0.1)",
+                      borderRadius: 14,
+                      alignItems: "center",
+                    }}
+                  >
+                    <Text
+                      style={{ color: "#fff", fontWeight: "600", fontSize: 16 }}
+                    >
+                      Cancel
+                    </Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    onPress={() => {
+                      clearQueue();
+                      setShowClearConfirm(false);
+                    }}
+                    style={{
+                      flex: 1,
+                      paddingVertical: 14,
+                      backgroundColor: "#ef4444",
+                      borderRadius: 14,
+                      alignItems: "center",
+                    }}
+                  >
+                    <Text
+                      style={{ color: "#fff", fontWeight: "600", fontSize: 16 }}
+                    >
+                      Clear
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            </View>
+          )}
         </BlurView>
       </BottomSheetModal>
     );

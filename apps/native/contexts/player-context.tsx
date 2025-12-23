@@ -80,6 +80,7 @@ interface PlayerContextType {
   seekByMillis: (deltaMillis: number) => Promise<void>;
   addToQueue: (track: Track) => boolean;
   addTracksToQueue: (tracks: Track[]) => number;
+  removeFromQueue: (trackId: string) => void;
   clearQueue: () => void;
   playNext: () => Promise<void>;
   playPrevious: () => Promise<void>;
@@ -963,7 +964,33 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
     setAudioAnalysis(null);
     queueIndexRef.current = -1;
     shuffleHistoryRef.current = [];
-  }, [destroyAllPlayers, setPersistedQueueIndex]);
+    showToast({ message: "Queue cleared", type: "success" });
+  }, [destroyAllPlayers, setPersistedQueueIndex, showToast]);
+
+  const removeFromQueue = useCallback(
+    (trackId: string) => {
+      setQueue((prev) => {
+        const index = prev.findIndex((t) => String(t.id) === String(trackId));
+        if (index === -1) return prev;
+
+        // If removing item before current, adjust ref
+        if (index < queueIndexRef.current) {
+          queueIndexRef.current = Math.max(0, queueIndexRef.current - 1);
+        } else if (index === queueIndexRef.current) {
+          // If removing current, what to do?
+          // We leave queueIndexRef pointing to same numeric index (which is now the next track)
+          // But effectively current track is gone.
+          // playNext will re-calc index anyway.
+        }
+
+        const newQueue = [...prev];
+        newQueue.splice(index, 1);
+        return newQueue;
+      });
+      showToast({ message: "Removed from queue", type: "info" });
+    },
+    [showToast]
+  );
 
   const unloadSound = useCallback(async () => {
     destroyAllPlayers();
@@ -1356,6 +1383,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
     seekByMillis,
     addToQueue,
     addTracksToQueue,
+    removeFromQueue,
     clearQueue,
     playNext,
     playPrevious,
