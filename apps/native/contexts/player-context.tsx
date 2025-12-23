@@ -3,6 +3,7 @@ import {
   extractAudioAnalysis,
 } from "@siteed/expo-audio-studio";
 import {
+  default as AudioModule,
   type AudioPlayer,
   type AudioStatus,
   createAudioPlayer,
@@ -236,6 +237,23 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
   const isLoading = status?.isBuffering ?? false;
   const positionMillis = (status?.currentTime ?? 0) * 1000;
   const durationMillis = (status?.duration ?? 0) * 1000;
+
+  // ==================== Audio Mode Configuration ====================
+  useEffect(() => {
+    async function configureAudio() {
+      if (Platform.OS === "web") return;
+      try {
+        await AudioModule.setAudioModeAsync({
+          playsInSilentMode: true,
+          interruptionMode: "doNotMix",
+          shouldPlayInBackground: true,
+        });
+      } catch (e) {
+        console.warn("Failed to set audio mode", e);
+      }
+    }
+    void configureAudio();
+  }, []);
 
   // ==================== Status Listener ====================
   useEffect(() => {
@@ -814,7 +832,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
 
       await playSoundInternal(track, false, skipRecentlyPlayed);
     },
-    [playSoundInternal]
+    [playSoundInternal, setQueue]
   );
 
   const playQueue = useCallback(
@@ -868,7 +886,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
         await playSoundInternal(startTrack, false);
       }
     },
-    [playSoundInternal]
+    [playSoundInternal, setQueue]
   );
 
   const pauseTrack = useCallback(async () => {
@@ -920,7 +938,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
       }
       return added;
     },
-    [showToast]
+    [showToast, setQueue]
   );
 
   const addTracksToQueue = useCallback(
@@ -950,7 +968,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
       }
       return addedCount;
     },
-    [showToast]
+    [showToast, setQueue]
   );
 
   const clearQueue = useCallback(() => {
@@ -964,7 +982,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
     queueIndexRef.current = -1;
     shuffleHistoryRef.current = [];
     showToast({ message: "Queue cleared", type: "success" });
-  }, [destroyAllPlayers, setPersistedQueueIndex, showToast]);
+  }, [destroyAllPlayers, setPersistedQueueIndex, showToast, setQueue]);
 
   const removeFromQueue = useCallback(
     (trackId: string) => {
@@ -988,7 +1006,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
       });
       showToast({ message: "Removed from queue", type: "info" });
     },
-    [showToast]
+    [showToast, setQueue]
   );
 
   const unloadSound = useCallback(async () => {
