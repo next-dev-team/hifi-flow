@@ -602,6 +602,23 @@ export const QueueSheet = forwardRef<QueueSheetRef, QueueSheetProps>(
                 </TouchableOpacity>
 
                 <TouchableOpacity
+                  onPress={() => {
+                    close();
+                    // Slight delay to allow smooth transition
+                    setTimeout(() => {
+                      DeviceEventEmitter.emit("open-favorites-sheet");
+                    }, 200);
+                  }}
+                  style={{
+                    padding: 8,
+                    marginRight: 4,
+                  }}
+                  hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                >
+                  <Ionicons name="library-outline" size={22} color="#fff" />
+                </TouchableOpacity>
+
+                <TouchableOpacity
                   onPress={close}
                   style={{
                     padding: 8,

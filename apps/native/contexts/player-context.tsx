@@ -19,6 +19,7 @@ import {
   useState,
 } from "react";
 import { Platform } from "react-native";
+import { usePersistentState } from "@/hooks/use-persistent-state";
 import { useToast } from "@/contexts/toast-context";
 import { losslessAPI } from "@/utils/api";
 import { mediaSessionService } from "@/utils/media-session";
@@ -107,6 +108,8 @@ const SHUFFLE_STORAGE_KEY = "hififlow:shuffle:v1";
 const REPEAT_STORAGE_KEY = "hififlow:repeat:v1";
 const VOLUME_STORAGE_KEY = "hififlow:volume:v1";
 const SLEEP_TIMER_KEY = "hififlow:sleeptimer:v1";
+const QUEUE_STORAGE_KEY = "hififlow:queue:v1";
+const QUEUE_INDEX_KEY = "hififlow:queue_index:v1";
 
 // Maximum number of items in queue (keep newest)
 const MAX_QUEUE_SIZE = 500;
@@ -162,7 +165,12 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
   const [loadingTrackId, setLoadingTrackId] = useState<string | null>(null);
 
   // ==================== Queue State ====================
-  const [queue, setQueue] = useState<Track[]>([]);
+  const [queue, setQueue, isQueueLoaded] = usePersistentState<Track[]>(
+    QUEUE_STORAGE_KEY,
+    []
+  );
+  const [persistedQueueIndex, setPersistedQueueIndex, isIndexLoaded] =
+    usePersistentState<number>(QUEUE_INDEX_KEY, -1);
   const queueIndexRef = useRef<number>(-1);
 
   // ==================== Settings State ====================
@@ -242,7 +250,37 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
       }
     );
     return () => subscription.remove();
+    return () => subscription.remove();
   }, [player]);
+
+  // ==================== Session Restoration ====================
+  useEffect(() => {
+    if (isQueueLoaded && isIndexLoaded && !currentTrack && queue.length > 0) {
+      let indexToRestore = persistedQueueIndex;
+      if (indexToRestore < 0 || indexToRestore >= queue.length) {
+        indexToRestore = 0;
+      }
+
+      const track = queue[indexToRestore];
+      if (track) {
+        setCurrentTrack(track);
+        queueIndexRef.current = indexToRestore;
+      }
+    }
+  }, [isQueueLoaded, isIndexLoaded, queue, currentTrack, persistedQueueIndex]);
+
+  // Sync index to storage
+  useEffect(() => {
+    if (currentTrack && queue.length > 0) {
+      const index = queue.findIndex(
+        (t) => String(t.id) === String(currentTrack.id)
+      );
+      if (index !== -1) {
+        setPersistedQueueIndex(index);
+        queueIndexRef.current = index; // Ensure ref is synced too
+      }
+    }
+  }, [currentTrack, queue, setPersistedQueueIndex]);
 
   // ==================== Core Utilities ====================
 
@@ -838,8 +876,12 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
   }, []);
 
   const resumeTrack = useCallback(async () => {
-    activePlayerRef.current?.play();
-  }, []);
+    if (activePlayerRef.current) {
+      activePlayerRef.current.play();
+    } else if (currentTrack) {
+      await playSoundInternal(currentTrack, false);
+    }
+  }, [currentTrack, playSoundInternal]);
 
   const seekToMillis = useCallback(async (pos: number) => {
     activePlayerRef.current?.seekTo(pos / 1000);
@@ -915,12 +957,13 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
     // Stop playback and clear everything
     destroyAllPlayers();
     setQueue([]);
+    setPersistedQueueIndex(-1);
     setCurrentTrack(null);
     setCurrentStreamUrl(null);
     setAudioAnalysis(null);
     queueIndexRef.current = -1;
     shuffleHistoryRef.current = [];
-  }, [destroyAllPlayers]);
+  }, [destroyAllPlayers, setPersistedQueueIndex]);
 
   const unloadSound = useCallback(async () => {
     destroyAllPlayers();
