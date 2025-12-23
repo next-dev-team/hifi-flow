@@ -4,27 +4,27 @@ import {
   type BottomSheetBackdropProps,
   BottomSheetFlatList,
   BottomSheetModal,
-  BottomSheetView,
 } from "@gorhom/bottom-sheet";
 import { BlurView } from "expo-blur";
 import {
   forwardRef,
   useCallback,
+  useEffect,
   useImperativeHandle,
   useMemo,
   useRef,
 } from "react";
 import {
+  Animated,
   DeviceEventEmitter,
   Image,
   Platform,
-  Pressable,
   Text,
   TouchableOpacity,
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { usePlayer } from "@/contexts/player-context";
+import { usePlayer, type PreBufferStatus } from "@/contexts/player-context";
 import { resolveArtwork } from "@/utils/resolvers";
 
 export interface QueueSheetRef {
@@ -38,6 +38,68 @@ interface QueueSheetProps {
 
 export const OPEN_QUEUE_SHEET_EVENT = "open-queue-sheet";
 
+/**
+ * Pulsing buffer status indicator
+ */
+const BufferBadge: React.FC<{ status: PreBufferStatus }> = ({ status }) => {
+  const opacity = useRef(new Animated.Value(1)).current;
+
+  useEffect(() => {
+    if (status === "buffering") {
+      const animation = Animated.loop(
+        Animated.sequence([
+          Animated.timing(opacity, {
+            toValue: 0.3,
+            duration: 400,
+            useNativeDriver: true,
+          }),
+          Animated.timing(opacity, {
+            toValue: 1,
+            duration: 400,
+            useNativeDriver: true,
+          }),
+        ])
+      );
+      animation.start();
+      return () => animation.stop();
+    } else {
+      opacity.setValue(1);
+    }
+  }, [status, opacity]);
+
+  if (status !== "buffering" && status !== "ready") return null;
+
+  return (
+    <Animated.View
+      style={{
+        position: "absolute",
+        top: -2,
+        right: -2,
+        opacity,
+      }}
+    >
+      <View
+        style={{
+          width: 18,
+          height: 18,
+          borderRadius: 9,
+          backgroundColor: status === "ready" ? "#22c55e" : "#f59e0b",
+          alignItems: "center",
+          justifyContent: "center",
+          borderWidth: 2,
+          borderColor: "#0a0a0a",
+        }}
+      >
+        <Ionicons
+          name={status === "ready" ? "checkmark" : "hourglass-outline"}
+          size={10}
+          color="#fff"
+        />
+      </View>
+    </Animated.View>
+  );
+};
+
 export const QueueSheet = forwardRef<QueueSheetRef, QueueSheetProps>(
   ({ onClose }, ref) => {
     const bottomSheetRef = useRef<BottomSheetModal>(null);
@@ -46,9 +108,9 @@ export const QueueSheet = forwardRef<QueueSheetRef, QueueSheetProps>(
       queue,
       currentTrack,
       isPlaying,
-      pauseTrack,
-      resumeTrack,
       playQueue,
+      clearQueue,
+      nextTrackBufferStatus,
     } = usePlayer();
 
     const snapPoints = useMemo(() => ["60%", "90%"], []);
@@ -80,28 +142,47 @@ export const QueueSheet = forwardRef<QueueSheetRef, QueueSheetProps>(
     const handleTrackPress = useCallback(
       (index: number) => {
         if (queue[index]) {
-          void playQueue(queue, index);
+          // Play from this position in queue
+          void playQueue([queue[index]], 0);
         }
       },
       [queue, playQueue]
     );
 
+    const handleClearQueue = useCallback(() => {
+      clearQueue();
+      close();
+    }, [clearQueue, close]);
+
+    // Determine the next track index
+    const currentIndex = queue.findIndex(
+      (t) => String(t.id) === String(currentTrack?.id)
+    );
+    const nextIndex =
+      currentIndex >= 0 ? (currentIndex + 1) % queue.length : -1;
+
     const renderItem = useCallback(
       ({ item, index }: { item: any; index: number }) => {
         const isActive = String(item.id) === String(currentTrack?.id);
+        const isNextTrack = index === nextIndex && queue.length > 1;
         const artwork = resolveArtwork(item, "160");
 
         return (
           <TouchableOpacity
             onPress={() => handleTrackPress(index)}
-            className="flex-row items-center py-3 px-4"
             style={{
+              flexDirection: "row",
+              alignItems: "center",
+              paddingVertical: 12,
+              paddingHorizontal: 16,
               backgroundColor: isActive
                 ? "rgba(96, 165, 250, 0.15)"
+                : isNextTrack && nextTrackBufferStatus === "ready"
+                ? "rgba(34, 197, 94, 0.08)"
                 : "transparent",
             }}
           >
-            <View className="relative">
+            <View style={{ position: "relative" }}>
               {artwork ? (
                 <Image
                   source={{ uri: artwork }}
@@ -147,36 +228,107 @@ export const QueueSheet = forwardRef<QueueSheetRef, QueueSheetProps>(
                   />
                 </View>
               )}
+              {/* Buffer status badge for next track */}
+              {isNextTrack && !isActive && (
+                <BufferBadge status={nextTrackBufferStatus} />
+              )}
             </View>
 
-            <View className="flex-1 ml-3">
+            <View style={{ flex: 1, marginLeft: 12 }}>
               <Text
-                className="text-white font-medium text-sm"
                 numberOfLines={1}
-                style={{ color: isActive ? "#60a5fa" : "#fff" }}
+                style={{
+                  color: isActive ? "#60a5fa" : "#fff",
+                  fontWeight: "500",
+                  fontSize: 14,
+                }}
               >
                 {item.title}
               </Text>
-              <Text className="text-white/60 text-xs mt-0.5" numberOfLines={1}>
+              <Text
+                numberOfLines={1}
+                style={{
+                  color: "rgba(255,255,255,0.6)",
+                  fontSize: 12,
+                  marginTop: 2,
+                }}
+              >
                 {item.artist}
               </Text>
+              {/* "Up next" label for next track */}
+              {isNextTrack && !isActive && (
+                <Text
+                  style={{
+                    fontSize: 10,
+                    marginTop: 2,
+                    color:
+                      nextTrackBufferStatus === "ready"
+                        ? "#22c55e"
+                        : nextTrackBufferStatus === "buffering"
+                        ? "#f59e0b"
+                        : "#888",
+                  }}
+                >
+                  {nextTrackBufferStatus === "ready"
+                    ? "✓ Ready to play instantly"
+                    : nextTrackBufferStatus === "buffering"
+                    ? "● Buffering..."
+                    : "Up next"}
+                </Text>
+              )}
             </View>
 
-            <View className="items-center justify-center px-2">
-              <Text className="text-white/40 text-xs">{index + 1}</Text>
+            <View
+              style={{
+                alignItems: "center",
+                justifyContent: "center",
+                paddingHorizontal: 8,
+              }}
+            >
+              <Text style={{ color: "rgba(255,255,255,0.4)", fontSize: 12 }}>
+                {index + 1}
+              </Text>
             </View>
           </TouchableOpacity>
         );
       },
-      [currentTrack, isPlaying, handleTrackPress]
+      [
+        currentTrack,
+        isPlaying,
+        handleTrackPress,
+        nextIndex,
+        nextTrackBufferStatus,
+        queue.length,
+      ]
     );
 
     const ListEmptyComponent = useCallback(
       () => (
-        <View className="flex-1 items-center justify-center py-20">
+        <View
+          style={{
+            flex: 1,
+            alignItems: "center",
+            justifyContent: "center",
+            paddingVertical: 80,
+          }}
+        >
           <Ionicons name="musical-notes-outline" size={48} color="#666" />
-          <Text className="text-white/50 text-base mt-4">Queue is empty</Text>
-          <Text className="text-white/30 text-sm mt-1">
+          <Text
+            style={{
+              color: "rgba(255,255,255,0.5)",
+              fontSize: 16,
+              marginTop: 16,
+            }}
+          >
+            Queue is empty
+          </Text>
+          <Text
+            style={{
+              color: "rgba(255,255,255,0.3)",
+              fontSize: 14,
+              marginTop: 4,
+            }}
+          >
             Add some tracks to get started
           </Text>
         </View>
@@ -184,9 +336,8 @@ export const QueueSheet = forwardRef<QueueSheetRef, QueueSheetProps>(
       []
     );
 
-    const currentIndex = queue.findIndex(
-      (t) => String(t.id) === String(currentTrack?.id)
-    );
+    // Fixed header height for proper spacing
+    const HEADER_HEIGHT = 100;
 
     return (
       <BottomSheetModal
@@ -213,25 +364,108 @@ export const QueueSheet = forwardRef<QueueSheetRef, QueueSheetProps>(
             backgroundColor: Platform.OS === "ios" ? undefined : "#0a0a0a",
           }}
         >
-          <BottomSheetView className="px-4 pt-2 pb-3 border-b border-white/10">
-            <View className="flex-row items-center justify-between">
-              <Text className="text-white text-lg font-bold">Queue</Text>
-              <View className="flex-row items-center">
-                <Text className="text-white/50 text-sm mr-3">
+          {/* Fixed Header - Always visible at top */}
+          <View
+            style={{
+              paddingHorizontal: 16,
+              paddingTop: 8,
+              paddingBottom: 12,
+              borderBottomWidth: 1,
+              borderBottomColor: "rgba(255,255,255,0.1)",
+              backgroundColor:
+                Platform.OS === "ios" ? "rgba(10,10,10,0.8)" : "#0a0a0a",
+            }}
+          >
+            {/* Title Row */}
+            <View
+              style={{
+                flexDirection: "row",
+                alignItems: "center",
+                justifyContent: "space-between",
+              }}
+            >
+              <Text
+                style={{
+                  color: "#fff",
+                  fontSize: 18,
+                  fontWeight: "bold",
+                }}
+              >
+                Queue
+              </Text>
+              <View style={{ flexDirection: "row", alignItems: "center" }}>
+                <Text
+                  style={{
+                    color: "rgba(255,255,255,0.5)",
+                    fontSize: 14,
+                    marginRight: 12,
+                  }}
+                >
                   {queue.length} tracks
                 </Text>
-                <TouchableOpacity onPress={close} className="p-2">
+                <TouchableOpacity
+                  onPress={close}
+                  style={{
+                    padding: 8,
+                    marginRight: -8,
+                  }}
+                  hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                >
                   <Ionicons name="close" size={24} color="#fff" />
                 </TouchableOpacity>
               </View>
             </View>
+
+            {/* Status Row */}
             {currentIndex >= 0 && (
-              <Text className="text-white/40 text-xs mt-1">
+              <Text
+                style={{
+                  color: "rgba(255,255,255,0.4)",
+                  fontSize: 12,
+                  marginTop: 4,
+                }}
+              >
                 Now playing: {currentIndex + 1} of {queue.length}
               </Text>
             )}
-          </BottomSheetView>
 
+            {/* Clear All Button */}
+            {queue.length > 0 && (
+              <TouchableOpacity
+                onPress={handleClearQueue}
+                style={{
+                  flexDirection: "row",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  marginTop: 12,
+                  paddingVertical: 10,
+                  paddingHorizontal: 16,
+                  backgroundColor: "rgba(255, 59, 48, 0.15)",
+                  borderRadius: 8,
+                  borderWidth: 1,
+                  borderColor: "rgba(255, 59, 48, 0.3)",
+                }}
+              >
+                <Ionicons
+                  name="trash-outline"
+                  size={16}
+                  color="#ff3b30"
+                  style={{ marginRight: 8 }}
+                />
+                <Text
+                  style={{
+                    color: "#ff3b30",
+                    fontSize: 14,
+                    fontWeight: "600",
+                  }}
+                >
+                  Clear Queue
+                </Text>
+              </TouchableOpacity>
+            )}
+          </View>
+
+          {/* Scrollable Track List */}
           <BottomSheetFlatList
             data={queue}
             keyExtractor={(item: { id: string | number }, index: number) =>

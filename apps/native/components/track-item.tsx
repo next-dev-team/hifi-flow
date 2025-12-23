@@ -1,8 +1,9 @@
 import { Ionicons } from "@expo/vector-icons";
-import { Card } from "heroui-native";
 import type React from "react";
+import { useEffect, useRef } from "react";
 import {
   ActivityIndicator,
+  Animated,
   Image,
   Text,
   TouchableOpacity,
@@ -25,7 +26,71 @@ export interface TrackItemProps {
   onLongPress?: () => void;
   onRemove?: () => void;
   isLoading?: boolean;
+  /** Index in queue - used to determine if this is the "next" track */
+  queueIndex?: number;
 }
+
+/**
+ * Flashing indicator component for pre-buffer status
+ */
+const BufferIndicator: React.FC<{ status: "buffering" | "ready" }> = ({
+  status,
+}) => {
+  const opacity = useRef(new Animated.Value(1)).current;
+
+  useEffect(() => {
+    if (status === "buffering") {
+      // Pulsing animation for buffering
+      const animation = Animated.loop(
+        Animated.sequence([
+          Animated.timing(opacity, {
+            toValue: 0.3,
+            duration: 500,
+            useNativeDriver: true,
+          }),
+          Animated.timing(opacity, {
+            toValue: 1,
+            duration: 500,
+            useNativeDriver: true,
+          }),
+        ])
+      );
+      animation.start();
+      return () => animation.stop();
+    } else {
+      // Solid for ready
+      opacity.setValue(1);
+    }
+  }, [status, opacity]);
+
+  return (
+    <Animated.View
+      style={{
+        position: "absolute",
+        top: 2,
+        right: 2,
+        opacity,
+      }}
+    >
+      <View
+        style={{
+          width: 16,
+          height: 16,
+          borderRadius: 8,
+          backgroundColor: status === "ready" ? "#22c55e" : "#f59e0b",
+          alignItems: "center",
+          justifyContent: "center",
+        }}
+      >
+        <Ionicons
+          name={status === "ready" ? "checkmark" : "hourglass-outline"}
+          size={10}
+          color="#fff"
+        />
+      </View>
+    </Animated.View>
+  );
+};
 
 export const TrackItem: React.FC<TrackItemProps> = ({
   track,
@@ -33,6 +98,7 @@ export const TrackItem: React.FC<TrackItemProps> = ({
   onLongPress,
   onRemove,
   isLoading: propLoading,
+  queueIndex,
 }) => {
   const {
     playTrack,
@@ -41,11 +107,32 @@ export const TrackItem: React.FC<TrackItemProps> = ({
     isPlaying,
     pauseTrack,
     resumeTrack,
+    queue,
+    nextTrackBufferStatus,
   } = usePlayer();
 
   const isPlayerLoading = loadingTrackId === String(track.id);
   const isLoading = propLoading || isPlayerLoading;
   const isActive = currentTrack?.id === String(track.id);
+
+  // Determine if this track is the "next" track in queue
+  const isNextTrack = (() => {
+    if (queueIndex === undefined || !currentTrack || queue.length <= 1) {
+      return false;
+    }
+    const currentIndex = queue.findIndex(
+      (t) => String(t.id) === String(currentTrack.id)
+    );
+    if (currentIndex === -1) return false;
+    const nextIndex = (currentIndex + 1) % queue.length;
+    return queueIndex === nextIndex;
+  })();
+
+  // Show buffer indicator for next track
+  const showBufferIndicator =
+    isNextTrack &&
+    (nextTrackBufferStatus === "buffering" ||
+      nextTrackBufferStatus === "ready");
 
   const handlePress = () => {
     if (isLoading) return;
@@ -106,13 +193,25 @@ export const TrackItem: React.FC<TrackItemProps> = ({
                 </View>
               </View>
             )}
+            {/* Pre-buffer indicator for next track */}
+            {showBufferIndicator && !isLoading && !isActive && (
+              <BufferIndicator
+                status={nextTrackBufferStatus as "buffering" | "ready"}
+              />
+            )}
           </View>
         ) : (
-          <View className="w-12 h-12 rounded-lg mr-3 bg-default-200 items-center justify-center">
+          <View className="w-12 h-12 rounded-lg mr-3 bg-default-200 items-center justify-center relative">
             {isLoading ? (
               <ActivityIndicator size="small" color="#000" />
             ) : (
               <Text className="text-lg">🎵</Text>
+            )}
+            {/* Pre-buffer indicator for next track without artwork */}
+            {showBufferIndicator && !isLoading && !isActive && (
+              <BufferIndicator
+                status={nextTrackBufferStatus as "buffering" | "ready"}
+              />
             )}
           </View>
         )}
