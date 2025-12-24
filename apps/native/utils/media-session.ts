@@ -67,7 +67,10 @@ class MediaSessionService {
         artworkUrl: this.currentTrack?.artwork,
       };
 
-      this.player.setActiveForLockScreen(true, metadata);
+      this.player.setActiveForLockScreen(true, metadata, {
+        showSeekBackward: true,
+        showSeekForward: true,
+      });
 
       // Note: The previous event handler for 'play', 'pause', etc. was removed
       // because setActiveForLockScreen now expects AudioMetadata as the second argument.

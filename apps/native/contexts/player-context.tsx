@@ -3,11 +3,11 @@ import {
   extractAudioAnalysis,
 } from "@siteed/expo-audio-studio";
 import {
-  default as AudioModule,
   type AudioPlayer,
   type AudioStatus,
   createAudioPlayer,
 } from "expo-audio";
+import type { AddTrack as TrackPlayerAddTrack } from "react-native-track-player";
 import * as SecureStore from "expo-secure-store";
 import type React from "react";
 import {
@@ -19,11 +19,21 @@ import {
   useRef,
   useState,
 } from "react";
-import { Platform } from "react-native";
+import { AppState, Platform } from "react-native";
 import { useToast } from "@/contexts/toast-context";
 import { usePersistentState } from "@/hooks/use-persistent-state";
 import { losslessAPI } from "@/utils/api";
 import { mediaSessionService } from "@/utils/media-session";
+import TrackPlayer, {
+  AppKilledPlaybackBehavior,
+  Capability,
+  Event,
+  RepeatMode as TrackPlayerRepeatMode,
+  State as TrackPlayerState,
+  usePlaybackState,
+  useProgress,
+  useTrackPlayerEvents,
+} from "@/utils/track-player";
 import type { AudioQuality as ApiAudioQuality } from "@/utils/types";
 
 type AudioQuality = ApiAudioQuality;
@@ -232,31 +242,162 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
   // PlayNext ref for callbacks
   const playNextRef = useRef<() => Promise<void>>(async () => {});
 
-  // ==================== Derived State ====================
-  const isPlaying = status?.playing ?? false;
-  const isLoading = status?.isBuffering ?? false;
-  const positionMillis = (status?.currentTime ?? 0) * 1000;
-  const durationMillis = (status?.duration ?? 0) * 1000;
+  const trackPlayerReadyRef = useRef(false);
 
-  // ==================== Audio Mode Configuration ====================
-  useEffect(() => {
-    async function configureAudio() {
-      if (Platform.OS === "web") return;
-      try {
-        await AudioModule.setAudioModeAsync({
-          playsInSilentMode: true,
-          interruptionMode: "doNotMix",
-          shouldPlayInBackground: true,
-        });
-      } catch (e) {
-        console.warn("Failed to set audio mode", e);
-      }
+  const isNative = Platform.OS !== "web";
+
+  const getTrackPlayerActiveIndex = useCallback(async (): Promise<number | null> => {
+    if (!isNative) return null;
+    const record = TrackPlayer as unknown as Record<string, unknown>;
+    const getActiveTrackIndex = record["getActiveTrackIndex"];
+    if (typeof getActiveTrackIndex === "function") {
+      const idx = await (getActiveTrackIndex as () => Promise<number | undefined>)();
+      return typeof idx === "number" ? idx : null;
     }
-    void configureAudio();
-  }, []);
+    const idx = await TrackPlayer.getCurrentTrack();
+    return typeof idx === "number" ? idx : null;
+  }, [isNative]);
+
+  const buildTrackPlayerTrack = useCallback(
+    (track: Track, url: string): TrackPlayerAddTrack => {
+      return {
+        id: String(track.id),
+        url,
+        title: track.title,
+        artist: track.artist,
+        artwork: track.artwork,
+        duration: track.duration,
+      };
+    },
+    []
+  );
+
+  // ==================== Derived State ====================
+  const trackPlayerProgress = useProgress(250);
+  const trackPlayerPlaybackState = usePlaybackState();
+  const trackPlayerState =
+    typeof trackPlayerPlaybackState === "object" &&
+    trackPlayerPlaybackState !== null &&
+    "state" in trackPlayerPlaybackState
+      ? (trackPlayerPlaybackState as { state?: unknown }).state
+      : trackPlayerPlaybackState;
+
+  const isPlaying = isNative
+    ? trackPlayerState === TrackPlayerState.Playing
+    : (status?.playing ?? false);
+
+  const trackPlayerStateMatches = (key: string) => {
+    if (!isNative) return false;
+    const record = TrackPlayerState as unknown as Record<string, unknown>;
+    return key in record && trackPlayerState === record[key];
+  };
+
+  const isLoading = isNative
+    ? trackPlayerStateMatches("Buffering") || trackPlayerStateMatches("Connecting")
+    : (status?.isBuffering ?? false);
+
+  const positionMillis = isNative
+    ? trackPlayerProgress.position * 1000
+    : (status?.currentTime ?? 0) * 1000;
+  const durationMillis = isNative
+    ? trackPlayerProgress.duration * 1000
+    : (status?.duration ?? 0) * 1000;
+
+  const mapRepeatModeToTrackPlayer = useCallback(
+    (mode: RepeatMode) => {
+      if (mode === "one") return TrackPlayerRepeatMode.Track;
+      if (mode === "all") return TrackPlayerRepeatMode.Queue;
+      return TrackPlayerRepeatMode.Off;
+    },
+    []
+  );
+
+  const setupTrackPlayer = useCallback(async () => {
+    if (Platform.OS === "web") return;
+    if (trackPlayerReadyRef.current) return;
+
+    try {
+      await TrackPlayer.setupPlayer({
+        autoHandleInterruptions: true,
+        autoUpdateMetadata: true,
+      });
+    } catch (e) {
+      const code = String((e as { code?: unknown } | undefined)?.code ?? "");
+      if (code === "android_cannot_setup_player_in_background") {
+        return;
+      }
+      throw e;
+    }
+
+    await TrackPlayer.updateOptions({
+      android: {
+        appKilledPlaybackBehavior: AppKilledPlaybackBehavior.ContinuePlayback,
+      },
+      capabilities: [
+        Capability.Play,
+        Capability.Pause,
+        Capability.SkipToNext,
+        Capability.SkipToPrevious,
+        Capability.SeekTo,
+        Capability.JumpBackward,
+        Capability.JumpForward,
+        Capability.Stop,
+      ],
+      notificationCapabilities: [
+        Capability.Play,
+        Capability.Pause,
+        Capability.SkipToNext,
+        Capability.SkipToPrevious,
+        Capability.JumpBackward,
+        Capability.JumpForward,
+        Capability.Stop,
+      ],
+      compactCapabilities: [
+        Capability.Play,
+        Capability.Pause,
+        Capability.SkipToNext,
+      ],
+      forwardJumpInterval: 15,
+      backwardJumpInterval: 15,
+      progressUpdateEventInterval: 1,
+    });
+
+    await TrackPlayer.setRepeatMode(mapRepeatModeToTrackPlayer(repeatMode));
+    await TrackPlayer.setVolume(volume);
+    trackPlayerReadyRef.current = true;
+  }, [mapRepeatModeToTrackPlayer, repeatMode, volume]);
+
+  useEffect(() => {
+    if (Platform.OS === "web") return;
+    if (trackPlayerReadyRef.current) return;
+
+    let stopped = false;
+
+    const run = async () => {
+      try {
+        await setupTrackPlayer();
+      } catch {
+        return;
+      }
+      if (stopped || trackPlayerReadyRef.current) return;
+      const sub = AppState.addEventListener("change", (state) => {
+        if (state === "active" && !trackPlayerReadyRef.current) {
+          void setupTrackPlayer();
+        }
+      });
+      return () => sub.remove();
+    };
+
+    const cleanupPromise = run();
+    return () => {
+      stopped = true;
+      void cleanupPromise;
+    };
+  }, [setupTrackPlayer]);
 
   // ==================== Status Listener ====================
   useEffect(() => {
+    if (Platform.OS !== "web") return;
     if (!player) {
       setStatus(null);
       return;
@@ -270,6 +411,42 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
     );
     return () => subscription.remove();
   }, [player]);
+
+  useTrackPlayerEvents(
+    [Event.PlaybackActiveTrackChanged, Event.PlaybackQueueEnded],
+    (event: unknown) => {
+      if (!isNative) return;
+      const record = event as { type?: unknown };
+      if (record.type === Event.PlaybackQueueEnded) {
+        setNextTrackBufferStatus("none");
+        return;
+      }
+      if (record.type !== Event.PlaybackActiveTrackChanged) return;
+      void (async () => {
+        const activeIndex = await getTrackPlayerActiveIndex();
+        if (activeIndex === null) return;
+        const tpTrack = await TrackPlayer.getTrack(activeIndex);
+        const tpId =
+          typeof tpTrack?.id === "string" ? tpTrack.id : String(tpTrack?.id ?? "");
+        const next =
+          queue.find((t) => String(t.id) === tpId) ??
+          queue[activeIndex] ??
+          null;
+        if (next) {
+          setCurrentTrack(next);
+          setAudioAnalysis(null);
+        }
+        if (typeof tpTrack?.url === "string") {
+          setCurrentStreamUrl(tpTrack.url);
+        }
+        const nextIndex = queue.findIndex((t) => String(t.id) === tpId);
+        const persisted = nextIndex !== -1 ? nextIndex : activeIndex;
+        queueIndexRef.current = persisted;
+        setPersistedQueueIndex(persisted);
+        setNextTrackBufferStatus(queue.length > 1 ? "ready" : "none");
+      })();
+    }
+  );
 
   // ==================== Session Restoration ====================
   useEffect(() => {
@@ -385,6 +562,38 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
     [recentlyPlayed, favorites]
   );
 
+  const resolveQueueStreamUrls = useCallback(
+    async (tracks: Track[]) => {
+      const effectiveQuality = quality === "HI_RES_LOSSLESS" ? "LOSSLESS" : quality;
+
+      const results: Array<{ track: Track; url: string }> = [];
+      const concurrency = 4;
+      let cursor = 0;
+
+      const runWorker = async () => {
+        while (cursor < tracks.length) {
+          const index = cursor;
+          cursor += 1;
+          const track = tracks[index];
+          if (!track) continue;
+          const url = await getStreamUrlForTrack(track, effectiveQuality);
+          if (!url) {
+            throw new Error(`No stream URL for track ${String(track.id)}`);
+          }
+          results[index] = { track, url };
+        }
+      };
+
+      const workers = Array.from(
+        { length: Math.min(concurrency, tracks.length) },
+        () => runWorker()
+      );
+      await Promise.all(workers);
+      return results;
+    },
+    [getStreamUrlForTrack, quality]
+  );
+
   // ==================== Player Control - SINGLE PLAYER PATTERN ====================
 
   /**
@@ -392,6 +601,12 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
    * Must be called before creating any new player
    */
   const destroyAllPlayers = useCallback(() => {
+    if (isNative) {
+      void TrackPlayer.reset();
+      setPlayer(null);
+      setNextTrackBufferStatus("none");
+      return;
+    }
     // Destroy active player
     if (activePlayerRef.current) {
       try {
@@ -416,7 +631,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
 
     setPlayer(null);
     setNextTrackBufferStatus("none");
-  }, []);
+  }, [isNative]);
 
   // Add to recently played
   const addToRecentlyPlayed = useCallback((track: Track, streamUrl: string) => {
@@ -449,6 +664,59 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
       return newHistory;
     });
   }, []);
+
+  const setNativeQueueAndPlay = useCallback(
+    async (tracks: Track[], startIndex: number, skipRecentlyPlayed = false) => {
+      if (!isNative) return false;
+      if (playLockRef.current) return false;
+
+      playLockRef.current = true;
+      const startTrack = tracks[startIndex];
+      setLoadingTrackId(startTrack ? String(startTrack.id) : null);
+
+      try {
+        await setupTrackPlayer();
+        if (!trackPlayerReadyRef.current) return false;
+
+        const resolved = await resolveQueueStreamUrls(tracks);
+        await TrackPlayer.reset();
+        await TrackPlayer.add(
+          resolved.map((r) => buildTrackPlayerTrack(r.track, r.url))
+        );
+        await TrackPlayer.skip(
+          Math.max(0, Math.min(startIndex, resolved.length - 1))
+        );
+        await TrackPlayer.play();
+
+        const active = resolved[Math.max(0, Math.min(startIndex, resolved.length - 1))];
+        if (active) {
+          setCurrentStreamUrl(active.url);
+          if (!skipRecentlyPlayed) {
+            void addToRecentlyPlayed(active.track, active.url);
+          }
+        } else {
+          setCurrentStreamUrl(null);
+        }
+
+        setNextTrackBufferStatus(tracks.length > 1 ? "ready" : "none");
+        consecutiveFailuresRef.current = 0;
+        return true;
+      } catch (error) {
+        console.error("[Player] TrackPlayer playback failed:", error);
+        return false;
+      } finally {
+        setLoadingTrackId(null);
+        playLockRef.current = false;
+      }
+    },
+    [
+      addToRecentlyPlayed,
+      buildTrackPlayerTrack,
+      isNative,
+      resolveQueueStreamUrls,
+      setupTrackPlayer,
+    ]
+  );
 
   /**
    * Core play function - handles single track playback with mutex lock
@@ -529,6 +797,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
         console.log("[Player] Creating new player for:", track.title);
         const newPlayer = createAudioPlayer(streamUrl, {
           downloadFirst: false,
+          keepAudioSessionActive: true,
           updateInterval: 250,
         });
 
@@ -568,6 +837,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
    * Called after current track starts playing
    */
   const preBufferNextTrack = useCallback(async () => {
+    if (isNative) return;
     if (queue.length === 0) return;
 
     // Find current index
@@ -645,6 +915,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
       console.log("[PreBuffer] Pre-buffering:", nextTrack.title);
       const bufferedPlayer = createAudioPlayer(streamUrl, {
         downloadFirst: false,
+        keepAudioSessionActive: true,
         updateInterval: 250,
       });
 
@@ -662,6 +933,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
   }, [
     queue,
     currentTrack,
+    isNative,
     shuffleEnabled,
     repeatMode,
     quality,
@@ -672,6 +944,77 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
 
   const playNext = useCallback(async () => {
     if (queue.length === 0) return;
+
+    if (isNative) {
+      if (repeatMode === "one") {
+        await TrackPlayer.seekTo(0);
+        await TrackPlayer.play();
+        return;
+      }
+
+      const currentIndex = currentTrack
+        ? queue.findIndex((t) => String(t.id) === String(currentTrack.id))
+        : -1;
+
+      let nextIndex: number;
+      if (shuffleEnabled) {
+        const available: number[] = [];
+        for (let i = 0; i < queue.length; i++) {
+          if (i !== currentIndex && !shuffleHistoryRef.current.includes(i)) {
+            available.push(i);
+          }
+        }
+
+        if (available.length === 0) {
+          if (repeatMode === "all") {
+            shuffleHistoryRef.current = [];
+            nextIndex = Math.floor(Math.random() * queue.length);
+          } else {
+            return;
+          }
+        } else {
+          nextIndex = available[Math.floor(Math.random() * available.length)];
+        }
+        shuffleHistoryRef.current.push(nextIndex);
+      } else {
+        if (currentIndex >= queue.length - 1) {
+          if (repeatMode === "all") {
+            nextIndex = 0;
+          } else {
+            return;
+          }
+        } else {
+          nextIndex = Math.max(0, currentIndex + 1);
+        }
+      }
+
+      const nextTrack = queue[nextIndex];
+      if (!nextTrack) return;
+
+      queueIndexRef.current = nextIndex;
+      setCurrentTrack(nextTrack);
+      setAudioAnalysis(null);
+
+      try {
+        await TrackPlayer.skip(nextIndex);
+        await TrackPlayer.play();
+        const tpTrack = await TrackPlayer.getTrack(nextIndex);
+        if (typeof tpTrack?.url === "string") {
+          setCurrentStreamUrl(tpTrack.url);
+        }
+      } catch {
+        if (repeatMode === "all") {
+          try {
+            await TrackPlayer.skip(0);
+            await TrackPlayer.play();
+          } catch {
+            return;
+          }
+        }
+      }
+
+      return;
+    }
 
     const currentIndex = currentTrack
       ? queue.findIndex((t) => String(t.id) === String(currentTrack.id))
@@ -748,9 +1091,11 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
   }, [
     queue,
     currentTrack,
+    isNative,
     shuffleEnabled,
     repeatMode,
     playSoundInternal,
+    setCurrentStreamUrl,
     showToast,
   ]);
 
@@ -761,6 +1106,55 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
 
   const playPrevious = useCallback(async () => {
     if (queue.length === 0) return;
+
+    if (isNative) {
+      if (positionMillis > 3000) {
+        await TrackPlayer.seekTo(0);
+        await TrackPlayer.play();
+        return;
+      }
+
+      const currentIndex = currentTrack
+        ? queue.findIndex((t) => String(t.id) === String(currentTrack.id))
+        : -1;
+
+      let prevIndex: number;
+      if (shuffleEnabled) {
+        if (shuffleHistoryRef.current.length > 0) {
+          prevIndex = shuffleHistoryRef.current.pop()!;
+        } else {
+          return;
+        }
+      } else {
+        if (currentIndex > 0) {
+          prevIndex = currentIndex - 1;
+        } else if (repeatMode === "all") {
+          prevIndex = queue.length - 1;
+        } else {
+          return;
+        }
+      }
+
+      const prevTrack = queue[prevIndex];
+      if (!prevTrack) return;
+
+      queueIndexRef.current = prevIndex;
+      setCurrentTrack(prevTrack);
+      setAudioAnalysis(null);
+
+      try {
+        await TrackPlayer.skip(prevIndex);
+        await TrackPlayer.play();
+        const tpTrack = await TrackPlayer.getTrack(prevIndex);
+        if (typeof tpTrack?.url === "string") {
+          setCurrentStreamUrl(tpTrack.url);
+        }
+      } catch {
+        return;
+      }
+
+      return;
+    }
 
     const currentIndex = currentTrack
       ? queue.findIndex((t) => String(t.id) === String(currentTrack.id))
@@ -801,10 +1195,12 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
   }, [
     queue,
     currentTrack,
+    isNative,
     shuffleEnabled,
     repeatMode,
     positionMillis,
     playSoundInternal,
+    setCurrentStreamUrl,
   ]);
 
   // ==================== Public API ====================
@@ -812,6 +1208,39 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
   const playTrack = useCallback(
     async (track: Track, options?: { skipRecentlyPlayed?: boolean }) => {
       const skipRecentlyPlayed = options?.skipRecentlyPlayed ?? false;
+
+      if (isNative) {
+        const trackId = String(track.id);
+        const existingIndex = queue.findIndex((t) => String(t.id) === trackId);
+
+        let nextQueue = queue;
+        let nextIndex = existingIndex;
+
+        if (existingIndex === -1) {
+          nextQueue = [...queue, track];
+          if (nextQueue.length > MAX_QUEUE_SIZE) {
+            const trimAmount = nextQueue.length - MAX_QUEUE_SIZE;
+            nextQueue = nextQueue.slice(trimAmount);
+          }
+          nextIndex = nextQueue.findIndex((t) => String(t.id) === trackId);
+        }
+
+        queueIndexRef.current = Math.max(0, nextIndex);
+        shuffleHistoryRef.current = [];
+        setQueue(nextQueue);
+        setCurrentTrack(track);
+        setAudioAnalysis(null);
+
+        const success = await setNativeQueueAndPlay(
+          nextQueue,
+          queueIndexRef.current,
+          skipRecentlyPlayed
+        );
+        if (!success) {
+          showToast({ message: "Playback failed", type: "error" });
+        }
+        return;
+      }
 
       // Add track to queue (append, don't replace)
       setQueue((prev) => {
@@ -844,11 +1273,55 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
 
       await playSoundInternal(track, false, skipRecentlyPlayed);
     },
-    [playSoundInternal, setQueue]
+    [
+      isNative,
+      playSoundInternal,
+      queue,
+      setNativeQueueAndPlay,
+      setQueue,
+      showToast,
+    ]
   );
 
   const playQueue = useCallback(
     async (tracks: Track[], startIndex = 0) => {
+      if (isNative) {
+        const targetTrack = tracks[startIndex] ?? tracks[0];
+        if (!targetTrack) return;
+
+        const existingIds = new Set(queue.map((t) => String(t.id)));
+        const newTracks = tracks.filter((t) => !existingIds.has(String(t.id)));
+        const existingTargetIndex = queue.findIndex(
+          (t) => String(t.id) === String(targetTrack.id)
+        );
+
+        let nextQueue = [...queue, ...newTracks];
+        if (nextQueue.length > MAX_QUEUE_SIZE) {
+          const trimAmount = nextQueue.length - MAX_QUEUE_SIZE;
+          nextQueue = nextQueue.slice(trimAmount);
+        }
+
+        const nextIndex =
+          existingTargetIndex !== -1
+            ? existingTargetIndex
+            : nextQueue.findIndex((t) => String(t.id) === String(targetTrack.id));
+
+        queueIndexRef.current = nextIndex !== -1 ? nextIndex : 0;
+        shuffleHistoryRef.current = [];
+        setQueue(nextQueue);
+        setCurrentTrack(targetTrack);
+        setAudioAnalysis(null);
+
+        const success = await setNativeQueueAndPlay(
+          nextQueue,
+          queueIndexRef.current
+        );
+        if (!success) {
+          showToast({ message: "Playback failed", type: "error" });
+        }
+        return;
+      }
+
       // Append tracks to queue (don't replace)
       setQueue((prev) => {
         // Filter out duplicates (tracks already in queue)
@@ -898,32 +1371,74 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
         await playSoundInternal(startTrack, false);
       }
     },
-    [playSoundInternal, setQueue]
+    [
+      isNative,
+      playSoundInternal,
+      queue,
+      setNativeQueueAndPlay,
+      setQueue,
+      showToast,
+    ]
   );
 
   const pauseTrack = useCallback(async () => {
+    if (isNative) {
+      await TrackPlayer.pause();
+      return;
+    }
     activePlayerRef.current?.pause();
-  }, []);
+  }, [isNative]);
 
   const resumeTrack = useCallback(async () => {
+    if (isNative) {
+      const activeIndex = await getTrackPlayerActiveIndex();
+      if (activeIndex !== null) {
+        await TrackPlayer.play();
+        return;
+      }
+      if (currentTrack && queue.length > 0) {
+        const index = queue.findIndex(
+          (t) => String(t.id) === String(currentTrack.id)
+        );
+        await setNativeQueueAndPlay(queue, Math.max(0, index));
+      }
+      return;
+    }
+
     if (activePlayerRef.current) {
       activePlayerRef.current.play();
     } else if (currentTrack) {
       await playSoundInternal(currentTrack, false);
     }
-  }, [currentTrack, playSoundInternal]);
+  }, [
+    currentTrack,
+    getTrackPlayerActiveIndex,
+    isNative,
+    playSoundInternal,
+    queue,
+    setNativeQueueAndPlay,
+  ]);
 
   const seekToMillis = useCallback(async (pos: number) => {
+    if (isNative) {
+      await TrackPlayer.seekTo(pos / 1000);
+      return;
+    }
     activePlayerRef.current?.seekTo(pos / 1000);
-  }, []);
+  }, [isNative]);
 
   const seekByMillis = useCallback(async (delta: number) => {
+    if (isNative) {
+      const next = Math.max(0, trackPlayerProgress.position + delta / 1000);
+      await TrackPlayer.seekTo(next);
+      return;
+    }
     if (activePlayerRef.current) {
       activePlayerRef.current.seekTo(
         activePlayerRef.current.currentTime + delta / 1000
       );
     }
-  }, []);
+  }, [isNative, trackPlayerProgress.position]);
 
   const addToQueue = useCallback(
     (track: Track): boolean => {
@@ -947,19 +1462,40 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
         showToast({ message: "Track already in queue", type: "info" });
       } else {
         showToast({ message: "Added to queue", type: "success" });
+        if (isNative) {
+          void (async () => {
+            await setupTrackPlayer();
+            if (!trackPlayerReadyRef.current) return;
+            const effectiveQuality =
+              quality === "HI_RES_LOSSLESS" ? "LOSSLESS" : quality;
+            const url = await getStreamUrlForTrack(track, effectiveQuality);
+            if (!url) return;
+            await TrackPlayer.add(buildTrackPlayerTrack(track, url));
+          })();
+        }
       }
       return added;
     },
-    [showToast, setQueue]
+    [
+      buildTrackPlayerTrack,
+      getStreamUrlForTrack,
+      isNative,
+      quality,
+      setQueue,
+      setupTrackPlayer,
+      showToast,
+    ]
   );
 
   const addTracksToQueue = useCallback(
     (tracks: Track[]): number => {
       let addedCount = 0;
+      let addedTracks: Track[] = [];
       setQueue((prev) => {
         const existingIds = new Set(prev.map((t) => String(t.id)));
         const newTracks = tracks.filter((t) => !existingIds.has(String(t.id)));
         addedCount = newTracks.length;
+        addedTracks = newTracks;
         let newQueue = [...prev, ...newTracks];
         // Limit to MAX_QUEUE_SIZE (keep newest)
         if (newQueue.length > MAX_QUEUE_SIZE) {
@@ -977,10 +1513,36 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
           } to queue`,
           type: "success",
         });
+        if (isNative) {
+          void (async () => {
+            await setupTrackPlayer();
+            if (!trackPlayerReadyRef.current) return;
+            const effectiveQuality =
+              quality === "HI_RES_LOSSLESS" ? "LOSSLESS" : quality;
+            const resolved = await Promise.all(
+              addedTracks.map(async (t) => {
+                const url = await getStreamUrlForTrack(t, effectiveQuality);
+                if (!url) return null;
+                return buildTrackPlayerTrack(t, url);
+              })
+            );
+            const list = resolved.filter(Boolean) as TrackPlayerAddTrack[];
+            if (list.length === 0) return;
+            await TrackPlayer.add(list);
+          })();
+        }
       }
       return addedCount;
     },
-    [showToast, setQueue]
+    [
+      buildTrackPlayerTrack,
+      getStreamUrlForTrack,
+      isNative,
+      quality,
+      setQueue,
+      setupTrackPlayer,
+      showToast,
+    ]
   );
 
   const clearQueue = useCallback(() => {
@@ -998,6 +1560,16 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
 
   const removeFromQueue = useCallback(
     (trackId: string) => {
+      const removeIndex = queue.findIndex(
+        (t) => String(t.id) === String(trackId)
+      );
+      if (isNative && removeIndex !== -1) {
+        void (async () => {
+          await setupTrackPlayer();
+          if (!trackPlayerReadyRef.current) return;
+          await TrackPlayer.remove(removeIndex);
+        })();
+      }
       setQueue((prev) => {
         const index = prev.findIndex((t) => String(t.id) === String(trackId));
         if (index === -1) return prev;
@@ -1018,15 +1590,18 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
       });
       showToast({ message: "Removed from queue", type: "info" });
     },
-    [showToast, setQueue]
+    [isNative, queue, setQueue, setupTrackPlayer, showToast]
   );
 
   const unloadSound = useCallback(async () => {
     destroyAllPlayers();
+    if (isNative) {
+      await TrackPlayer.reset();
+    }
     setCurrentTrack(null);
     setCurrentStreamUrl(null);
     setAudioAnalysis(null);
-  }, [destroyAllPlayers]);
+  }, [destroyAllPlayers, isNative]);
 
   // ==================== Playback Finish Handler ====================
   useEffect(() => {
@@ -1062,10 +1637,12 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
   // ==================== Media Session Integration ====================
   // Update media session player reference for native lock screen controls
   useEffect(() => {
+    if (isNative) return;
     mediaSessionService.setPlayer(player);
-  }, [player]);
+  }, [isNative, player]);
 
   useEffect(() => {
+    if (isNative) return;
     mediaSessionService.setHandlers({
       onPlay: () => activePlayerRef.current?.play(),
       onPause: () => activePlayerRef.current?.pause(),
@@ -1092,10 +1669,11 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
         }
       },
     });
-  }, [playPrevious]);
+  }, [isNative, playPrevious]);
 
   // Update media session track metadata
   useEffect(() => {
+    if (isNative) return;
     if (currentTrack) {
       mediaSessionService.updateTrack({
         id: String(currentTrack.id),
@@ -1107,17 +1685,18 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
     } else {
       mediaSessionService.clear();
     }
-  }, [currentTrack]);
+  }, [isNative, currentTrack]);
 
   // Update media session playback state
   useEffect(() => {
+    if (isNative) return;
     mediaSessionService.updatePlaybackState({
       isPlaying,
       positionMs: positionMillis,
       durationMs: durationMillis,
       playbackRate: 1.0,
     });
-  }, [isPlaying, positionMillis, durationMillis]);
+  }, [isNative, isPlaying, positionMillis, durationMillis]);
 
   // ==================== Persistence ====================
   useEffect(() => {
@@ -1169,9 +1748,13 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
   const setVolume = useCallback(async (val: number) => {
     const v = Math.max(0, Math.min(1, val));
     setVolumeState(v);
-    if (activePlayerRef.current) activePlayerRef.current.volume = v;
+    if (isNative) {
+      await TrackPlayer.setVolume(v);
+    } else if (activePlayerRef.current) {
+      activePlayerRef.current.volume = v;
+    }
     void writePersistentValue(VOLUME_STORAGE_KEY, String(v));
-  }, []);
+  }, [isNative]);
 
   // ==================== Shuffle & Repeat ====================
   const toggleShuffle = useCallback(() => {
@@ -1192,6 +1775,12 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
       return next;
     });
   }, []);
+
+  useEffect(() => {
+    if (!isNative) return;
+    if (!trackPlayerReadyRef.current) return;
+    void TrackPlayer.setRepeatMode(mapRepeatModeToTrackPlayer(repeatMode));
+  }, [isNative, mapRepeatModeToTrackPlayer, repeatMode]);
 
   // ==================== Favorites ====================
   const toggleCurrentFavorite = useCallback(
