@@ -310,6 +310,76 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
 
   // ==================== Core Utilities ====================
 
+  const waitForPlaybackStart = useCallback(
+    (candidatePlayer: AudioPlayer, timeoutMs: number) => {
+      return new Promise<
+        | { ok: true }
+        | { ok: false; reason: "not_supported" | "timeout" | "error" }
+      >((resolve) => {
+        let settled = false;
+        let media: any;
+        let onMediaError: (() => void) | null = null;
+        let timer: ReturnType<typeof setTimeout> | null = null;
+
+        const finish = (
+          result:
+            | { ok: true }
+            | { ok: false; reason: "not_supported" | "timeout" | "error" }
+        ) => {
+          if (settled) return;
+          settled = true;
+          try {
+            subscription.remove();
+          } catch {}
+          if (onMediaError && media?.removeEventListener) {
+            try {
+              media.removeEventListener("error", onMediaError);
+            } catch {}
+          }
+          if (timer) clearTimeout(timer);
+          resolve(result);
+        };
+
+        const subscription = candidatePlayer.addListener(
+          "playbackStatusUpdate",
+          (newStatus) => {
+            if (
+              newStatus.isLoaded ||
+              newStatus.playing ||
+              newStatus.currentTime > 0
+            ) {
+              finish({ ok: true });
+            }
+          }
+        );
+
+        if (Platform.OS === "web") {
+          media = (candidatePlayer as any)?.media;
+          if (media?.addEventListener) {
+            onMediaError = () => {
+              const mediaError = media?.error;
+              const code =
+                typeof mediaError?.code === "number" ? mediaError.code : null;
+
+              if (code === 4) {
+                finish({ ok: false, reason: "not_supported" });
+                return;
+              }
+
+              finish({ ok: false, reason: "error" });
+            };
+            media.addEventListener("error", onMediaError);
+          }
+        }
+
+        timer = setTimeout(() => {
+          finish({ ok: false, reason: "timeout" });
+        }, timeoutMs);
+      });
+    },
+    []
+  );
+
   const setQuality = useCallback((newQuality: AudioQuality) => {
     setQualityState(newQuality);
     void writePersistentValue(QUALITY_STORAGE_KEY, newQuality);
@@ -504,200 +574,134 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
       const trackIdStr = String(track.id);
       setLoadingTrackId(trackIdStr);
 
-      let isTimedOut = false;
-      let countdownTimer: ReturnType<typeof setInterval> | null = null;
-      let toastStarted = false;
-
       try {
-        const timeoutPromise = new Promise<boolean>((resolve) => {
-          let remaining = 15;
-          countdownTimer = setInterval(() => {
-            remaining--;
-            if (remaining <= 13 && remaining > 0) {
-              toastStarted = true;
-              showToast({
-                message: `Stuck? Skipping in ${remaining}s...`,
-                type: "info",
-                duration: 1500,
-              });
-            }
-            if (remaining <= 0) {
-              if (countdownTimer) clearInterval(countdownTimer);
-              if (playLockRef.current) {
-                console.warn("[Player] Playback timeout (15s)");
-              }
-              isTimedOut = true;
-              showToast({
-                message: "Playback stuck, skipping track...",
-                type: "error",
-                duration: 3000,
-              });
-              resolve(false);
-            }
-          }, 1000);
-        });
+        let allowPreBuffered = usePreBuffered;
 
-        const performPlay = async (): Promise<boolean> => {
-          // STEP 1: Check if we have a pre-buffered player for this track
+        for (let attempt = 1; attempt <= 3; attempt += 1) {
           if (
-            usePreBuffered &&
+            allowPreBuffered &&
             preBufferedPlayerRef.current?.trackId === trackIdStr
           ) {
-            if (isTimedOut) return false;
-
             console.log("[Player] Using pre-buffered player for:", track.title);
-
-            // Destroy current active player first
-            if (activePlayerRef.current) {
-              try {
-                activePlayerRef.current.pause();
-                activePlayerRef.current.remove();
-              } catch (e) {
-                console.warn("Error removing active player:", e);
-              }
-              activePlayerRef.current = null;
-            }
-
-            // Promote pre-buffered player to active
             const { player: bufferedPlayer, url } =
               preBufferedPlayerRef.current;
-            activePlayerRef.current = bufferedPlayer;
             preBufferedPlayerRef.current = null;
 
-            setPlayer(bufferedPlayer);
-            setCurrentStreamUrl(url);
+            try {
+              destroyAllPlayers();
+            } catch {}
+
             bufferedPlayer.volume = volume;
             bufferedPlayer.play();
 
-            setLoadingTrackId(null);
-            consecutiveFailuresRef.current = 0;
-            setNextTrackBufferStatus("none");
-
-            if (!skipRecentlyPlayed) {
-              void addToRecentlyPlayed(track, url);
+            const startResult = await waitForPlaybackStart(
+              bufferedPlayer,
+              15000
+            );
+            if (startResult.ok) {
+              activePlayerRef.current = bufferedPlayer;
+              setPlayer(bufferedPlayer);
+              setCurrentStreamUrl(url);
+              setLoadingTrackId(null);
+              consecutiveFailuresRef.current = 0;
+              setNextTrackBufferStatus("none");
+              if (!skipRecentlyPlayed) {
+                void addToRecentlyPlayed(track, url);
+              }
+              return true;
             }
-            return true;
+
+            try {
+              bufferedPlayer.pause();
+              bufferedPlayer.remove();
+            } catch {}
+
+            allowPreBuffered = false;
           }
 
-          // STEP 2: Destroy ALL existing players
           destroyAllPlayers();
 
-          if (isTimedOut) return false;
-
-          // STEP 3: Get stream URL (use LOSSLESS for faster start if HI_RES_LOSSLESS requested)
           const effectiveQuality =
             quality === "HI_RES_LOSSLESS" ? "LOSSLESS" : quality;
-          let streamUrl = await getStreamUrlForTrack(track, effectiveQuality);
-
-          if (isTimedOut) return false;
-
-          if (!streamUrl) {
+          const baseStreamUrl = await getStreamUrlForTrack(
+            track,
+            effectiveQuality
+          );
+          if (!baseStreamUrl) {
             console.warn(`[Player] No stream URL for track ${track.id}`);
-            setLoadingTrackId(null);
             return false;
           }
 
-          // Resolve through cache
-          try {
-            const resolvedUrl = await audioCacheService.resolveUrl(streamUrl, {
-              id: String(track.id),
-              title: track.title,
-              artist: track.artist,
-              artwork: track.artwork,
-            });
-            streamUrl = resolvedUrl;
-          } catch (e) {
-            console.warn(
-              "[Player] Cache resolution failed, using original URL:",
-              e
-            );
+          let streamUrl = baseStreamUrl;
+          if (attempt === 1) {
+            try {
+              streamUrl = await audioCacheService.resolveUrl(baseStreamUrl, {
+                id: String(track.id),
+                title: track.title,
+                artist: track.artist,
+                artwork: track.artwork,
+              });
+            } catch (e) {
+              console.warn(
+                "[Player] Cache resolution failed, using original URL:",
+                e
+              );
+              streamUrl = baseStreamUrl;
+            }
           }
 
-          if (isTimedOut) return false;
-
-          // Verify URL accessibility for blob URLs (Web specific)
           if (Platform.OS === "web" && streamUrl.startsWith("blob:")) {
             try {
               const response = await fetch(streamUrl);
               if (!response.ok) {
-                console.warn(`[Player] Blob URL invalid: ${streamUrl}`);
                 throw new Error("Blob URL inaccessible");
               }
-            } catch (e) {
-              console.warn(
-                "[Player] Blob check failed, falling back to original source"
-              );
-              // Fallback to non-cached URL if possible, or fail gracefully
-              // Since we don't have the original non-blob URL easily if it was fully cached,
-              // we might need to re-fetch it.
-              // However, resolveUrl returns original URL if not cached.
-              // If it returned a blob, it means it found it in cache.
-              // If that blob is bad, we should probably try to clear it?
-
-              // For now, let's try to get a fresh stream URL
-              try {
-                const freshUrl = await getStreamUrlForTrack(
-                  track,
-                  effectiveQuality
-                );
-                if (freshUrl) streamUrl = freshUrl;
-              } catch (retryErr) {
-                console.error(
-                  "[Player] Failed to recover stream URL:",
-                  retryErr
-                );
-              }
+            } catch {
+              streamUrl = baseStreamUrl;
             }
           }
 
-          if (isTimedOut) return false;
-
-          // STEP 4: Create and play new player
           console.log("[Player] Creating new player for:", track.title);
           const newPlayer = createAudioPlayer(streamUrl, {
             downloadFirst: false,
             updateInterval: 250,
           });
 
-          // Seek to saved position if available
           const savedPos = savedPositions[trackIdStr];
           if (savedPos && savedPos > 5) {
-            // Only seek if > 5 seconds to avoid weird starts
-            newPlayer.seekTo(savedPos);
+            void newPlayer.seekTo(savedPos);
           }
 
-          if (isTimedOut) {
-            newPlayer.remove();
-            return false;
-          }
-
-          activePlayerRef.current = newPlayer;
-          setPlayer(newPlayer);
-          setCurrentStreamUrl(streamUrl);
           newPlayer.volume = volume;
           newPlayer.play();
 
-          consecutiveFailuresRef.current = 0;
-          if (!skipRecentlyPlayed) {
-            void addToRecentlyPlayed(track, streamUrl);
+          const startResult = await waitForPlaybackStart(newPlayer, 15000);
+          if (startResult.ok) {
+            activePlayerRef.current = newPlayer;
+            setPlayer(newPlayer);
+            setCurrentStreamUrl(streamUrl);
+            consecutiveFailuresRef.current = 0;
+            if (!skipRecentlyPlayed) {
+              void addToRecentlyPlayed(track, streamUrl);
+            }
+            return true;
           }
 
-          return true;
-        };
+          try {
+            newPlayer.pause();
+            newPlayer.remove();
+          } catch {}
 
-        const result = await Promise.race([performPlay(), timeoutPromise]);
-
-        if (countdownTimer) clearInterval(countdownTimer);
-
-        if (result && toastStarted) {
-          showToast({
-            message: `Playing: ${track.title}`,
-            type: "success",
-            duration: 2000,
-          });
+          if (attempt < 3) {
+            if (startResult.reason === "not_supported") {
+              await new Promise((r) => setTimeout(r, 150));
+            } else {
+              await new Promise((r) => setTimeout(r, 250));
+            }
+          }
         }
 
-        return result;
+        return false;
       } catch (error) {
         console.error("[Player] Playback failed:", error);
         return false;
@@ -713,7 +717,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
       destroyAllPlayers,
       addToRecentlyPlayed,
       savedPositions,
-      showToast,
+      waitForPlaybackStart,
     ]
   );
 
@@ -1006,9 +1010,23 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
       setCurrentTrack(track);
       setAudioAnalysis(null);
 
-      await playSoundInternal(track, false, skipRecentlyPlayed);
+      const success = await playSoundInternal(track, false, skipRecentlyPlayed);
+      if (!success) {
+        consecutiveFailuresRef.current++;
+        if (consecutiveFailuresRef.current >= MAX_CONSECUTIVE_FAILURES) {
+          showToast({
+            message: "Too many playback errors, stopping.",
+            type: "error",
+          });
+          consecutiveFailuresRef.current = 0;
+          return;
+        }
+        showToast({ message: "Playback failed, skipping...", type: "info" });
+        await new Promise((r) => setTimeout(r, 300));
+        await playNextRef.current();
+      }
     },
-    [playSoundInternal, setQueue]
+    [playSoundInternal, setQueue, showToast]
   );
 
   const playQueue = useCallback(
@@ -1059,10 +1077,24 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
       if (startTrack) {
         setCurrentTrack(startTrack);
         setAudioAnalysis(null);
-        await playSoundInternal(startTrack, false);
+        const success = await playSoundInternal(startTrack, false);
+        if (!success) {
+          consecutiveFailuresRef.current++;
+          if (consecutiveFailuresRef.current >= MAX_CONSECUTIVE_FAILURES) {
+            showToast({
+              message: "Too many playback errors, stopping.",
+              type: "error",
+            });
+            consecutiveFailuresRef.current = 0;
+            return;
+          }
+          showToast({ message: "Playback failed, skipping...", type: "info" });
+          await new Promise((r) => setTimeout(r, 300));
+          await playNextRef.current();
+        }
       }
     },
-    [playSoundInternal, setQueue]
+    [playSoundInternal, setQueue, showToast]
   );
 
   const pauseTrack = useCallback(async () => {
@@ -1080,10 +1112,31 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
   const resumeTrack = useCallback(async () => {
     if (activePlayerRef.current) {
       activePlayerRef.current.play();
+      const startResult = await waitForPlaybackStart(
+        activePlayerRef.current,
+        15000
+      );
+      if (!startResult.ok && currentTrack) {
+        const success = await playSoundInternal(currentTrack, false);
+        if (!success) {
+          consecutiveFailuresRef.current++;
+          if (consecutiveFailuresRef.current >= MAX_CONSECUTIVE_FAILURES) {
+            showToast({
+              message: "Too many playback errors, stopping.",
+              type: "error",
+            });
+            consecutiveFailuresRef.current = 0;
+            return;
+          }
+          showToast({ message: "Playback failed, skipping...", type: "info" });
+          await new Promise((r) => setTimeout(r, 300));
+          await playNextRef.current();
+        }
+      }
     } else if (currentTrack) {
       await playSoundInternal(currentTrack, false);
     }
-  }, [currentTrack, playSoundInternal]);
+  }, [currentTrack, playSoundInternal, showToast, waitForPlaybackStart]);
 
   const seekToMillis = useCallback(async (pos: number) => {
     activePlayerRef.current?.seekTo(pos / 1000);
