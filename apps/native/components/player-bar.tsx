@@ -38,9 +38,9 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Circle, Svg } from "react-native-svg";
 import { withUniwind } from "uniwind";
 import {
+  OPEN_QUEUE_SHEET_EVENT,
   QueueSheet,
   type QueueSheetRef,
-  OPEN_QUEUE_SHEET_EVENT,
 } from "@/components/queue-sheet";
 import { usePlayer } from "@/contexts/player-context";
 import { losslessAPI } from "@/utils/api";
@@ -886,7 +886,10 @@ export const PlayerBar = () => {
     setVolume,
     audioAnalysis,
     loadingTrackId,
+    currentStreamUrl,
   } = usePlayer();
+  const isCached = currentStreamUrl?.startsWith("blob:") || false;
+
   const insets = useSafeAreaInsets();
   const bottomSheetRef = useRef<BottomSheetModal | null>(null);
   const queueSheetRef = useRef<QueueSheetRef>(null);
@@ -1672,14 +1675,19 @@ export const PlayerBar = () => {
               style={animatedContentStyle}
               pointerEvents={isCollapsed ? "none" : "auto"}
             >
-              <View className="flex-1 mr-2 items-start">
-                <Text
-                  className="text-white font-bold text-sm text-left select-none"
-                  numberOfLines={1}
-                  selectable={false}
-                >
-                  {currentTrack.title}
-                </Text>
+              <View className="flex-1 mr-2 items-start justify-center">
+                <View className="flex-row items-center gap-1 max-w-full">
+                  <Text
+                    className="text-white font-bold text-sm text-left select-none shrink"
+                    numberOfLines={1}
+                    selectable={false}
+                  >
+                    {currentTrack.title}
+                  </Text>
+                  {isCached && (
+                    <Ionicons name="flash" size={12} color="#4ade80" />
+                  )}
+                </View>
                 <Text
                   className="text-white/70 text-xs text-left select-none"
                   numberOfLines={1}
@@ -1954,13 +1962,23 @@ export const PlayerBar = () => {
                 >
                   Now Playing
                 </Text>
-                <Text
-                  className="text-2xl font-bold text-white mb-1 select-none"
-                  numberOfLines={1}
-                  selectable={false}
-                >
-                  {currentTrack.title}
-                </Text>
+                <View className="flex-row items-center justify-center gap-2 mb-1 max-w-full">
+                  <Text
+                    className="text-2xl font-bold text-white select-none shrink"
+                    numberOfLines={1}
+                    selectable={false}
+                  >
+                    {currentTrack.title}
+                  </Text>
+                  {isCached && (
+                    <View className="bg-green-500/20 px-2 py-0.5 rounded-full border border-green-500/50 flex-row items-center gap-1 shrink-0">
+                      <Ionicons name="flash" size={12} color="#4ade80" />
+                      <Text className="text-[10px] text-green-400 font-bold uppercase">
+                        Fast
+                      </Text>
+                    </View>
+                  )}
+                </View>
                 <Text
                   className="text-gray-300 select-none"
                   numberOfLines={1}

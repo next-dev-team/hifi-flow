@@ -107,6 +107,19 @@ const streamUrlCacheRef = useRef<
 const STREAM_URL_CACHE_TTL = 30 * 60 * 1000; // 30 minutes
 ```
 
+## Audio Content Caching (Web Only)
+
+For the Web platform, an IndexedDB-based caching layer is implemented to optimize repeated playback of the same tracks.
+
+### Mechanism
+
+1. **Resolution**: When a track is about to be played (or pre-buffered), the `audioCacheService` checks if the audio file is fully cached in IndexedDB.
+2. **Hit**: If cached, a `blob:` URL is created from the cached data and returned. This allows for instant playback without network requests.
+3. **Miss**: If not cached, the original remote URL is returned for immediate playback.
+4. **Background Caching**: If a cache miss occurs, a background process is triggered to download the audio file in chunks and store it in IndexedDB for future use.
+
+This logic is handled in `utils/audio-cache.web.ts` (active implementation) and `utils/audio-cache.ts` (no-op for native).
+
 ## Playback Flow
 
 ### First Track Click

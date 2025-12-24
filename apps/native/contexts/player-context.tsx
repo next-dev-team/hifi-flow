@@ -23,6 +23,7 @@ import { Platform } from "react-native";
 import { useToast } from "@/contexts/toast-context";
 import { usePersistentState } from "@/hooks/use-persistent-state";
 import { losslessAPI } from "@/utils/api";
+import { audioCacheService } from "@/utils/audio-cache";
 import { mediaSessionService } from "@/utils/media-session";
 import type { AudioQuality as ApiAudioQuality } from "@/utils/types";
 
@@ -546,13 +547,16 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
         // STEP 3: Get stream URL (use LOSSLESS for faster start if HI_RES_LOSSLESS requested)
         const effectiveQuality =
           quality === "HI_RES_LOSSLESS" ? "LOSSLESS" : quality;
-        const streamUrl = await getStreamUrlForTrack(track, effectiveQuality);
+        let streamUrl = await getStreamUrlForTrack(track, effectiveQuality);
 
         if (!streamUrl) {
           console.warn(`[Player] No stream URL for track ${track.id}`);
           setLoadingTrackId(null);
           return false;
         }
+
+        // Resolve through cache
+        streamUrl = await audioCacheService.resolveUrl(streamUrl);
 
         // STEP 4: Create and play new player
         console.log("[Player] Creating new player for:", track.title);
@@ -663,12 +667,15 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
     setNextTrackBufferStatus("buffering");
 
     try {
-      const streamUrl = await getStreamUrlForTrack(nextTrack, quality);
+      let streamUrl = await getStreamUrlForTrack(nextTrack, quality);
       if (!streamUrl) {
         console.warn("[PreBuffer] No stream URL for next track");
         setNextTrackBufferStatus("failed");
         return;
       }
+
+      // Resolve through cache
+      streamUrl = await audioCacheService.resolveUrl(streamUrl);
 
       // Clean up ANY existing pre-buffered player (including from race conditions)
       if (preBufferedPlayerRef.current) {
