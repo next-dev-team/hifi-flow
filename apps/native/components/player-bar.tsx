@@ -1676,25 +1676,25 @@ export const PlayerBar = () => {
               pointerEvents={isCollapsed ? "none" : "auto"}
             >
               <View className="flex-1 mr-2 items-start justify-center">
-                <View className="flex-row items-center gap-1 max-w-full">
-                  <Text
-                    className="text-white font-bold text-sm text-left select-none shrink"
-                    numberOfLines={1}
-                    selectable={false}
-                  >
-                    {currentTrack.title}
-                  </Text>
-                  {isCached && (
-                    <Ionicons name="flash" size={12} color="#4ade80" />
-                  )}
-                </View>
                 <Text
-                  className="text-white/70 text-xs text-left select-none"
+                  className="text-white font-bold text-sm text-left select-none"
                   numberOfLines={1}
                   selectable={false}
                 >
-                  {currentTrack.artist}
+                  {currentTrack.title}
                 </Text>
+                <View className="flex-row items-center gap-1 max-w-full">
+                  <Text
+                    className="text-white/70 text-xs text-left select-none shrink"
+                    numberOfLines={1}
+                    selectable={false}
+                  >
+                    {currentTrack.artist}
+                  </Text>
+                  {isCached && (
+                    <Ionicons name="flash" size={10} color="#4ade80" />
+                  )}
+                </View>
               </View>
 
               <Pressable
@@ -1962,30 +1962,30 @@ export const PlayerBar = () => {
                 >
                   Now Playing
                 </Text>
-                <View className="flex-row items-center justify-center gap-2 mb-1 max-w-full">
+                <Text
+                  className="text-2xl font-bold text-white mb-1 select-none"
+                  numberOfLines={1}
+                  selectable={false}
+                >
+                  {currentTrack.title}
+                </Text>
+                <View className="flex-row items-center justify-center gap-2 max-w-full">
                   <Text
-                    className="text-2xl font-bold text-white select-none shrink"
+                    className="text-gray-300 select-none shrink"
                     numberOfLines={1}
                     selectable={false}
                   >
-                    {currentTrack.title}
+                    {currentTrack.artist}
                   </Text>
                   {isCached && (
                     <View className="bg-green-500/20 px-2 py-0.5 rounded-full border border-green-500/50 flex-row items-center gap-1 shrink-0">
-                      <Ionicons name="flash" size={12} color="#4ade80" />
-                      <Text className="text-[10px] text-green-400 font-bold uppercase">
+                      <Ionicons name="flash" size={10} color="#4ade80" />
+                      <Text className="text-[9px] text-green-400 font-bold uppercase">
                         Fast
                       </Text>
                     </View>
                   )}
                 </View>
-                <Text
-                  className="text-gray-300 select-none"
-                  numberOfLines={1}
-                  selectable={false}
-                >
-                  {currentTrack.artist}
-                </Text>
               </View>
 
               <View className="items-center">
