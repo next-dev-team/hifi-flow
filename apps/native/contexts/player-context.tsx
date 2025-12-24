@@ -395,6 +395,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
     // Destroy active player
     if (activePlayerRef.current) {
       try {
+        activePlayerRef.current.pause();
         activePlayerRef.current.remove();
       } catch (e) {
         console.warn("Error removing active player:", e);
@@ -405,6 +406,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
     // Destroy pre-buffered player
     if (preBufferedPlayerRef.current) {
       try {
+        preBufferedPlayerRef.current.player.pause();
         preBufferedPlayerRef.current.player.remove();
       } catch (e) {
         console.warn("Error removing pre-buffered player:", e);
@@ -480,7 +482,12 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
 
           // Destroy current active player first
           if (activePlayerRef.current) {
-            activePlayerRef.current.remove();
+            try {
+              activePlayerRef.current.pause();
+              activePlayerRef.current.remove();
+            } catch (e) {
+              console.warn("Error removing active player:", e);
+            }
             activePlayerRef.current = null;
           }
 
@@ -613,12 +620,6 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
       return;
     }
 
-    // Clean up old pre-buffered player
-    if (preBufferedPlayerRef.current) {
-      preBufferedPlayerRef.current.player.remove();
-      preBufferedPlayerRef.current = null;
-    }
-
     setNextTrackBufferStatus("buffering");
 
     try {
@@ -627,6 +628,17 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
         console.warn("[PreBuffer] No stream URL for next track");
         setNextTrackBufferStatus("failed");
         return;
+      }
+
+      // Clean up ANY existing pre-buffered player (including from race conditions)
+      if (preBufferedPlayerRef.current) {
+        try {
+          preBufferedPlayerRef.current.player.pause();
+          preBufferedPlayerRef.current.player.remove();
+        } catch (e) {
+          console.warn("Error removing pre-buffered player:", e);
+        }
+        preBufferedPlayerRef.current = null;
       }
 
       // Create player but don't play
