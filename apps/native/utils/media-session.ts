@@ -60,10 +60,18 @@ class MediaSessionService {
     this.player = player;
     if (this.player && Platform.OS !== "web") {
       // Enable lock screen controls
-      this.player.setActiveForLockScreen(true, undefined, {
-        showSeekBackward: true,
-        showSeekForward: true,
-      });
+      const metadata: AudioMetadata = {
+        title: this.currentTrack?.title ?? "Ui Stream",
+        artist: this.currentTrack?.artist ?? "Siteed",
+        albumTitle: this.currentTrack?.album,
+        artworkUrl: this.currentTrack?.artwork,
+      };
+
+      this.player.setActiveForLockScreen(true, metadata);
+
+      // Note: The previous event handler for 'play', 'pause', etc. was removed
+      // because setActiveForLockScreen now expects AudioMetadata as the second argument.
+      // You may need to set up event listeners separately if supported by the library.
     }
   }
 
