@@ -112,6 +112,7 @@ const VOLUME_STORAGE_KEY = "hififlow:volume:v1";
 const SLEEP_TIMER_KEY = "hififlow:sleeptimer:v1";
 const QUEUE_STORAGE_KEY = "hififlow:queue:v1";
 const QUEUE_INDEX_KEY = "hififlow:queue_index:v1";
+const PLAYBACK_POSITIONS_KEY = "hififlow:positions:v1";
 
 // Maximum number of items in queue (keep newest)
 const MAX_QUEUE_SIZE = 500;
@@ -174,6 +175,10 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
   const [persistedQueueIndex, setPersistedQueueIndex, isIndexLoaded] =
     usePersistentState<number>(QUEUE_INDEX_KEY, -1);
   const queueIndexRef = useRef<number>(-1);
+
+  const [savedPositions, setSavedPositions] = usePersistentState<
+    Record<string, number>
+  >(PLAYBACK_POSITIONS_KEY, {});
 
   // ==================== Settings State ====================
   const [quality, setQualityState] = useState<AudioQuality>("HI_RES_LOSSLESS");
@@ -387,11 +392,35 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
 
   // ==================== Player Control - SINGLE PLAYER PATTERN ====================
 
+  // Save position helper
+  const savePosition = useCallback(
+    (trackId: string, position: number) => {
+      setSavedPositions((prev) => {
+        const newPositions = { ...prev, [trackId]: position };
+        // Limit to 100 items
+        const keys = Object.keys(newPositions);
+        if (keys.length > 100) {
+          delete newPositions[keys[0]];
+        }
+        return newPositions;
+      });
+    },
+    [setSavedPositions]
+  );
+
   /**
    * CRITICAL: Destroys ALL audio players to ensure single-player mode
    * Must be called before creating any new player
    */
   const destroyAllPlayers = useCallback(() => {
+    // Save current position before destroying
+    if (activePlayerRef.current && currentTrack) {
+      savePosition(
+        String(currentTrack.id),
+        activePlayerRef.current.currentTime
+      );
+    }
+
     // Destroy active player
     if (activePlayerRef.current) {
       try {
@@ -416,7 +445,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
 
     setPlayer(null);
     setNextTrackBufferStatus("none");
-  }, []);
+  }, [currentTrack, savePosition]);
 
   // Add to recently played
   const addToRecentlyPlayed = useCallback((track: Track, streamUrl: string) => {
@@ -532,6 +561,16 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
           updateInterval: 250,
         });
 
+        // Seek to saved position if available
+        const savedPos = savedPositions[trackIdStr];
+        if (savedPos && savedPos > 5) {
+          // Only seek if > 5 seconds to avoid weird starts
+          // Check if it's near end (within 10s), if so restart
+          // But we don't know duration yet accurately sometimes.
+          // Assume we seek.
+          newPlayer.seekTo(savedPos);
+        }
+
         activePlayerRef.current = newPlayer;
         setPlayer(newPlayer);
         setCurrentStreamUrl(streamUrl);
@@ -558,6 +597,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
       getStreamUrlForTrack,
       destroyAllPlayers,
       addToRecentlyPlayed,
+      savedPositions,
     ]
   );
 
@@ -902,8 +942,16 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
   );
 
   const pauseTrack = useCallback(async () => {
-    activePlayerRef.current?.pause();
-  }, []);
+    if (activePlayerRef.current) {
+      if (currentTrack) {
+        savePosition(
+          String(currentTrack.id),
+          activePlayerRef.current.currentTime
+        );
+      }
+      activePlayerRef.current.pause();
+    }
+  }, [currentTrack, savePosition]);
 
   const resumeTrack = useCallback(async () => {
     if (activePlayerRef.current) {

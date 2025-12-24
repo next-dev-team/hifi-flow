@@ -5,6 +5,7 @@ import { PortalProvider } from "@gorhom/portal";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Stack } from "expo-router";
 import { HeroUINativeProvider } from "heroui-native";
+import React, { useEffect } from "react";
 import { Platform, View } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { KeyboardProvider } from "react-native-keyboard-controller";
@@ -46,6 +47,24 @@ export default function Layout() {
           alignSelf: "center",
         } as const)
       : ({ flex: 1 } as const);
+
+  React.useEffect(() => {
+    if (Platform.OS === "web" && "serviceWorker" in navigator) {
+      window.addEventListener("load", () => {
+        navigator.serviceWorker
+          .register("/sw.js")
+          .then((registration) => {
+            console.log(
+              "Service Worker registered with scope:",
+              registration.scope
+            );
+          })
+          .catch((error) => {
+            console.error("Service Worker registration failed:", error);
+          });
+      });
+    }
+  }, []);
 
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
