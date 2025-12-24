@@ -2,6 +2,13 @@
 // As IndexedDB is not available on native, we simply pass through the URL.
 // Native caching would require expo-file-system.
 
+export interface AudioMetadata {
+  id: string;
+  title: string;
+  artist: string;
+  artwork?: string;
+}
+
 export class AudioChunkCache {
   constructor(public dbName = "AudioCache", public storeName = "chunks") {}
 
@@ -29,17 +36,25 @@ export class ChunkedAudioLoader {
     return this.url;
   }
 
-  async cacheFullAudio(): Promise<void> {
+  async cacheFullAudio(metadata?: AudioMetadata): Promise<void> {
     // No-op on native
   }
 }
 
 export const audioCacheService = {
-  resolveUrl: async (url: string) => url,
-  cacheUrl: async (url: string) => {
+  addListener: (callback: (url: string) => void) => {
+    return () => {};
+  },
+  resolveUrl: async (url: string, metadata?: AudioMetadata) => url,
+  cacheUrl: async (url: string, metadata?: AudioMetadata) => {
     /* no-op */
   },
   isCached: async (url: string) => {
     return false;
+  },
+  getAllCachedTracks: async (): Promise<
+    { url: string; metadata?: AudioMetadata; timestamp: number }[]
+  > => {
+    return [];
   },
 };

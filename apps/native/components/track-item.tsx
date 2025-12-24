@@ -26,6 +26,7 @@ export interface TrackItemProps {
   onLongPress?: () => void;
   onRemove?: () => void;
   isLoading?: boolean;
+  isCached?: boolean;
   /** Index in queue - used to determine if this is the "next" track */
   queueIndex?: number;
 }
@@ -98,6 +99,7 @@ export const TrackItem: React.FC<TrackItemProps> = ({
   onLongPress,
   onRemove,
   isLoading: propLoading,
+  isCached,
   queueIndex,
 }) => {
   const {
@@ -109,11 +111,17 @@ export const TrackItem: React.FC<TrackItemProps> = ({
     resumeTrack,
     queue,
     nextTrackBufferStatus,
+    cachedTrackIds,
   } = usePlayer();
 
   const isPlayerLoading = loadingTrackId === String(track.id);
   const isLoading = propLoading || isPlayerLoading;
   const isActive = currentTrack?.id === String(track.id);
+
+  // Determine if cached using internal check if prop not provided
+  const isTrackCached =
+    isCached ??
+    (cachedTrackIds?.has(String(track.id)) || cachedTrackIds?.has(track.url));
 
   // Determine if this track is the "next" track in queue
   const isNextTrack = (() => {
@@ -224,9 +232,17 @@ export const TrackItem: React.FC<TrackItemProps> = ({
           >
             {track.title}
           </Text>
-          <Text className="text-default-500 text-[13px]" numberOfLines={1}>
-            {track.artist}
-          </Text>
+          <View className="flex-row items-center gap-1">
+            {isTrackCached && (
+              <Ionicons name="flash" size={10} color="#4ade80" />
+            )}
+            <Text
+              className="text-default-500 text-[13px] shrink"
+              numberOfLines={1}
+            >
+              {track.artist}
+            </Text>
+          </View>
         </View>
         {onRemove && (
           <TouchableOpacity

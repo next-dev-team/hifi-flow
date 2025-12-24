@@ -2,19 +2,35 @@ import { Ionicons } from "@expo/vector-icons";
 import { useSearchSearchGet } from "api-hifi/src/gen/hooks";
 import { router } from "expo-router";
 import { Card } from "heroui-native";
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { Alert, FlatList, Image, Pressable, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { ApiDebug } from "@/components/api-debug";
 import { TimerStatus } from "@/components/timer-status";
 import { TrackItem } from "@/components/track-item";
 import { usePlayer } from "@/contexts/player-context";
+import { type AudioMetadata, audioCacheService } from "@/utils/audio-cache";
 import { resolveArtwork, resolveName } from "@/utils/resolvers";
 
 export default function Library() {
   const { data, isLoading, error } = useSearchSearchGet({ p: "mix" });
   const { recentlyPlayed, playTrack, removeFromRecentlyPlayed } = usePlayer();
-  const [viewMode, setViewMode] = useState<"mixes" | "recent">("recent");
+  const [viewMode, setViewMode] = useState<"mixes" | "recent" | "downloaded">(
+    "recent"
+  );
+  const [downloadedTracks, setDownloadedTracks] = useState<
+    { url: string; metadata?: AudioMetadata }[]
+  >([]);
+
+  useEffect(() => {
+    if (viewMode === "downloaded") {
+      audioCacheService.getAllCachedTracks().then((tracks) => {
+        // Sort by timestamp desc (newest first)
+        const sorted = tracks.sort((a, b) => b.timestamp - a.timestamp);
+        setDownloadedTracks(sorted);
+      });
+    }
+  }, [viewMode]);
 
   const listData = (() => {
     if (!data) return [] as any[];
@@ -123,6 +139,24 @@ export default function Library() {
             Mixes
           </Text>
         </Pressable>
+        <Pressable
+          onPress={() => setViewMode("downloaded")}
+          className={`px-3 py-2 rounded-lg border ${
+            viewMode === "downloaded"
+              ? "bg-foreground border-foreground shadow-sm"
+              : "bg-black/5 dark:bg-white/5 border-black/10 dark:border-white/10"
+          }`}
+        >
+          <Text
+            className={
+              viewMode === "downloaded"
+                ? "text-background font-semibold"
+                : "text-foreground font-semibold"
+            }
+          >
+            Downloaded
+          </Text>
+        </Pressable>
       </View>
 
       {viewMode === "mixes" ? (
@@ -151,6 +185,29 @@ export default function Library() {
             />
           )}
         </>
+      ) : viewMode === "downloaded" ? (
+        <FlatList
+          data={downloadedTracks}
+          keyExtractor={(item) => item.url}
+          renderItem={({ item }) => (
+            <TrackItem
+              track={{
+                id: item.metadata?.id || item.url,
+                title: item.metadata?.title || "Unknown Track",
+                artist: item.metadata?.artist || "Unknown Artist",
+                artwork: item.metadata?.artwork,
+                url: item.url,
+              }}
+              isCached={true}
+            />
+          )}
+          contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 100 }}
+          ListEmptyComponent={
+            <View className="flex-1 justify-center items-center mt-10">
+              <Text className="text-default-500">No downloaded tracks.</Text>
+            </View>
+          }
+        />
       ) : (
         <FlatList
           data={recentlyPlayed}

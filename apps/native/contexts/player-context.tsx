@@ -98,6 +98,7 @@ interface PlayerContextType {
   volume: number;
   setVolume: (volume: number) => Promise<void>;
   loadingTrackId: string | null;
+  cachedTrackIds: Set<string>;
   // New: Pre-buffer status for next track
   nextTrackBufferStatus: PreBufferStatus;
 }
@@ -167,6 +168,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
   const [status, setStatus] = useState<AudioStatus | null>(null);
   const [currentStreamUrl, setCurrentStreamUrl] = useState<string | null>(null);
   const [loadingTrackId, setLoadingTrackId] = useState<string | null>(null);
+  const [cachedTrackIds, setCachedTrackIds] = useState<Set<string>>(new Set());
 
   // ==================== Queue State ====================
   const [queue, setQueue, isQueueLoaded] = usePersistentState<Track[]>(
@@ -556,7 +558,12 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
         }
 
         // Resolve through cache
-        streamUrl = await audioCacheService.resolveUrl(streamUrl);
+        streamUrl = await audioCacheService.resolveUrl(streamUrl, {
+          id: String(track.id),
+          title: track.title,
+          artist: track.artist,
+          artwork: track.artwork,
+        });
 
         // STEP 4: Create and play new player
         console.log("[Player] Creating new player for:", track.title);
@@ -675,7 +682,12 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
       }
 
       // Resolve through cache
-      streamUrl = await audioCacheService.resolveUrl(streamUrl);
+      streamUrl = await audioCacheService.resolveUrl(streamUrl, {
+        id: String(nextTrack.id),
+        title: nextTrack.title,
+        artist: nextTrack.artist,
+        artwork: nextTrack.artwork,
+      });
 
       // Clean up ANY existing pre-buffered player (including from race conditions)
       if (preBufferedPlayerRef.current) {
@@ -1196,6 +1208,33 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
     });
   }, []);
 
+  useEffect(() => {
+    // Load cached tracks
+    audioCacheService.getAllCachedTracks().then((tracks) => {
+      const ids = new Set(tracks.map((t) => String(t.metadata?.id || t.url)));
+      // Also add raw URLs as keys
+      tracks.forEach((t) => {
+        ids.add(t.url);
+      });
+      setCachedTrackIds(ids);
+    });
+
+    // Listen for new cached files
+    const unsubscribe = audioCacheService.addListener((url) => {
+      setCachedTrackIds((prev) => {
+        const next = new Set(prev);
+        next.add(url);
+        // We might want to add ID too if we could fetch metadata here,
+        // but for now URL is sufficient for basic matching if TrackItem checks url.
+        return next;
+      });
+    });
+
+    return () => {
+      unsubscribe();
+    };
+  }, []);
+
   // ==================== Audio Analysis ====================
   const analyzeTrack = useCallback(async (uri: string) => {
     setIsAnalyzing(true);
@@ -1498,6 +1537,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
     volume,
     setVolume,
     loadingTrackId,
+    cachedTrackIds,
     nextTrackBufferStatus,
   };
 

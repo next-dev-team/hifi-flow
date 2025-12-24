@@ -1684,6 +1684,9 @@ export const PlayerBar = () => {
                   {currentTrack.title}
                 </Text>
                 <View className="flex-row items-center gap-1 max-w-full">
+                  {isCached && (
+                    <Ionicons name="flash" size={10} color="#4ade80" />
+                  )}
                   <Text
                     className="text-white/70 text-xs text-left select-none shrink"
                     numberOfLines={1}
@@ -1691,9 +1694,6 @@ export const PlayerBar = () => {
                   >
                     {currentTrack.artist}
                   </Text>
-                  {isCached && (
-                    <Ionicons name="flash" size={10} color="#4ade80" />
-                  )}
                 </View>
               </View>
 
@@ -1970,13 +1970,6 @@ export const PlayerBar = () => {
                   {currentTrack.title}
                 </Text>
                 <View className="flex-row items-center justify-center gap-2 max-w-full">
-                  <Text
-                    className="text-gray-300 select-none shrink"
-                    numberOfLines={1}
-                    selectable={false}
-                  >
-                    {currentTrack.artist}
-                  </Text>
                   {isCached && (
                     <View className="bg-green-500/20 px-2 py-0.5 rounded-full border border-green-500/50 flex-row items-center gap-1 shrink-0">
                       <Ionicons name="flash" size={10} color="#4ade80" />
@@ -1985,6 +1978,13 @@ export const PlayerBar = () => {
                       </Text>
                     </View>
                   )}
+                  <Text
+                    className="text-gray-300 select-none shrink"
+                    numberOfLines={1}
+                    selectable={false}
+                  >
+                    {currentTrack.artist}
+                  </Text>
                 </View>
               </View>
 
