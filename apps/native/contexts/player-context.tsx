@@ -504,96 +504,200 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
       const trackIdStr = String(track.id);
       setLoadingTrackId(trackIdStr);
 
+      let isTimedOut = false;
+      let countdownTimer: ReturnType<typeof setInterval> | null = null;
+      let toastStarted = false;
+
       try {
-        // STEP 1: Check if we have a pre-buffered player for this track
-        if (
-          usePreBuffered &&
-          preBufferedPlayerRef.current?.trackId === trackIdStr
-        ) {
-          console.log("[Player] Using pre-buffered player for:", track.title);
-
-          // Destroy current active player first
-          if (activePlayerRef.current) {
-            try {
-              activePlayerRef.current.pause();
-              activePlayerRef.current.remove();
-            } catch (e) {
-              console.warn("Error removing active player:", e);
+        const timeoutPromise = new Promise<boolean>((resolve) => {
+          let remaining = 15;
+          countdownTimer = setInterval(() => {
+            remaining--;
+            if (remaining <= 13 && remaining > 0) {
+              toastStarted = true;
+              showToast({
+                message: `Stuck? Skipping in ${remaining}s...`,
+                type: "info",
+                duration: 1500,
+              });
             }
-            activePlayerRef.current = null;
+            if (remaining <= 0) {
+              if (countdownTimer) clearInterval(countdownTimer);
+              if (playLockRef.current) {
+                console.warn("[Player] Playback timeout (15s)");
+              }
+              isTimedOut = true;
+              showToast({
+                message: "Playback stuck, skipping track...",
+                type: "error",
+                duration: 3000,
+              });
+              resolve(false);
+            }
+          }, 1000);
+        });
+
+        const performPlay = async (): Promise<boolean> => {
+          // STEP 1: Check if we have a pre-buffered player for this track
+          if (
+            usePreBuffered &&
+            preBufferedPlayerRef.current?.trackId === trackIdStr
+          ) {
+            if (isTimedOut) return false;
+
+            console.log("[Player] Using pre-buffered player for:", track.title);
+
+            // Destroy current active player first
+            if (activePlayerRef.current) {
+              try {
+                activePlayerRef.current.pause();
+                activePlayerRef.current.remove();
+              } catch (e) {
+                console.warn("Error removing active player:", e);
+              }
+              activePlayerRef.current = null;
+            }
+
+            // Promote pre-buffered player to active
+            const { player: bufferedPlayer, url } =
+              preBufferedPlayerRef.current;
+            activePlayerRef.current = bufferedPlayer;
+            preBufferedPlayerRef.current = null;
+
+            setPlayer(bufferedPlayer);
+            setCurrentStreamUrl(url);
+            bufferedPlayer.volume = volume;
+            bufferedPlayer.play();
+
+            setLoadingTrackId(null);
+            consecutiveFailuresRef.current = 0;
+            setNextTrackBufferStatus("none");
+
+            if (!skipRecentlyPlayed) {
+              void addToRecentlyPlayed(track, url);
+            }
+            return true;
           }
 
-          // Promote pre-buffered player to active
-          const { player: bufferedPlayer, url } = preBufferedPlayerRef.current;
-          activePlayerRef.current = bufferedPlayer;
-          preBufferedPlayerRef.current = null;
+          // STEP 2: Destroy ALL existing players
+          destroyAllPlayers();
 
-          setPlayer(bufferedPlayer);
-          setCurrentStreamUrl(url);
-          bufferedPlayer.volume = volume;
-          bufferedPlayer.play();
+          if (isTimedOut) return false;
 
-          setLoadingTrackId(null);
+          // STEP 3: Get stream URL (use LOSSLESS for faster start if HI_RES_LOSSLESS requested)
+          const effectiveQuality =
+            quality === "HI_RES_LOSSLESS" ? "LOSSLESS" : quality;
+          let streamUrl = await getStreamUrlForTrack(track, effectiveQuality);
+
+          if (isTimedOut) return false;
+
+          if (!streamUrl) {
+            console.warn(`[Player] No stream URL for track ${track.id}`);
+            setLoadingTrackId(null);
+            return false;
+          }
+
+          // Resolve through cache
+          try {
+            const resolvedUrl = await audioCacheService.resolveUrl(streamUrl, {
+              id: String(track.id),
+              title: track.title,
+              artist: track.artist,
+              artwork: track.artwork,
+            });
+            streamUrl = resolvedUrl;
+          } catch (e) {
+            console.warn(
+              "[Player] Cache resolution failed, using original URL:",
+              e
+            );
+          }
+
+          if (isTimedOut) return false;
+
+          // Verify URL accessibility for blob URLs (Web specific)
+          if (Platform.OS === "web" && streamUrl.startsWith("blob:")) {
+            try {
+              const response = await fetch(streamUrl);
+              if (!response.ok) {
+                console.warn(`[Player] Blob URL invalid: ${streamUrl}`);
+                throw new Error("Blob URL inaccessible");
+              }
+            } catch (e) {
+              console.warn(
+                "[Player] Blob check failed, falling back to original source"
+              );
+              // Fallback to non-cached URL if possible, or fail gracefully
+              // Since we don't have the original non-blob URL easily if it was fully cached,
+              // we might need to re-fetch it.
+              // However, resolveUrl returns original URL if not cached.
+              // If it returned a blob, it means it found it in cache.
+              // If that blob is bad, we should probably try to clear it?
+
+              // For now, let's try to get a fresh stream URL
+              try {
+                const freshUrl = await getStreamUrlForTrack(
+                  track,
+                  effectiveQuality
+                );
+                if (freshUrl) streamUrl = freshUrl;
+              } catch (retryErr) {
+                console.error(
+                  "[Player] Failed to recover stream URL:",
+                  retryErr
+                );
+              }
+            }
+          }
+
+          if (isTimedOut) return false;
+
+          // STEP 4: Create and play new player
+          console.log("[Player] Creating new player for:", track.title);
+          const newPlayer = createAudioPlayer(streamUrl, {
+            downloadFirst: false,
+            updateInterval: 250,
+          });
+
+          // Seek to saved position if available
+          const savedPos = savedPositions[trackIdStr];
+          if (savedPos && savedPos > 5) {
+            // Only seek if > 5 seconds to avoid weird starts
+            newPlayer.seekTo(savedPos);
+          }
+
+          if (isTimedOut) {
+            newPlayer.remove();
+            return false;
+          }
+
+          activePlayerRef.current = newPlayer;
+          setPlayer(newPlayer);
+          setCurrentStreamUrl(streamUrl);
+          newPlayer.volume = volume;
+          newPlayer.play();
+
           consecutiveFailuresRef.current = 0;
-          setNextTrackBufferStatus("none");
-
           if (!skipRecentlyPlayed) {
-            void addToRecentlyPlayed(track, url);
+            void addToRecentlyPlayed(track, streamUrl);
           }
+
           return true;
+        };
+
+        const result = await Promise.race([performPlay(), timeoutPromise]);
+
+        if (countdownTimer) clearInterval(countdownTimer);
+
+        if (result && toastStarted) {
+          showToast({
+            message: `Playing: ${track.title}`,
+            type: "success",
+            duration: 2000,
+          });
         }
 
-        // STEP 2: Destroy ALL existing players
-        destroyAllPlayers();
-
-        // STEP 3: Get stream URL (use LOSSLESS for faster start if HI_RES_LOSSLESS requested)
-        const effectiveQuality =
-          quality === "HI_RES_LOSSLESS" ? "LOSSLESS" : quality;
-        let streamUrl = await getStreamUrlForTrack(track, effectiveQuality);
-
-        if (!streamUrl) {
-          console.warn(`[Player] No stream URL for track ${track.id}`);
-          setLoadingTrackId(null);
-          return false;
-        }
-
-        // Resolve through cache
-        streamUrl = await audioCacheService.resolveUrl(streamUrl, {
-          id: String(track.id),
-          title: track.title,
-          artist: track.artist,
-          artwork: track.artwork,
-        });
-
-        // STEP 4: Create and play new player
-        console.log("[Player] Creating new player for:", track.title);
-        const newPlayer = createAudioPlayer(streamUrl, {
-          downloadFirst: false,
-          updateInterval: 250,
-        });
-
-        // Seek to saved position if available
-        const savedPos = savedPositions[trackIdStr];
-        if (savedPos && savedPos > 5) {
-          // Only seek if > 5 seconds to avoid weird starts
-          // Check if it's near end (within 10s), if so restart
-          // But we don't know duration yet accurately sometimes.
-          // Assume we seek.
-          newPlayer.seekTo(savedPos);
-        }
-
-        activePlayerRef.current = newPlayer;
-        setPlayer(newPlayer);
-        setCurrentStreamUrl(streamUrl);
-        newPlayer.volume = volume;
-        newPlayer.play();
-
-        consecutiveFailuresRef.current = 0;
-        if (!skipRecentlyPlayed) {
-          void addToRecentlyPlayed(track, streamUrl);
-        }
-
-        return true;
+        return result;
       } catch (error) {
         console.error("[Player] Playback failed:", error);
         return false;
@@ -609,6 +713,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
       destroyAllPlayers,
       addToRecentlyPlayed,
       savedPositions,
+      showToast,
     ]
   );
 
