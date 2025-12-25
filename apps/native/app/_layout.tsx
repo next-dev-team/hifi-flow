@@ -49,20 +49,28 @@ export default function Layout() {
       : ({ flex: 1 } as const);
 
   React.useEffect(() => {
-    if (Platform.OS === "web" && "serviceWorker" in navigator) {
-      window.addEventListener("load", () => {
-        navigator.serviceWorker
-          .register("/sw.js")
-          .then((registration) => {
-            console.log(
-              "Service Worker registered with scope:",
-              registration.scope
-            );
-          })
-          .catch((error) => {
-            console.error("Service Worker registration failed:", error);
-          });
+    if (Platform.OS === "web") {
+      // Initialize VConsole for web debugging
+      import("vconsole").then((VConsole) => {
+        new VConsole.default();
+        console.log("VConsole initialized");
       });
+
+      if ("serviceWorker" in navigator) {
+        window.addEventListener("load", () => {
+          navigator.serviceWorker
+            .register("/sw.js")
+            .then((registration) => {
+              console.log(
+                "Service Worker registered with scope:",
+                registration.scope
+              );
+            })
+            .catch((error) => {
+              console.error("Service Worker registration failed:", error);
+            });
+        });
+      }
     }
   }, []);
 

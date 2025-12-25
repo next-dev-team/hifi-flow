@@ -54,6 +54,7 @@
     "tailwind-variants": "3.1.1",
     "tailwindcss": "~4.1.17",
     "uniwind": "^1.0.4",
+    "vconsole": "^3.15.1",
     "zod": "catalog:"
   },
   "devDependencies": {
