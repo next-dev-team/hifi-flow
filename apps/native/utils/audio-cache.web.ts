@@ -263,8 +263,14 @@ export class ChunkedAudioLoader {
     console.log(`[AudioLoader] Caching ${this.url} (${chunkCount} chunks)`);
 
     // Sequential download to avoid flooding network
-    for (let i = 0; i < chunkCount; i++) {
-      await this.loadChunk(i);
+    // Modified to allow limited concurrency for speed
+    const CONCURRENCY = 3;
+    for (let i = 0; i < chunkCount; i += CONCURRENCY) {
+      const batch = [];
+      for (let j = 0; j < CONCURRENCY && i + j < chunkCount; j++) {
+        batch.push(this.loadChunk(i + j));
+      }
+      await Promise.all(batch);
     }
 
     await this.cache.markFileComplete(

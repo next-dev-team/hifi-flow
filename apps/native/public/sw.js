@@ -12,6 +12,52 @@ if (workbox) {
   const { ExpirationPlugin } = workbox.expiration;
   const { RangeRequestsPlugin } = workbox.rangeRequests;
 
+  // Cache HTML (App Shell)
+  registerRoute(
+    ({ request }) => request.mode === 'navigate',
+    new NetworkFirst({
+      cacheName: 'pages-cache',
+      plugins: [
+        new CacheableResponsePlugin({
+          statuses: [200],
+        }),
+      ],
+    })
+  );
+
+  // Cache JS, CSS, and Worker files
+  registerRoute(
+    ({ request }) =>
+      request.destination === 'script' ||
+      request.destination === 'style' ||
+      request.destination === 'worker',
+    new StaleWhileRevalidate({
+      cacheName: 'assets-cache',
+      plugins: [
+        new CacheableResponsePlugin({
+          statuses: [200],
+        }),
+      ],
+    })
+  );
+
+  // Cache Fonts
+  registerRoute(
+    ({ request }) => request.destination === 'font',
+    new CacheFirst({
+      cacheName: 'fonts-cache',
+      plugins: [
+        new CacheableResponsePlugin({
+          statuses: [200],
+        }),
+        new ExpirationPlugin({
+          maxEntries: 30,
+          maxAgeSeconds: 60 * 24 * 60 * 60, // 60 Days
+        }),
+      ],
+    })
+  );
+
   // Cache Audio Files
   // We use CacheFirst so that if we have it, we serve it (supporting ranges).
   // If not, we fetch it (full file), cache it, and serve the requested range.
