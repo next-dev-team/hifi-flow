@@ -126,6 +126,24 @@ export default function Home() {
   const [debouncedQuery, setDebouncedQuery] = useState("");
   const [favViewMode, setFavViewMode] = useState<"songs" | "artists">("songs");
   const [favArtistFilter, setFavArtistFilter] = useState<string | null>(null);
+  const [isPwaSupported, setIsPwaSupported] = useState(false);
+
+  useEffect(() => {
+    if (
+      Platform.OS === "web" &&
+      typeof navigator !== "undefined" &&
+      "serviceWorker" in navigator
+    ) {
+      // Check if controller is active (already controlled) or ready
+      if (navigator.serviceWorker.controller) {
+        setIsPwaSupported(true);
+      } else {
+        navigator.serviceWorker.ready.then(() => {
+          setIsPwaSupported(true);
+        });
+      }
+    }
+  }, []);
 
   useSpeechRecognitionEvent("start", () => {
     if (!voiceActionOwnerRef.current) return;
@@ -1498,6 +1516,27 @@ export default function Home() {
           </View>
 
           <View className="px-4 pt-2">
+            {isPwaSupported && (
+              <View className="flex-row items-center justify-between py-3 border-b border-default-200">
+                <Text className="text-base text-foreground font-medium">
+                  {speechLang === "en-US"
+                    ? "Offline Ready"
+                    : "ការប្រើប្រាស់ក្រៅបណ្តាញ"}
+                </Text>
+                <View className="flex-row items-center">
+                  <Ionicons
+                    name="cloud-done-outline"
+                    size={20}
+                    color="#17c964"
+                    style={{ marginRight: 6 }}
+                  />
+                  <Text className="text-[#17c964] font-medium text-sm">
+                    {speechLang === "en-US" ? "Active" : "សកម្ម"}
+                  </Text>
+                </View>
+              </View>
+            )}
+
             <View className="flex-row items-center justify-between py-3 border-b border-default-200">
               <Text className="text-base text-foreground font-medium">
                 {speechLang === "en-US" ? "Dark mode" : "មុខងារងងឹត"}
