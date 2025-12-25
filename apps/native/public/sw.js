@@ -7,7 +7,7 @@ if (workbox) {
   workbox.setConfig({ debug: true });
 
   const { registerRoute } = workbox.routing;
-  const { CacheFirst, StaleWhileRevalidate } = workbox.strategies;
+  const { CacheFirst, StaleWhileRevalidate, NetworkFirst } = workbox.strategies;
   const { CacheableResponsePlugin } = workbox.cacheableResponse;
   const { ExpirationPlugin } = workbox.expiration;
   const { RangeRequestsPlugin } = workbox.rangeRequests;
