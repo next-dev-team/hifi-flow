@@ -48,6 +48,7 @@ import type {} from "uniwind/types";
 import { ApiDebug } from "@/components/api-debug";
 import { type Artist, ArtistItem } from "@/components/artist-item";
 import { PlaylistDiscovery } from "@/components/playlist-discovery";
+import packageJson from "../../../../package.json";
 import { type Playlist, PlaylistItem } from "@/components/playlist-item";
 import { SearchComposer } from "@/components/search-composer";
 import { ThinkingDots } from "@/components/thinking-dots";
@@ -901,7 +902,7 @@ export default function Home() {
                 </StyledText>
               </TouchableOpacity>
               <TouchableOpacity
-                className="p-1 active:bg-default-100"
+                className="p-1 active:bg-default-100 flex-row items-center"
                 onPress={() => aiHelpSheetRef.current?.present()}
               >
                 <Ionicons
@@ -910,6 +911,18 @@ export default function Home() {
                   color={themeColorForeground}
                   style={{ opacity: 0.6 }}
                 />
+                {isOffline && (
+                  <View className="ml-1 bg-default-100 px-1.5 py-0.5 rounded-md flex-row items-center border border-default-200">
+                    <Ionicons
+                      name="cloud-offline-outline"
+                      size={10}
+                      color="#ef4444"
+                    />
+                    <StyledText className="text-[9px] text-red-500 font-bold ml-1">
+                      OFFLINE
+                    </StyledText>
+                  </View>
+                )}
               </TouchableOpacity>
             </View>
             <TouchableOpacity
@@ -1735,6 +1748,12 @@ export default function Home() {
                   </Chip>
                 ) : null}
               </View>
+            </View>
+
+            <View className="py-6 items-center justify-center">
+              <Text className="text-default-400 text-xs">
+                v{packageJson.version}
+              </Text>
             </View>
           </View>
         </StyledBottomSheetView>
