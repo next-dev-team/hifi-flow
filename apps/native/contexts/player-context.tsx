@@ -279,6 +279,18 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
     return () => subscription.remove();
   }, [player]);
 
+  // Auto-skip logic for broken tracks
+  useEffect(() => {
+    // Cast to any because the type definition might be missing the error property
+    // even though it exists at runtime in some versions of expo-audio
+    const statusAny = status as any;
+    if (statusAny?.error) {
+       console.log("Playback error, attempting auto-skip:", statusAny.error);
+       // Simple heuristic: if we error out immediately, try next track
+       playNext();
+    }
+  }, [status]);
+
   // ==================== Session Restoration ====================
   useEffect(() => {
     if (isQueueLoaded && isIndexLoaded && !currentTrack && queue.length > 0) {

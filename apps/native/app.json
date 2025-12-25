@@ -11,7 +11,14 @@
     },
     "web": {
       "bundler": "metro",
-      "favicon": "./assets/images/favicon.png"
+      "favicon": "./assets/images/favicon.png",
+      "name": "HiFi Flow",
+      "shortName": "HiFi Flow",
+      "startUrl": "/",
+      "display": "standalone",
+      "backgroundColor": "#000000",
+      "themeColor": "#000000",
+      "description": "HiFi Flow - Lossless Music Player"
     },
     "name": "hifi-flow",
     "slug": "hifi-flow",

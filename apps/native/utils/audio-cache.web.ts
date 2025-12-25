@@ -133,6 +133,22 @@ class AudioChunkCache {
       request.onerror = () => reject(request.error);
     });
   }
+  async clearAll() {
+    await this.initPromise;
+    return new Promise<void>((resolve, reject) => {
+      if (!this.db) return reject(new Error("DB not initialized"));
+      const tx = this.db.transaction([this.storeName, "files"], "readwrite");
+      
+      const chunksStore = tx.objectStore(this.storeName);
+      const filesStore = tx.objectStore("files");
+
+      chunksStore.clear();
+      filesStore.clear();
+
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    });
+  }
 }
 
 // Global cache instance
@@ -263,8 +279,14 @@ export class ChunkedAudioLoader {
     console.log(`[AudioLoader] Caching ${this.url} (${chunkCount} chunks)`);
 
     // Sequential download to avoid flooding network
-    for (let i = 0; i < chunkCount; i++) {
-      await this.loadChunk(i);
+    // Modified to allow limited concurrency for speed
+    const CONCURRENCY = 3;
+    for (let i = 0; i < chunkCount; i += CONCURRENCY) {
+      const batch = [];
+      for (let j = 0; j < CONCURRENCY && i + j < chunkCount; j++) {
+        batch.push(this.loadChunk(i + j));
+      }
+      await Promise.all(batch);
     }
 
     await this.cache.markFileComplete(
@@ -327,4 +349,8 @@ export const audioCacheService = {
   > => {
     return globalCache.getAllCachedFiles();
   },
+  
+  clearCache: async () => {
+    return globalCache.clearAll();
+  }
 };
