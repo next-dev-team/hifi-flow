@@ -57,4 +57,7 @@ export const audioCacheService = {
   > => {
     return [];
   },
+  clearCache: async () => {
+    // no-op
+  },
 };

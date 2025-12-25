@@ -279,6 +279,15 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
     return () => subscription.remove();
   }, [player]);
 
+  // Auto-skip logic for broken tracks
+  useEffect(() => {
+    if (status.error) {
+       console.log("Playback error, attempting auto-skip:", status.error);
+       // Simple heuristic: if we error out immediately, try next track
+       playNext();
+    }
+  }, [status.error]);
+
   // ==================== Session Restoration ====================
   useEffect(() => {
     if (isQueueLoaded && isIndexLoaded && !currentTrack && queue.length > 0) {

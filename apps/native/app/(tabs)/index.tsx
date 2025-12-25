@@ -78,9 +78,33 @@ const StyledScrollView = withUniwind(ScrollView);
 const StyledTouchableOpacity = withUniwind(TouchableOpacity);
 const StyledBottomSheetView = withUniwind(BottomSheetView);
 
+import { useOfflineStatus } from "@/hooks/use-offline-status";
+import { audioCacheService } from "@/utils/audio-cache";
+
+// ... imports ...
+
 export default function Home() {
+  const isOffline = useOfflineStatus();
+  const [cachedTrackIds, setCachedTrackIds] = useState<Set<string>>(new Set());
+
+  useEffect(() => {
+    if (isOffline) {
+      audioCacheService.getAllCachedTracks().then((cachedFiles) => {
+        const ids = new Set<string>();
+        cachedFiles.forEach((file) => {
+          if (file.metadata?.id) {
+            ids.add(String(file.metadata.id));
+          }
+        });
+        setCachedTrackIds(ids);
+      });
+    }
+  }, [isOffline]);
+
   const {
     playQueue,
+    // ...
+
     favorites,
     removeFavorite,
     quality,
@@ -570,7 +594,20 @@ export default function Home() {
   const tracks = useMemo(() => {
     if (filter === "artists") return [];
 
-    return listData.map((item, index): Track => {
+    let filtered = listData;
+    
+    if (isOffline) {
+        // Filter out non-cached items
+        filtered = listData.filter(item => {
+             const id = item.id || item.videoId;
+             // Check if we have this track in cache
+             // Note: The audio cache might store URLs or IDs. 
+             // Ideally we match by ID if metadata was saved correctly.
+             return cachedTrackIds.has(String(id));
+        });
+    }
+
+    return filtered.map((item, index): Track => {
       const id = item.id || item.videoId || `track-${index}`;
       return {
         id: String(id),
@@ -580,7 +617,7 @@ export default function Home() {
         url: item.url || `https://www.youtube.com/watch?v=${id}`,
       };
     });
-  }, [listData, filter]);
+  }, [listData, filter, isOffline, cachedTrackIds]);
 
   const artists = useMemo(() => {
     if (filter === "songs") return [];
@@ -755,6 +792,50 @@ export default function Home() {
         </TouchableOpacity>
       </Card>
     );
+  };
+
+  const handleClearCache = async () => {
+    try {
+      if (Platform.OS === "web") {
+        // 1. Clear IndexedDB Audio Cache
+        await audioCacheService.clearCache();
+
+        // 2. Clear Service Worker Caches
+        if ("caches" in window) {
+            const keys = await caches.keys();
+            await Promise.all(keys.map(key => caches.delete(key)));
+        }
+        
+        // 3. Unregister Service Workers to force update on reload
+        if ("serviceWorker" in navigator) {
+             const registrations = await navigator.serviceWorker.getRegistrations();
+             for (const registration of registrations) {
+                 await registration.unregister();
+             }
+        }
+
+        showToast({
+          message: speechLang === "en-US" ? "Cache cleared. Reloading..." : "បានសម្អាតឃ្លាំងសម្ងាត់។ កំពុងផ្ទុកឡើងវិញ...",
+          type: "success",
+        });
+
+        setTimeout(() => {
+            window.location.reload();
+        }, 1500);
+      } else {
+         // Native implementation if needed
+         showToast({
+            message: "Not available on native yet",
+            type: "info"
+         });
+      }
+    } catch (e) {
+      console.error("Failed to clear cache", e);
+      showToast({
+        message: "Failed to clear cache",
+        type: "error",
+      });
+    }
   };
 
   return (
@@ -1517,6 +1598,7 @@ export default function Home() {
 
           <View className="px-4 pt-2">
             {isPwaSupported && (
+              <>
               <View className="flex-row items-center justify-between py-3 border-b border-default-200">
                 <Text className="text-base text-foreground font-medium">
                   {speechLang === "en-US"
@@ -1535,6 +1617,23 @@ export default function Home() {
                   </Text>
                 </View>
               </View>
+
+               <TouchableOpacity 
+                  className="flex-row items-center justify-between py-3 border-b border-default-200 active:opacity-70"
+                  onPress={handleClearCache}
+               >
+                <Text className="text-base text-red-500 font-medium">
+                  {speechLang === "en-US"
+                    ? "Clear Cache & Reset"
+                    : "សម្អាតឃ្លាំងសម្ងាត់"}
+                </Text>
+                <Ionicons
+                    name="trash-outline"
+                    size={20}
+                    color="#ef4444"
+                />
+              </TouchableOpacity>
+              </>
             )}
 
             <View className="flex-row items-center justify-between py-3 border-b border-default-200">

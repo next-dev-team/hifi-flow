@@ -133,6 +133,22 @@ class AudioChunkCache {
       request.onerror = () => reject(request.error);
     });
   }
+  async clearAll() {
+    await this.initPromise;
+    return new Promise<void>((resolve, reject) => {
+      if (!this.db) return reject(new Error("DB not initialized"));
+      const tx = this.db.transaction([this.storeName, "files"], "readwrite");
+      
+      const chunksStore = tx.objectStore(this.storeName);
+      const filesStore = tx.objectStore("files");
+
+      chunksStore.clear();
+      filesStore.clear();
+
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    });
+  }
 }
 
 // Global cache instance
@@ -333,4 +349,8 @@ export const audioCacheService = {
   > => {
     return globalCache.getAllCachedFiles();
   },
+  
+  clearCache: async () => {
+    return globalCache.clearAll();
+  }
 };
