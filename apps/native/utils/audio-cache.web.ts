@@ -149,6 +149,44 @@ class AudioChunkCache {
       tx.onerror = () => reject(tx.error);
     });
   }
+
+  async deleteUrl(url: string) {
+    await this.initPromise;
+    return new Promise<void>((resolve, reject) => {
+      if (!this.db) return reject(new Error("DB not initialized"));
+
+      const tx = this.db.transaction([this.storeName, "files"], "readwrite");
+      const chunksStore = tx.objectStore(this.storeName);
+      const filesStore = tx.objectStore("files");
+
+      try {
+        filesStore.delete(url);
+      } catch {}
+
+      const prefix = `${url}_chunk_`;
+      const cursorRequest = chunksStore.openCursor();
+      cursorRequest.onsuccess = () => {
+        const cursor = cursorRequest.result;
+        if (!cursor) {
+          return;
+        }
+
+        const key = cursor.key;
+        if (typeof key === "string" && key.startsWith(prefix)) {
+          try {
+            cursor.delete();
+          } catch {}
+        }
+        cursor.continue();
+      };
+      cursorRequest.onerror = () => {
+        reject(cursorRequest.error);
+      };
+
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    });
+  }
 }
 
 // Global cache instance
@@ -336,6 +374,11 @@ export const audioCacheService = {
   cacheUrl: async (url: string, metadata?: AudioMetadata) => {
     const loader = new ChunkedAudioLoader(url);
     await loader.cacheFullAudio(metadata);
+    audioCacheService.notifyListeners(url);
+  },
+
+  evictUrl: async (url: string) => {
+    await globalCache.deleteUrl(url);
     audioCacheService.notifyListeners(url);
   },
 

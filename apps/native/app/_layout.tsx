@@ -57,7 +57,7 @@ export default function Layout() {
       });
 
       if ("serviceWorker" in navigator) {
-        window.addEventListener("load", () => {
+        const registerServiceWorker = () => {
           navigator.serviceWorker
             .register("/sw.js")
             .then((registration) => {
@@ -69,7 +69,14 @@ export default function Layout() {
             .catch((error) => {
               console.error("Service Worker registration failed:", error);
             });
-        });
+        };
+
+        if (document.readyState === "complete") {
+          registerServiceWorker();
+          return;
+        }
+
+        window.addEventListener("load", registerServiceWorker, { once: true });
       }
     }
   }, []);

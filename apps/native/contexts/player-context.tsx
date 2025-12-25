@@ -219,6 +219,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
     player: AudioPlayer;
     trackId: string;
     url: string;
+    baseUrl: string;
   } | null>(null);
   // Stream URL cache
   const streamUrlCacheRef = useRef<
@@ -239,6 +240,9 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
   const MAX_CONSECUTIVE_FAILURES = 5;
   // PlayNext ref for callbacks
   const playNextRef = useRef<() => Promise<void>>(async () => {});
+
+  const brokenTrackIdsRef = useRef<Map<string, number>>(new Map());
+  const BROKEN_TRACK_TTL_MS = 2 * 60 * 1000;
 
   // ==================== Derived State ====================
   const isPlaying = status?.playing ?? false;
@@ -285,9 +289,8 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
     // even though it exists at runtime in some versions of expo-audio
     const statusAny = status as any;
     if (statusAny?.error) {
-       console.log("Playback error, attempting auto-skip:", statusAny.error);
-       // Simple heuristic: if we error out immediately, try next track
-       playNext();
+      console.log("Playback error, attempting auto-skip:", statusAny.error);
+      void playNextRef.current();
     }
   }, [status]);
 
@@ -391,6 +394,59 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
     },
     []
   );
+
+  const isNotSupportedPlaybackError = useCallback((error: unknown) => {
+    if (!error) return false;
+    const anyError = error as any;
+    const name = typeof anyError?.name === "string" ? anyError.name : "";
+    const message =
+      typeof anyError?.message === "string" ? anyError.message : "";
+    const text = `${name} ${message}`.toLowerCase();
+    return (
+      name === "NotSupportedError" ||
+      text.includes("notsupportederror") ||
+      text.includes("no supported sources")
+    );
+  }, []);
+
+  const clearWebCachesForUrl = useCallback(async (url: string) => {
+    if (Platform.OS !== "web") return;
+
+    try {
+      await audioCacheService.evictUrl(url);
+    } catch {}
+
+    const cachesAny = (globalThis as any)?.caches;
+    if (!cachesAny?.open || !cachesAny?.keys) return;
+
+    try {
+      const cacheNames: string[] = await cachesAny.keys();
+      await Promise.all(
+        cacheNames.map(async (name) => {
+          try {
+            const cache = await cachesAny.open(name);
+            await cache.delete(url);
+          } catch {}
+        })
+      );
+    } catch {}
+  }, []);
+
+  const isTrackBroken = useCallback((trackId: string) => {
+    const expiresAt = brokenTrackIdsRef.current.get(trackId);
+    if (!expiresAt) {
+      return false;
+    }
+    if (Date.now() > expiresAt) {
+      brokenTrackIdsRef.current.delete(trackId);
+      return false;
+    }
+    return true;
+  }, []);
+
+  const markTrackBroken = useCallback((trackId: string) => {
+    brokenTrackIdsRef.current.set(trackId, Date.now() + BROKEN_TRACK_TTL_MS);
+  }, []);
 
   const setQuality = useCallback((newQuality: AudioQuality) => {
     setQualityState(newQuality);
@@ -589,6 +645,12 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
       try {
         let allowPreBuffered = usePreBuffered;
 
+        const trackId = Number(track.id);
+        const trackIdStr = String(track.id);
+        const effectiveQuality =
+          quality === "HI_RES_LOSSLESS" ? "LOSSLESS" : quality;
+        const cacheKey = `${trackIdStr}:${effectiveQuality}`;
+
         for (let attempt = 1; attempt <= 3; attempt += 1) {
           if (
             allowPreBuffered &&
@@ -597,6 +659,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
             console.log("[Player] Using pre-buffered player for:", track.title);
             const { player: bufferedPlayer, url } =
               preBufferedPlayerRef.current;
+            const baseUrl = preBufferedPlayerRef.current.baseUrl;
             preBufferedPlayerRef.current = null;
 
             try {
@@ -604,12 +667,26 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
             } catch {}
 
             bufferedPlayer.volume = volume;
-            bufferedPlayer.play();
+            let playError: unknown = null;
+            try {
+              const playResult = (bufferedPlayer as any).play?.();
+              if (playResult && typeof playResult.then === "function") {
+                await playResult.catch((e: unknown) => {
+                  playError = e;
+                });
+              }
+            } catch (e) {
+              playError = e;
+            }
 
-            const startResult = await waitForPlaybackStart(
-              bufferedPlayer,
-              15000
-            );
+            const startResult = playError
+              ? {
+                  ok: false as const,
+                  reason: isNotSupportedPlaybackError(playError)
+                    ? ("not_supported" as const)
+                    : ("error" as const),
+                }
+              : await waitForPlaybackStart(bufferedPlayer, 15000);
             if (startResult.ok) {
               activePlayerRef.current = bufferedPlayer;
               setPlayer(bufferedPlayer);
@@ -628,17 +705,38 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
               bufferedPlayer.remove();
             } catch {}
 
+            if (startResult.reason === "not_supported") {
+              if (url.startsWith("blob:")) {
+                try {
+                  URL.revokeObjectURL(url);
+                } catch {}
+              }
+              await clearWebCachesForUrl(baseUrl || url);
+              streamUrlCacheRef.current.delete(cacheKey);
+            }
+
             allowPreBuffered = false;
           }
 
           destroyAllPlayers();
 
-          const effectiveQuality =
-            quality === "HI_RES_LOSSLESS" ? "LOSSLESS" : quality;
-          const baseStreamUrl = await getStreamUrlForTrack(
-            track,
-            effectiveQuality
-          );
+          let baseStreamUrl: string | null = null;
+          if (attempt === 1) {
+            baseStreamUrl = await getStreamUrlForTrack(track, effectiveQuality);
+          } else if (Number.isFinite(trackId)) {
+            try {
+              baseStreamUrl = await losslessAPI.getStreamUrl(
+                trackId,
+                effectiveQuality
+              );
+              streamUrlCacheRef.current.set(cacheKey, {
+                url: baseStreamUrl,
+                timestamp: Date.now(),
+              });
+            } catch {
+              baseStreamUrl = null;
+            }
+          }
           if (!baseStreamUrl) {
             console.warn(`[Player] No stream URL for track ${track.id}`);
             return false;
@@ -685,9 +783,26 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
           }
 
           newPlayer.volume = volume;
-          newPlayer.play();
+          let playError: unknown = null;
+          try {
+            const playResult = (newPlayer as any).play?.();
+            if (playResult && typeof playResult.then === "function") {
+              await playResult.catch((e: unknown) => {
+                playError = e;
+              });
+            }
+          } catch (e) {
+            playError = e;
+          }
 
-          const startResult = await waitForPlaybackStart(newPlayer, 15000);
+          const startResult = playError
+            ? {
+                ok: false as const,
+                reason: isNotSupportedPlaybackError(playError)
+                  ? ("not_supported" as const)
+                  : ("error" as const),
+              }
+            : await waitForPlaybackStart(newPlayer, 15000);
           if (startResult.ok) {
             activePlayerRef.current = newPlayer;
             setPlayer(newPlayer);
@@ -703,6 +818,16 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
             newPlayer.pause();
             newPlayer.remove();
           } catch {}
+
+          if (startResult.reason === "not_supported") {
+            if (streamUrl.startsWith("blob:")) {
+              try {
+                URL.revokeObjectURL(streamUrl);
+              } catch {}
+            }
+            await clearWebCachesForUrl(baseStreamUrl);
+            streamUrlCacheRef.current.delete(cacheKey);
+          }
 
           if (attempt < 3) {
             if (startResult.reason === "not_supported") {
@@ -730,6 +855,8 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
       addToRecentlyPlayed,
       savedPositions,
       waitForPlaybackStart,
+      isNotSupportedPlaybackError,
+      clearWebCachesForUrl,
     ]
   );
 
@@ -749,7 +876,6 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
 
     if (currentIndex === -1) return;
 
-    // Determine next track
     let nextIndex: number;
     if (shuffleEnabled) {
       // For shuffle, pick a random unplayed track
@@ -782,6 +908,23 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
       }
     }
 
+    if (queue.length > 1) {
+      for (let guard = 0; guard < queue.length; guard += 1) {
+        const candidate = queue[nextIndex];
+        if (!candidate) {
+          break;
+        }
+        if (!isTrackBroken(String(candidate.id))) {
+          break;
+        }
+
+        nextIndex = (nextIndex + 1) % queue.length;
+        if (nextIndex === currentIndex) {
+          return;
+        }
+      }
+    }
+
     const nextTrack = queue[nextIndex];
     if (!nextTrack) return;
 
@@ -795,12 +938,19 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
     setNextTrackBufferStatus("buffering");
 
     try {
-      let streamUrl = await getStreamUrlForTrack(nextTrack, quality);
-      if (!streamUrl) {
+      const effectiveQuality =
+        quality === "HI_RES_LOSSLESS" ? "LOSSLESS" : quality;
+      const baseStreamUrl = await getStreamUrlForTrack(
+        nextTrack,
+        effectiveQuality
+      );
+      if (!baseStreamUrl) {
         console.warn("[PreBuffer] No stream URL for next track");
         setNextTrackBufferStatus("failed");
         return;
       }
+
+      let streamUrl = baseStreamUrl;
 
       // Resolve through cache
       streamUrl = await audioCacheService.resolveUrl(streamUrl, {
@@ -832,6 +982,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
         player: bufferedPlayer,
         trackId: nextTrackIdStr,
         url: streamUrl,
+        baseUrl: baseStreamUrl,
       };
 
       setNextTrackBufferStatus("ready");
@@ -846,6 +997,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
     repeatMode,
     quality,
     getStreamUrlForTrack,
+    isTrackBroken,
   ]);
 
   // ==================== Queue Navigation ====================
@@ -853,77 +1005,168 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
   const playNext = useCallback(async () => {
     if (queue.length === 0) return;
 
+    if (playLockRef.current) {
+      return;
+    }
+
     const currentIndex = currentTrack
       ? queue.findIndex((t) => String(t.id) === String(currentTrack.id))
       : -1;
 
     if (repeatMode === "one" && currentIndex !== -1) {
-      // Repeat one: restart current track
       if (activePlayerRef.current) {
         activePlayerRef.current.seekTo(0);
-        activePlayerRef.current.play();
+
+        let playError: unknown = null;
+        try {
+          const playResult = (activePlayerRef.current as any).play?.();
+          if (playResult && typeof playResult.then === "function") {
+            await playResult.catch((e: unknown) => {
+              playError = e;
+            });
+          }
+        } catch (e) {
+          playError = e;
+        }
+
+        if (!playError) {
+          return;
+        }
       }
+
+      const repeatTrack = queue[currentIndex];
+      if (!repeatTrack) return;
+
+      const success = await playSoundInternal(repeatTrack, false, true);
+      if (success) {
+        return;
+      }
+
+      markTrackBroken(String(repeatTrack.id));
+
+      if (queue.length <= 1) {
+        return;
+      }
+
+      let nextIndex = (currentIndex + 1) % queue.length;
+      for (let scan = 0; scan < queue.length; scan += 1) {
+        const candidate = queue[nextIndex];
+        if (!candidate) {
+          return;
+        }
+        if (!isTrackBroken(String(candidate.id))) {
+          break;
+        }
+        nextIndex = (nextIndex + 1) % queue.length;
+        if (nextIndex === currentIndex) {
+          return;
+        }
+      }
+
+      const nextTrack = queue[nextIndex];
+      if (!nextTrack) {
+        return;
+      }
+
+      queueIndexRef.current = nextIndex;
+      setCurrentTrack(nextTrack);
+      setAudioAnalysis(null);
+      await playSoundInternal(nextTrack, true);
       return;
     }
 
-    let nextIndex: number;
-    if (shuffleEnabled) {
-      // Shuffle mode
-      const available: number[] = [];
-      for (let i = 0; i < queue.length; i++) {
-        if (i !== currentIndex && !shuffleHistoryRef.current.includes(i)) {
-          available.push(i);
-        }
-      }
-
-      if (available.length === 0) {
-        if (repeatMode === "all") {
-          shuffleHistoryRef.current = [];
-          nextIndex = Math.floor(Math.random() * queue.length);
-        } else {
-          // End of queue
-          return;
-        }
-      } else {
-        nextIndex = available[Math.floor(Math.random() * available.length)];
-      }
-      shuffleHistoryRef.current.push(nextIndex);
-    } else {
-      // Sequential mode
-      if (currentIndex >= queue.length - 1) {
-        if (repeatMode === "all") {
-          nextIndex = 0;
-        } else {
-          return; // End of queue
-        }
-      } else {
-        nextIndex = currentIndex + 1;
+    let resolvedCurrentIndex = currentIndex;
+    if (resolvedCurrentIndex === -1) {
+      const queuedIndex = queueIndexRef.current;
+      if (queuedIndex >= 0 && queuedIndex < queue.length) {
+        resolvedCurrentIndex = queuedIndex;
       }
     }
 
-    const nextTrack = queue[nextIndex];
-    if (!nextTrack) return;
+    const maxAttempts = Math.max(1, queue.length);
 
-    queueIndexRef.current = nextIndex;
-    setCurrentTrack(nextTrack);
-    setAudioAnalysis(null);
+    for (let guard = 0; guard < maxAttempts; guard += 1) {
+      let nextIndex: number;
 
-    const success = await playSoundInternal(nextTrack, true);
+      if (shuffleEnabled) {
+        // Shuffle mode
+        const available: number[] = [];
+        for (let i = 0; i < queue.length; i++) {
+          if (
+            i !== resolvedCurrentIndex &&
+            !shuffleHistoryRef.current.includes(i) &&
+            !isTrackBroken(String(queue[i]?.id))
+          ) {
+            available.push(i);
+          }
+        }
 
-    if (!success) {
-      consecutiveFailuresRef.current++;
-      if (consecutiveFailuresRef.current >= MAX_CONSECUTIVE_FAILURES) {
-        showToast({
-          message: "Too many playback errors, stopping.",
-          type: "error",
-        });
-        consecutiveFailuresRef.current = 0;
-        return;
+        if (available.length === 0) {
+          if (repeatMode === "all") {
+            shuffleHistoryRef.current = [];
+            nextIndex = Math.floor(Math.random() * queue.length);
+          } else {
+            // End of queue
+            return;
+          }
+        } else {
+          nextIndex = available[Math.floor(Math.random() * available.length)];
+        }
+        shuffleHistoryRef.current.push(nextIndex);
+      } else {
+        // Sequential mode
+        if (resolvedCurrentIndex >= queue.length - 1) {
+          if (repeatMode === "all") {
+            nextIndex = 0;
+          } else {
+            return; // End of queue
+          }
+        } else {
+          nextIndex = Math.max(0, resolvedCurrentIndex + 1);
+        }
+
+        for (let scan = 0; scan < queue.length; scan += 1) {
+          const candidate = queue[nextIndex];
+          if (!candidate) {
+            return;
+          }
+          if (!isTrackBroken(String(candidate.id))) {
+            break;
+          }
+          nextIndex = (nextIndex + 1) % queue.length;
+          if (nextIndex === resolvedCurrentIndex) {
+            return;
+          }
+        }
       }
-      showToast({ message: "Playback failed, skipping...", type: "info" });
-      // Retry with next track after short delay
-      await new Promise((r) => setTimeout(r, 300));
-      await playNext();
+
+      const nextTrack = queue[nextIndex];
+      if (!nextTrack) return;
+
+      queueIndexRef.current = nextIndex;
+      setCurrentTrack(nextTrack);
+      setAudioAnalysis(null);
+
+      const success = await playSoundInternal(nextTrack, true);
+
+      if (!success) {
+        markTrackBroken(String(nextTrack.id));
+        consecutiveFailuresRef.current++;
+        if (consecutiveFailuresRef.current >= MAX_CONSECUTIVE_FAILURES) {
+          showToast({
+            message: "Too many playback errors, stopping.",
+            type: "error",
+          });
+          consecutiveFailuresRef.current = 0;
+          return;
+        }
+        showToast({ message: "Playback failed, skipping...", type: "info" });
+        await new Promise((r) => setTimeout(r, 300));
+        resolvedCurrentIndex = nextIndex;
+        continue;
+      }
+
+      return;
     }
   }, [
     queue,
@@ -932,6 +1175,8 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
     repeatMode,
     playSoundInternal,
     showToast,
+    isTrackBroken,
+    markTrackBroken,
   ]);
 
   // Update ref
@@ -993,6 +1238,12 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
     async (track: Track, options?: { skipRecentlyPlayed?: boolean }) => {
       const skipRecentlyPlayed = options?.skipRecentlyPlayed ?? false;
 
+      if (playLockRef.current) {
+        return;
+      }
+
+      setLoadingTrackId(String(track.id));
+
       // Add track to queue (append, don't replace)
       setQueue((prev) => {
         // Check if track already exists in queue
@@ -1024,6 +1275,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
 
       const success = await playSoundInternal(track, false, skipRecentlyPlayed);
       if (!success) {
+        markTrackBroken(String(track.id));
         consecutiveFailuresRef.current++;
         if (consecutiveFailuresRef.current >= MAX_CONSECUTIVE_FAILURES) {
           showToast({
@@ -1038,11 +1290,15 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
         await playNextRef.current();
       }
     },
-    [playSoundInternal, setQueue, showToast]
+    [playSoundInternal, setQueue, showToast, markTrackBroken]
   );
 
   const playQueue = useCallback(
     async (tracks: Track[], startIndex = 0) => {
+      if (playLockRef.current) {
+        return;
+      }
+
       // Append tracks to queue (don't replace)
       setQueue((prev) => {
         // Filter out duplicates (tracks already in queue)
@@ -1087,10 +1343,12 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
 
       const startTrack = tracks[startIndex] ?? tracks[0];
       if (startTrack) {
+        setLoadingTrackId(String(startTrack.id));
         setCurrentTrack(startTrack);
         setAudioAnalysis(null);
         const success = await playSoundInternal(startTrack, false);
         if (!success) {
+          markTrackBroken(String(startTrack.id));
           consecutiveFailuresRef.current++;
           if (consecutiveFailuresRef.current >= MAX_CONSECUTIVE_FAILURES) {
             showToast({
@@ -1106,7 +1364,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
         }
       }
     },
-    [playSoundInternal, setQueue, showToast]
+    [playSoundInternal, setQueue, showToast, markTrackBroken]
   );
 
   const pauseTrack = useCallback(async () => {
@@ -1122,15 +1380,58 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
   }, [currentTrack, savePosition]);
 
   const resumeTrack = useCallback(async () => {
+    if (playLockRef.current) {
+      return;
+    }
+
     if (activePlayerRef.current) {
-      activePlayerRef.current.play();
-      const startResult = await waitForPlaybackStart(
-        activePlayerRef.current,
-        15000
-      );
+      if (currentTrack) {
+        setLoadingTrackId(String(currentTrack.id));
+      }
+
+      let playError: unknown = null;
+      try {
+        const playResult = (activePlayerRef.current as any).play?.();
+        if (playResult && typeof playResult.then === "function") {
+          await playResult.catch((e: unknown) => {
+            playError = e;
+          });
+        }
+      } catch (e) {
+        playError = e;
+      }
+
+      const startResult = playError
+        ? {
+            ok: false as const,
+            reason: isNotSupportedPlaybackError(playError)
+              ? ("not_supported" as const)
+              : ("error" as const),
+          }
+        : await waitForPlaybackStart(activePlayerRef.current, 15000);
+
       if (!startResult.ok && currentTrack) {
+        if (startResult.reason === "not_supported") {
+          const effectiveQuality =
+            quality === "HI_RES_LOSSLESS" ? "LOSSLESS" : quality;
+          const cacheKey = `${String(currentTrack.id)}:${effectiveQuality}`;
+          streamUrlCacheRef.current.delete(cacheKey);
+
+          const urlToClear = currentStreamUrl;
+          if (urlToClear) {
+            if (urlToClear.startsWith("blob:")) {
+              try {
+                URL.revokeObjectURL(urlToClear);
+              } catch {}
+            } else {
+              await clearWebCachesForUrl(urlToClear);
+            }
+          }
+        }
+
         const success = await playSoundInternal(currentTrack, false);
         if (!success) {
+          markTrackBroken(String(currentTrack.id));
           consecutiveFailuresRef.current++;
           if (consecutiveFailuresRef.current >= MAX_CONSECUTIVE_FAILURES) {
             showToast({
@@ -1148,7 +1449,17 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
     } else if (currentTrack) {
       await playSoundInternal(currentTrack, false);
     }
-  }, [currentTrack, playSoundInternal, showToast, waitForPlaybackStart]);
+  }, [
+    currentTrack,
+    currentStreamUrl,
+    playSoundInternal,
+    showToast,
+    waitForPlaybackStart,
+    isNotSupportedPlaybackError,
+    clearWebCachesForUrl,
+    quality,
+    markTrackBroken,
+  ]);
 
   const seekToMillis = useCallback(async (pos: number) => {
     activePlayerRef.current?.seekTo(pos / 1000);

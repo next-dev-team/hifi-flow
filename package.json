@@ -12,7 +12,7 @@
     "gen:api": "turbo run gen:api",
     "dev": "turbo dev",
     "build": "turbo build",
-    "check-types": "turbo check-types",
+    "check-types": "turbo -F native check-types",
     "dev:native": "turbo -F native dev",
     "dev:web": "turbo -F web dev"
   },

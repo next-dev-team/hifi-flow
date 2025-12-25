@@ -48,7 +48,6 @@ import type {} from "uniwind/types";
 import { ApiDebug } from "@/components/api-debug";
 import { type Artist, ArtistItem } from "@/components/artist-item";
 import { PlaylistDiscovery } from "@/components/playlist-discovery";
-import packageJson from "../../../../package.json";
 import { type Playlist, PlaylistItem } from "@/components/playlist-item";
 import { SearchComposer } from "@/components/search-composer";
 import { ThinkingDots } from "@/components/thinking-dots";
@@ -62,6 +61,8 @@ import { detectThemeVoiceAction } from "@/utils/ai";
 import { getSuggestedArtists, losslessAPI } from "@/utils/api";
 import { getSheetMargin, SHEET_MAX_WIDTH } from "@/utils/layout";
 import { resolveArtwork, resolveName } from "@/utils/resolvers";
+
+const appVersion = "1.0.3";
 
 type SearchFilter = "songs" | "artists" | "albums" | "playlists";
 
@@ -596,16 +597,16 @@ export default function Home() {
     if (filter === "artists") return [];
 
     let filtered = listData;
-    
+
     if (isOffline) {
-        // Filter out non-cached items
-        filtered = listData.filter(item => {
-             const id = item.id || item.videoId;
-             // Check if we have this track in cache
-             // Note: The audio cache might store URLs or IDs. 
-             // Ideally we match by ID if metadata was saved correctly.
-             return cachedTrackIds.has(String(id));
-        });
+      // Filter out non-cached items
+      filtered = listData.filter((item) => {
+        const id = item.id || item.videoId;
+        // Check if we have this track in cache
+        // Note: The audio cache might store URLs or IDs.
+        // Ideally we match by ID if metadata was saved correctly.
+        return cachedTrackIds.has(String(id));
+      });
     }
 
     return filtered.map((item, index): Track => {
@@ -803,32 +804,36 @@ export default function Home() {
 
         // 2. Clear Service Worker Caches
         if ("caches" in window) {
-            const keys = await caches.keys();
-            await Promise.all(keys.map(key => caches.delete(key)));
+          const keys = await caches.keys();
+          await Promise.all(keys.map((key) => caches.delete(key)));
         }
-        
+
         // 3. Unregister Service Workers to force update on reload
         if ("serviceWorker" in navigator) {
-             const registrations = await navigator.serviceWorker.getRegistrations();
-             for (const registration of registrations) {
-                 await registration.unregister();
-             }
+          const registrations =
+            await navigator.serviceWorker.getRegistrations();
+          for (const registration of registrations) {
+            await registration.unregister();
+          }
         }
 
         showToast({
-          message: speechLang === "en-US" ? "Cache cleared. Reloading..." : "បានសម្អាតឃ្លាំងសម្ងាត់។ កំពុងផ្ទុកឡើងវិញ...",
+          message:
+            speechLang === "en-US"
+              ? "Cache cleared. Reloading..."
+              : "បានសម្អាតឃ្លាំងសម្ងាត់។ កំពុងផ្ទុកឡើងវិញ...",
           type: "success",
         });
 
         setTimeout(() => {
-            window.location.reload();
+          window.location.reload();
         }, 1500);
       } else {
-         // Native implementation if needed
-         showToast({
-            message: "Not available on native yet",
-            type: "info"
-         });
+        // Native implementation if needed
+        showToast({
+          message: "Not available on native yet",
+          type: "info",
+        });
       }
     } catch (e) {
       console.error("Failed to clear cache", e);
@@ -847,8 +852,9 @@ export default function Home() {
             activeOpacity={0.8}
             onPress={() => favoritesSheetRef.current?.present()}
           >
-            <StyledText className="text-2xl font-bold text-foreground">
-              HiFi Flow
+            <StyledText className="text-xl font-bold text-foreground font-italic">
+              HiFi Flow{" "}
+              <Text className="text-default-400 text-xs">v{appVersion}</Text>
             </StyledText>
           </TouchableOpacity>
           <View className="flex-row items-center gap-x-1.5">
@@ -1612,40 +1618,36 @@ export default function Home() {
           <View className="px-4 pt-2">
             {isPwaSupported && (
               <>
-              <View className="flex-row items-center justify-between py-3 border-b border-default-200">
-                <Text className="text-base text-foreground font-medium">
-                  {speechLang === "en-US"
-                    ? "Offline Ready"
-                    : "ការប្រើប្រាស់ក្រៅបណ្តាញ"}
-                </Text>
-                <View className="flex-row items-center">
-                  <Ionicons
-                    name="cloud-done-outline"
-                    size={20}
-                    color="#17c964"
-                    style={{ marginRight: 6 }}
-                  />
-                  <Text className="text-[#17c964] font-medium text-sm">
-                    {speechLang === "en-US" ? "Active" : "សកម្ម"}
+                <View className="flex-row items-center justify-between py-3 border-b border-default-200">
+                  <Text className="text-base text-foreground font-medium">
+                    {speechLang === "en-US"
+                      ? "Offline Ready"
+                      : "ការប្រើប្រាស់ក្រៅបណ្តាញ"}
                   </Text>
+                  <View className="flex-row items-center">
+                    <Ionicons
+                      name="cloud-done-outline"
+                      size={20}
+                      color="#17c964"
+                      style={{ marginRight: 6 }}
+                    />
+                    <Text className="text-[#17c964] font-medium text-sm">
+                      {speechLang === "en-US" ? "Active" : "សកម្ម"}
+                    </Text>
+                  </View>
                 </View>
-              </View>
 
-               <TouchableOpacity 
+                <TouchableOpacity
                   className="flex-row items-center justify-between py-3 border-b border-default-200 active:opacity-70"
                   onPress={handleClearCache}
-               >
-                <Text className="text-base text-red-500 font-medium">
-                  {speechLang === "en-US"
-                    ? "Clear Cache & Reset"
-                    : "សម្អាតឃ្លាំងសម្ងាត់"}
-                </Text>
-                <Ionicons
-                    name="trash-outline"
-                    size={20}
-                    color="#ef4444"
-                />
-              </TouchableOpacity>
+                >
+                  <Text className="text-base text-red-500 font-medium">
+                    {speechLang === "en-US"
+                      ? "Clear Cache & Reset"
+                      : "សម្អាតឃ្លាំងសម្ងាត់"}
+                  </Text>
+                  <Ionicons name="trash-outline" size={20} color="#ef4444" />
+                </TouchableOpacity>
               </>
             )}
 
@@ -1748,12 +1750,6 @@ export default function Home() {
                   </Chip>
                 ) : null}
               </View>
-            </View>
-
-            <View className="py-6 items-center justify-center">
-              <Text className="text-default-400 text-xs">
-                v{packageJson.version}
-              </Text>
             </View>
           </View>
         </StyledBottomSheetView>

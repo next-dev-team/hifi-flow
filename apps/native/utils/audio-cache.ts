@@ -49,6 +49,9 @@ export const audioCacheService = {
   cacheUrl: async (url: string, metadata?: AudioMetadata) => {
     /* no-op */
   },
+  evictUrl: async (url: string) => {
+    /* no-op */
+  },
   isCached: async (url: string) => {
     return false;
   },
