@@ -1278,6 +1278,26 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
     }
   }, [isPlaying, currentTrack, queue.length, preBufferNextTrack]);
 
+  // ==================== Stuck Buffering Protection ====================
+  useEffect(() => {
+    // If buffering for too long (20s), consider it stuck and skip
+    if (isLoading && isPlaying) {
+      const timeoutMs = 20000;
+      const timer = setTimeout(() => {
+        console.warn(
+          `[Player] Stuck buffering for ${timeoutMs}ms, skipping to next track...`
+        );
+        showToast({
+          message: "Network slow, skipping track...",
+          type: "info",
+        });
+        // We use playNextRef to access the latest playNext closure
+        void playNextRef.current();
+      }, timeoutMs);
+      return () => clearTimeout(timer);
+    }
+  }, [isLoading, isPlaying, showToast]);
+
   // ==================== Cache Cleanup ====================
   useEffect(() => {
     const interval = setInterval(cleanStreamUrlCache, 5 * 60 * 1000);
