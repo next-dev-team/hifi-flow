@@ -170,6 +170,9 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
   const [loadingTrackId, setLoadingTrackId] = useState<string | null>(null);
   const [cachedTrackIds, setCachedTrackIds] = useState<Set<string>>(new Set());
 
+  const currentStreamUrlRef = useRef<string | null>(null);
+  const currentBaseStreamUrlRef = useRef<string | null>(null);
+
   // ==================== Queue State ====================
   const [queue, setQueue, isQueueLoaded] = usePersistentState<Track[]>(
     QUEUE_STORAGE_KEY,
@@ -249,6 +252,10 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
   const isLoading = status?.isBuffering ?? false;
   const positionMillis = (status?.currentTime ?? 0) * 1000;
   const durationMillis = (status?.duration ?? 0) * 1000;
+
+  useEffect(() => {
+    currentStreamUrlRef.current = currentStreamUrl;
+  }, [currentStreamUrl]);
 
   // ==================== Audio Mode Configuration ====================
   useEffect(() => {
@@ -496,11 +503,15 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
         favorites.find((t) => String(t.id) === trackIdStr);
 
       if (savedTrack?.streamUrl) {
-        streamUrlCacheRef.current.set(cacheKey, {
-          url: savedTrack.streamUrl,
-          timestamp: Date.now(),
-        });
-        return savedTrack.streamUrl;
+        if (Platform.OS === "web" && savedTrack.streamUrl.startsWith("blob:")) {
+          streamUrlCacheRef.current.delete(cacheKey);
+        } else {
+          streamUrlCacheRef.current.set(cacheKey, {
+            url: savedTrack.streamUrl,
+            timestamp: Date.now(),
+          });
+          return savedTrack.streamUrl;
+        }
       }
 
       // Fetch from API
@@ -573,13 +584,28 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
       activePlayerRef.current = null;
     }
 
+    const urlToRevoke = currentStreamUrlRef.current;
+    if (Platform.OS === "web" && urlToRevoke?.startsWith("blob:")) {
+      try {
+        URL.revokeObjectURL(urlToRevoke);
+      } catch {}
+    }
+    currentStreamUrlRef.current = null;
+    currentBaseStreamUrlRef.current = null;
+
     // Destroy pre-buffered player
     if (preBufferedPlayerRef.current) {
+      const bufferedUrl = preBufferedPlayerRef.current.url;
       try {
         preBufferedPlayerRef.current.player.pause();
         preBufferedPlayerRef.current.player.remove();
       } catch (e) {
         console.warn("Error removing pre-buffered player:", e);
+      }
+      if (Platform.OS === "web" && bufferedUrl?.startsWith("blob:")) {
+        try {
+          URL.revokeObjectURL(bufferedUrl);
+        } catch {}
       }
       preBufferedPlayerRef.current = null;
     }
@@ -691,11 +717,12 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
               activePlayerRef.current = bufferedPlayer;
               setPlayer(bufferedPlayer);
               setCurrentStreamUrl(url);
+              currentBaseStreamUrlRef.current = baseUrl || null;
               setLoadingTrackId(null);
               consecutiveFailuresRef.current = 0;
               setNextTrackBufferStatus("none");
               if (!skipRecentlyPlayed) {
-                void addToRecentlyPlayed(track, url);
+                void addToRecentlyPlayed(track, baseUrl || url);
               }
               return true;
             }
@@ -807,9 +834,10 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
             activePlayerRef.current = newPlayer;
             setPlayer(newPlayer);
             setCurrentStreamUrl(streamUrl);
+            currentBaseStreamUrlRef.current = baseStreamUrl;
             consecutiveFailuresRef.current = 0;
             if (!skipRecentlyPlayed) {
-              void addToRecentlyPlayed(track, streamUrl);
+              void addToRecentlyPlayed(track, baseStreamUrl);
             }
             return true;
           }
@@ -962,11 +990,17 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
 
       // Clean up ANY existing pre-buffered player (including from race conditions)
       if (preBufferedPlayerRef.current) {
+        const oldUrl = preBufferedPlayerRef.current.url;
         try {
           preBufferedPlayerRef.current.player.pause();
           preBufferedPlayerRef.current.player.remove();
         } catch (e) {
           console.warn("Error removing pre-buffered player:", e);
+        }
+        if (Platform.OS === "web" && oldUrl?.startsWith("blob:")) {
+          try {
+            URL.revokeObjectURL(oldUrl);
+          } catch {}
         }
         preBufferedPlayerRef.current = null;
       }
@@ -1702,10 +1736,38 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
       (val) => val && setVolumeState(parseFloat(val))
     );
     readPersistentValue(FAVORITES_STORAGE_KEY).then((val) => {
-      if (val) setFavorites(JSON.parse(val));
+      if (!val) return;
+      try {
+        const parsed = JSON.parse(val) as SavedTrack[];
+        const sanitized =
+          Platform.OS === "web"
+            ? parsed.map((t) => ({
+                ...t,
+                streamUrl:
+                  t.streamUrl && t.streamUrl.startsWith("blob:")
+                    ? null
+                    : t.streamUrl,
+              }))
+            : parsed;
+        setFavorites(sanitized);
+      } catch {}
     });
     readPersistentValue(RECENTLY_PLAYED_STORAGE_KEY).then((val) => {
-      if (val) setRecentlyPlayed(JSON.parse(val));
+      if (!val) return;
+      try {
+        const parsed = JSON.parse(val) as SavedTrack[];
+        const sanitized =
+          Platform.OS === "web"
+            ? parsed.map((t) => ({
+                ...t,
+                streamUrl:
+                  t.streamUrl && t.streamUrl.startsWith("blob:")
+                    ? null
+                    : t.streamUrl,
+              }))
+            : parsed;
+        setRecentlyPlayed(sanitized);
+      } catch {}
     });
   }, []);
 
@@ -1799,13 +1861,17 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
         next = favorites.filter((f) => normalizeFavoriteId(f.id) !== id);
         showToast({ message: "Removed from favorites", type: "info" });
       } else {
+        const persistUrl =
+          Platform.OS === "web" && currentStreamUrl.startsWith("blob:")
+            ? currentBaseStreamUrlRef.current
+            : currentStreamUrl;
         next = [
           {
             id: String(currentTrack.id),
             title: currentTrack.title,
             artist: currentTrack.artist,
             artwork: artwork || currentTrack.artwork,
-            streamUrl: currentStreamUrl,
+            streamUrl: persistUrl || null,
             addedAt: Date.now(),
           },
           ...favorites,
@@ -1831,7 +1897,11 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
         // Use current stream URL if it's the current track, otherwise use track.url or null
         const playingCurrent =
           currentTrack?.id === track.id && currentStreamUrl;
-        const streamUrl = playingCurrent ? currentStreamUrl : track.url || null;
+        const streamUrl = playingCurrent
+          ? Platform.OS === "web" && currentStreamUrl.startsWith("blob:")
+            ? currentBaseStreamUrlRef.current || track.url || null
+            : currentStreamUrl
+          : track.url || null;
 
         next = [
           {
