@@ -5,6 +5,7 @@ import { Card } from "heroui-native";
 import React, { useEffect, useState } from "react";
 import { Alert, FlatList, Image, Pressable, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { useThemeColor } from "heroui-native";
 import { ApiDebug } from "@/components/api-debug";
 import { TimerStatus } from "@/components/timer-status";
 import { TrackItem } from "@/components/track-item";
@@ -14,6 +15,7 @@ import { resolveArtwork, resolveName } from "@/utils/resolvers";
 
 export default function Library() {
   const { data, isLoading, error } = useSearchSearchGet({ p: "mix" });
+  const themeColorForeground = useThemeColor("foreground");
   const { recentlyPlayed, playTrack, removeFromRecentlyPlayed } = usePlayer();
   const [viewMode, setViewMode] = useState<"mixes" | "recent" | "downloaded">(
     "recent"
@@ -65,10 +67,17 @@ export default function Library() {
       <Pressable disabled={!id} onPress={handlePress}>
         <Card className="flex-row items-center p-4 mb-2 bg-content2">
           <View className="w-12 h-12 rounded-md bg-primary/20 items-center justify-center mr-4">
-            <Ionicons name="musical-notes" size={24} color="#fff" />
+            <Ionicons
+              name="musical-notes"
+              size={24}
+              color={themeColorForeground}
+            />
           </View>
           <View className="flex-1">
-            <Text className="font-bold text-lg" numberOfLines={1}>
+            <Text
+              className="font-bold text-lg text-foreground"
+              numberOfLines={1}
+            >
               {title}
             </Text>
             {subtitle ? (
@@ -82,7 +91,11 @@ export default function Library() {
               </Text>
             ) : null}
           </View>
-          <Ionicons name="chevron-forward" size={20} color="#fff" />
+          <Ionicons
+            name="chevron-forward"
+            size={20}
+            color={themeColorForeground}
+          />
         </Card>
       </Pressable>
     );
@@ -190,7 +203,9 @@ export default function Library() {
       ) : viewMode === "downloaded" ? (
         <FlatList
           data={downloadedTracks}
-          keyExtractor={(item) => item.url}
+          keyExtractor={(item, index) =>
+            (item.id || item.url || index).toString()
+          }
           renderItem={({ item }) => (
             <TrackItem
               track={{
@@ -215,7 +230,7 @@ export default function Library() {
       ) : (
         <FlatList
           data={recentlyPlayed}
-          keyExtractor={(item) => item.id}
+          keyExtractor={(item, index) => (item.id || index).toString()}
           renderItem={({ item }) => {
             const handleRemove = () => {
               void removeFromRecentlyPlayed(item.id);

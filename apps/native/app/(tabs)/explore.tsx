@@ -2,6 +2,7 @@ import { useSearchSearchGet } from "api-hifi/src/gen/hooks";
 import { useMemo } from "react";
 import { ActivityIndicator, FlatList, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { useThemeColor } from "heroui-native";
 import { withUniwind } from "uniwind";
 import { ApiDebug } from "@/components/api-debug";
 import { TimerStatus } from "@/components/timer-status";
@@ -15,6 +16,7 @@ const StyledText = withUniwind(Text);
 
 export default function Explore() {
   const { playQueue } = usePlayer();
+  const themeColorForeground = useThemeColor("foreground");
   const { data, isLoading, error } = useSearchSearchGet({ s: "trending" });
 
   type SearchResultItem = {
@@ -94,7 +96,7 @@ export default function Explore() {
 
       {isLoading ? (
         <StyledView className="flex-1 justify-center items-center">
-          <ActivityIndicator size="large" color="#fff" />
+          <ActivityIndicator size="large" color={themeColorForeground} />
         </StyledView>
       ) : error ? (
         <StyledView className="flex-1 justify-center items-center px-4">

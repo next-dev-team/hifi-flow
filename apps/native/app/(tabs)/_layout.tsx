@@ -21,13 +21,20 @@ export default function TabLayout() {
         },
         tabBarStyle: {
           backgroundColor: themeColorBackground,
-          height: Platform.OS === "web" ? 86 : 84,
-          paddingTop: 8,
-          paddingBottom: 10,
+          height: 60,
+          paddingTop: 4,
+          paddingBottom: Platform.OS === "ios" ? 20 : 4,
+          zIndex: 1000,
+        },
+        tabBarItemStyle: {
+          paddingVertical: 0,
+        },
+        tabBarIconStyle: {
+          marginTop: 0,
         },
         tabBarLabelStyle: {
-          fontSize: 12,
-          marginTop: 2,
+          fontSize: 10,
+          marginTop: -2,
           paddingBottom: 0,
         },
         tabBarActiveTintColor: "#ef4444",
@@ -38,8 +45,8 @@ export default function TabLayout() {
         name="index"
         options={{
           title: "Home",
-          tabBarIcon: ({ color, size }: { color: string; size: number }) => (
-            <Ionicons name="home" size={size} color={color} />
+          tabBarIcon: ({ color }: { color: string }) => (
+            <Ionicons name="home" size={20} color={color} />
           ),
         }}
       />
@@ -47,8 +54,8 @@ export default function TabLayout() {
         name="explore"
         options={{
           title: "Explore",
-          tabBarIcon: ({ color, size }: { color: string; size: number }) => (
-            <Ionicons name="compass" size={size} color={color} />
+          tabBarIcon: ({ color }: { color: string }) => (
+            <Ionicons name="compass" size={20} color={color} />
           ),
         }}
       />
@@ -56,8 +63,8 @@ export default function TabLayout() {
         name="podcast"
         options={{
           title: "Podcast",
-          tabBarIcon: ({ color, size }: { color: string; size: number }) => (
-            <Ionicons name="mic" size={size} color={color} />
+          tabBarIcon: ({ color }: { color: string }) => (
+            <Ionicons name="mic" size={20} color={color} />
           ),
         }}
       />
@@ -65,8 +72,8 @@ export default function TabLayout() {
         name="library"
         options={{
           title: "Library",
-          tabBarIcon: ({ color, size }: { color: string; size: number }) => (
-            <Ionicons name="library" size={size} color={color} />
+          tabBarIcon: ({ color }: { color: string }) => (
+            <Ionicons name="library" size={20} color={color} />
           ),
         }}
       />

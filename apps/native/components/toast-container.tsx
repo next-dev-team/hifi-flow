@@ -1,18 +1,29 @@
-import React, { useEffect } from 'react';
-import { View, Text, TouchableOpacity, Platform } from 'react-native';
-import Animated, { 
-  useSharedValue, 
-  useAnimatedStyle, 
-  withSpring, 
+import React, { useEffect } from "react";
+import { View, Text, TouchableOpacity, Platform } from "react-native";
+import Animated, {
+  useSharedValue,
+  useAnimatedStyle,
+  withSpring,
   withTiming,
-  runOnJS
-} from 'react-native-reanimated';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Ionicons } from '@expo/vector-icons';
-import { useToast } from '../contexts/toast-context';
+  runOnJS,
+} from "react-native-reanimated";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { Ionicons } from "@expo/vector-icons";
+import { useToast } from "../contexts/toast-context";
+import { useThemeColor } from "heroui-native";
+import { useAppTheme } from "../contexts/app-theme-context";
 
 export const ToastContainer: React.FC = () => {
   const { toast, hideToast } = useToast();
+  const themeColorForeground = useThemeColor("foreground");
+  const themeColorSuccess = useThemeColor("success");
+  const themeColorDanger = useThemeColor("danger");
+  const themeColorAccent = useThemeColor("accent");
+  const themeColorSuccessForeground = useThemeColor(
+    "success-foreground" as any
+  );
+  const themeColorDangerForeground = useThemeColor("danger-foreground" as any);
+  const themeColorAccentForeground = useThemeColor("accent-foreground" as any);
   const insets = useSafeAreaInsets();
   const translateY = useSharedValue(-100);
   const opacity = useSharedValue(0);
@@ -36,44 +47,59 @@ export const ToastContainer: React.FC = () => {
   }));
 
   const getBackgroundColor = () => {
-    if (!toast) return 'bg-blue-500';
+    if (!toast) return themeColorAccent;
     switch (toast.type) {
-      case 'success':
-        return 'bg-green-500';
-      case 'error':
-        return 'bg-red-500';
-      case 'info':
+      case "success":
+        return themeColorSuccess;
+      case "error":
+        return themeColorDanger;
+      case "info":
       default:
-        return 'bg-blue-500';
+        return themeColorAccent;
+    }
+  };
+
+  const getTextColor = () => {
+    if (!toast) return themeColorAccentForeground;
+    switch (toast.type) {
+      case "success":
+        return themeColorSuccessForeground;
+      case "error":
+        return themeColorDangerForeground;
+      case "info":
+      default:
+        return themeColorAccentForeground;
     }
   };
 
   const getIcon = () => {
-    if (!toast) return 'information-circle';
+    if (!toast) return "information-circle";
     switch (toast.type) {
-      case 'success':
-        return 'checkmark-circle';
-      case 'error':
-        return 'alert-circle';
-      case 'info':
+      case "success":
+        return "checkmark-circle";
+      case "error":
+        return "alert-circle";
+      case "info":
       default:
-        return 'information-circle';
+        return "information-circle";
     }
   };
 
+  const { isDark } = useAppTheme();
+
   return (
     <Animated.View
-      pointerEvents={toast ? 'auto' : 'none'}
+      pointerEvents={toast ? "auto" : "none"}
       style={[
         {
-          position: 'absolute',
+          position: "absolute",
           top: 0,
           left: 16,
           right: 16,
           zIndex: 9999,
-          shadowColor: '#000',
+          shadowColor: "#000",
           shadowOffset: { width: 0, height: 2 },
-          shadowOpacity: 0.25,
+          shadowOpacity: isDark ? 0.5 : 0.25,
           shadowRadius: 3.84,
           elevation: 5,
         },
@@ -83,18 +109,35 @@ export const ToastContainer: React.FC = () => {
       <TouchableOpacity
         activeOpacity={0.9}
         onPress={hideToast}
-        className={`${getBackgroundColor()} rounded-2xl p-4 flex-row items-center`}
+        style={{ backgroundColor: getBackgroundColor() }}
+        className="rounded-2xl p-4 flex-row items-center"
       >
-        <Ionicons name={getIcon() as any} size={24} color="white" />
+        <Ionicons name={getIcon() as any} size={24} color={getTextColor()} />
         <View className="ml-3 flex-1">
-          <Text className="text-white font-semibold text-sm">
-            {toast?.type === 'error' ? 'Error' : toast?.type === 'success' ? 'Success' : 'Info'}
+          <Text
+            style={{ color: getTextColor() }}
+            className="font-semibold text-sm"
+          >
+            {toast?.type === "error"
+              ? "Error"
+              : toast?.type === "success"
+              ? "Success"
+              : "Info"}
           </Text>
-          <Text className="text-white text-xs opacity-90" numberOfLines={2}>
+          <Text
+            style={{ color: getTextColor() }}
+            className="text-xs opacity-90"
+            numberOfLines={2}
+          >
             {toast?.message}
           </Text>
         </View>
-        <Ionicons name="close" size={20} color="white" className="opacity-70" />
+        <Ionicons
+          name="close"
+          size={20}
+          color={getTextColor()}
+          className="opacity-70"
+        />
       </TouchableOpacity>
     </Animated.View>
   );

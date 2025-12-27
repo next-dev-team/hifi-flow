@@ -3,6 +3,7 @@ import { useLocalSearchParams } from "expo-router";
 import { useMemo } from "react";
 import { ActivityIndicator, FlatList, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { useThemeColor } from "heroui-native";
 import { withUniwind } from "uniwind";
 import { ApiDebug } from "@/components/api-debug";
 import { type Track, TrackItem } from "@/components/track-item";
@@ -15,6 +16,7 @@ const StyledText = withUniwind(Text);
 
 export default function PlaylistScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
+  const themeColorForeground = useThemeColor("foreground");
   const { playQueue } = usePlayer();
 
   const { data, isLoading, error } = useGetPlaylistPlaylistGet({
@@ -127,7 +129,7 @@ export default function PlaylistScreen() {
 
       {isLoading ? (
         <StyledView className="flex-1 justify-center items-center">
-          <ActivityIndicator size="large" color="#fff" />
+          <ActivityIndicator size="large" color={themeColorForeground} />
         </StyledView>
       ) : error ? (
         <StyledView className="flex-1 justify-center items-center px-4">

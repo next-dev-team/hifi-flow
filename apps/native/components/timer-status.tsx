@@ -4,6 +4,7 @@ import { Text, TouchableOpacity, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { withUniwind } from "uniwind";
 import { usePlayer } from "@/contexts/player-context";
+import { useAppTheme } from "@/contexts/app-theme-context";
 
 const StyledView = withUniwind(View);
 const StyledText = withUniwind(Text);
@@ -17,6 +18,7 @@ interface TimerStatusProps {
 export const TimerStatus = ({ absolute = true }: TimerStatusProps) => {
   const { sleepTimerRemainingMs, sleepTimerEndsAt, cancelSleepTimer } =
     usePlayer();
+  const { isDark } = useAppTheme();
   const insets = useSafeAreaInsets();
 
   if (!sleepTimerEndsAt || sleepTimerRemainingMs <= 0) {
@@ -38,15 +40,15 @@ export const TimerStatus = ({ absolute = true }: TimerStatusProps) => {
     return (
       <StyledTouchableOpacity
         onPress={cancelSleepTimer}
-        className="flex-row items-center bg-black/40 px-2 py-0.5 rounded-full mr-2"
+        className="flex-row items-center bg-foreground/10 px-2 py-0.5 rounded-full mr-2"
       >
-        <StyledText className="text-white text-[10px] font-bold">
+        <StyledText className="text-foreground text-[10px] font-bold">
           💤 {formatted}
         </StyledText>
         <StyledIonicons
           name="close-circle"
           size={12}
-          color="white"
+          color={isDark ? "white" : "black"}
           className="ml-1 opacity-70"
         />
       </StyledTouchableOpacity>
@@ -56,16 +58,16 @@ export const TimerStatus = ({ absolute = true }: TimerStatusProps) => {
   return (
     <StyledTouchableOpacity
       onPress={cancelSleepTimer}
-      className="absolute top-0 right-0 z-50 bg-black/80 px-3 py-1 rounded-bl-lg flex-row items-center"
+      className="absolute top-0 right-0 z-50 bg-foreground/10 px-3 py-1 rounded-bl-lg flex-row items-center"
       style={{ top: insets.top }}
     >
-      <StyledText className="text-white text-xs font-bold">
+      <StyledText className="text-foreground text-xs font-bold">
         💤 {formatted}
       </StyledText>
       <StyledIonicons
         name="close-circle"
         size={14}
-        color="white"
+        color={isDark ? "white" : "black"}
         className="ml-2 opacity-70"
       />
     </StyledTouchableOpacity>

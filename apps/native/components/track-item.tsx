@@ -11,6 +11,7 @@ import {
 } from "react-native";
 import { useAppTheme } from "@/contexts/app-theme-context";
 import { usePlayer } from "@/contexts/player-context";
+import { useThemeColor } from "heroui-native";
 
 export interface Track {
   id: string;
@@ -115,6 +116,7 @@ export const TrackItem: React.FC<TrackItemProps> = ({
     cachedTrackIds,
   } = usePlayer();
   const { isDark } = useAppTheme();
+  const themeColorForeground = useThemeColor("foreground");
 
   const isPlayerLoading = loadingTrackId === String(track.id);
   const isLoading = propLoading || isPlayerLoading;
@@ -219,7 +221,7 @@ export const TrackItem: React.FC<TrackItemProps> = ({
         ) : (
           <View className="w-12 h-12 rounded-lg mr-3 bg-default-200 items-center justify-center relative">
             {isLoading ? (
-              <ActivityIndicator size="small" color="#000" />
+              <ActivityIndicator size="small" color={themeColorForeground} />
             ) : (
               <Text className="text-lg">🎵</Text>
             )}
@@ -234,7 +236,7 @@ export const TrackItem: React.FC<TrackItemProps> = ({
         <View className="flex-1 justify-center">
           <Text
             className={`font-semibold text-[15px] ${
-              isActive ? "text-primary dark:text-white" : "text-foreground"
+              isActive ? "text-primary" : "text-foreground"
             }`}
             numberOfLines={1}
           >

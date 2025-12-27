@@ -42,6 +42,8 @@ import Animated, {
   withTiming,
 } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useThemeColor } from "heroui-native";
+import { useAppTheme } from "@/contexts/app-theme-context";
 import { Circle, Svg } from "react-native-svg";
 import {
   OPEN_QUEUE_SHEET_EVENT,
@@ -100,9 +102,11 @@ const Particle = ({
 const TrapParticles = ({
   phase,
   active,
+  isDark = true,
 }: {
   phase: SharedValue<number>;
   active: boolean;
+  isDark?: boolean;
 }) => {
   const particleCount = 40; // Reduced for performance
   const particles = useMemo(
@@ -114,9 +118,14 @@ const TrapParticles = ({
         size: Math.random() * 2 + 0.5,
         speed: Math.random() * 0.8 + 0.2,
         offset: Math.random() * Math.PI * 2,
-        color: Math.random() > 0.85 ? "rgba(147, 197, 253, 0.7)" : "#fff",
+        color:
+          Math.random() > 0.85
+            ? "rgba(147, 197, 253, 0.7)"
+            : isDark
+            ? "rgba(255, 255, 255, 0.8)"
+            : "rgba(0, 0, 0, 0.8)",
       })),
-    []
+    [isDark]
   );
 
   return (
@@ -139,6 +148,7 @@ const SpectrumBar = ({
   variant = "wave",
   totalBars,
   radius,
+  isDark = true,
 }: {
   index: number;
   phase: SharedValue<number>;
@@ -158,6 +168,7 @@ const SpectrumBar = ({
     | "trap";
   totalBars: number;
   radius?: number;
+  isDark?: boolean;
 }) => {
   const barRadius = radius;
   const animatedStyle = useAnimatedStyle(() => {
@@ -323,7 +334,7 @@ const SpectrumBar = ({
       height,
       width: barWidth,
       borderRadius: 999,
-      backgroundColor: "rgba(255,255,255,0.9)",
+      backgroundColor: isDark ? "rgba(255,255,255,0.9)" : "rgba(0,0,0,0.9)",
       opacity: active ? 0.7 : 0.25,
     };
   }, [
@@ -337,6 +348,7 @@ const SpectrumBar = ({
     totalBars,
     barWidth,
     barRadius,
+    isDark,
   ]);
 
   return <Animated.View style={animatedStyle} />;
@@ -354,6 +366,7 @@ const SpectrumVisualizer = ({
   phase: externalPhase,
   audioAnalysis,
   positionMillis,
+  isDark = true,
 }: {
   isPlaying: boolean;
   barCount: number;
@@ -374,6 +387,7 @@ const SpectrumVisualizer = ({
   phase?: SharedValue<number>;
   audioAnalysis?: AudioAnalysis | null;
   positionMillis?: number;
+  isDark?: boolean;
 }) => {
   const bars = useMemo(
     () => Array.from({ length: barCount }, (_, i) => ({ id: i, index: i })),
@@ -447,7 +461,9 @@ const SpectrumVisualizer = ({
         containerStyle,
       ]}
     >
-      {isCircular && <TrapParticles phase={phase} active={isPlaying} />}
+      {isCircular && (
+        <TrapParticles phase={phase} active={isPlaying} isDark={isDark} />
+      )}
       {bars.map((bar) => (
         <SpectrumBar
           key={bar.id}
@@ -461,6 +477,7 @@ const SpectrumVisualizer = ({
           variant={variant}
           totalBars={barCount}
           radius={radius}
+          isDark={isDark}
         />
       ))}
     </View>
@@ -471,10 +488,12 @@ const CircularProgress = ({
   size,
   strokeWidth,
   progress,
+  isDark = true,
 }: {
   size: number;
   strokeWidth: number;
   progress: number;
+  isDark?: boolean;
 }) => {
   const radius = (size - strokeWidth) / 2;
   const circumference = radius * 2 * Math.PI;
@@ -486,7 +505,7 @@ const CircularProgress = ({
     >
       <Svg width={size} height={size}>
         <Circle
-          stroke="rgba(255, 255, 255, 0.14)"
+          stroke={isDark ? "rgba(255, 255, 255, 0.14)" : "rgba(0, 0, 0, 0.14)"}
           fill="none"
           cx={size / 2}
           cy={size / 2}
@@ -514,11 +533,13 @@ const SpinningCover = ({
   size,
   isPlaying,
   phase,
+  isDark = true,
 }: {
   uri: string;
   size: number;
   isPlaying: boolean;
   phase?: SharedValue<number>;
+  isDark?: boolean;
 }) => {
   const spin = useSharedValue(0);
 
@@ -562,7 +583,7 @@ const SpinningCover = ({
     return {
       transform: [{ scale: 1.05 + bassPulse * 0.3 }],
       opacity: bassPulse * 0.4,
-      borderColor: "rgba(255,255,255,0.3)",
+      borderColor: isDark ? "rgba(255,255,255,0.3)" : "rgba(0,0,0,0.3)",
     };
   });
 
@@ -588,8 +609,12 @@ const SpinningCover = ({
           borderRadius: (size + 12) / 2,
           padding: 6,
           backgroundColor: isPlaying
-            ? "rgba(255,255,255,0.14)"
-            : "rgba(255,255,255,0.06)",
+            ? isDark
+              ? "rgba(255,255,255,0.14)"
+              : "rgba(0,0,0,0.14)"
+            : isDark
+            ? "rgba(255,255,255,0.06)"
+            : "rgba(0,0,0,0.06)",
         }}
       >
         <Animated.View
@@ -620,12 +645,14 @@ const SeekBar = ({
   onSeekToMillis,
   onScrubMillisChange,
   onScrubStateChange,
+  isDark = true,
 }: {
   positionMillis: number;
   durationMillis: number;
   onSeekToMillis: (value: number) => void;
   onScrubMillisChange?: (value: number) => void;
   onScrubStateChange?: (value: boolean) => void;
+  isDark?: boolean;
 }) => {
   const barRef = useRef<View | null>(null);
   const barXRef = useRef(0);
@@ -726,14 +753,18 @@ const SeekBar = ({
             height: 8,
             borderRadius: 999,
             overflow: "hidden",
-            backgroundColor: "rgba(255,255,255,0.18)",
+            backgroundColor: isDark
+              ? "rgba(255,255,255,0.18)"
+              : "rgba(0,0,0,0.18)",
           }}
         >
           <View
             style={{
               height: "100%",
               width: `${visualRatio * 100}%`,
-              backgroundColor: "#fff",
+              backgroundColor: isDark
+                ? "rgba(255,255,255,0.9)"
+                : "rgba(0,0,0,0.9)",
             }}
           />
         </View>
@@ -747,7 +778,7 @@ const SeekBar = ({
               width: knobSize,
               height: knobSize,
               borderRadius: knobSize / 2,
-              backgroundColor: "#fff",
+              backgroundColor: themeColorForeground,
               shadowColor: "#000",
               shadowOpacity: 0.35,
               shadowRadius: 10,
@@ -764,9 +795,11 @@ const SeekBar = ({
 const VolumeSlider = ({
   volume,
   onVolumeChange,
+  isDark = true,
 }: {
   volume: number;
   onVolumeChange: (value: number) => void;
+  isDark?: boolean;
 }) => {
   const barRef = useRef<View | null>(null);
   const barYRef = useRef(0);
@@ -845,7 +878,9 @@ const VolumeSlider = ({
           height: "100%",
           borderRadius: 999,
           overflow: "hidden",
-          backgroundColor: "rgba(255,255,255,0.18)",
+          backgroundColor: isDark
+            ? "rgba(255,255,255,0.18)"
+            : "rgba(0,0,0,0.18)",
           justifyContent: "flex-end",
         }}
       >
@@ -853,7 +888,9 @@ const VolumeSlider = ({
           style={{
             width: "100%",
             height: `${visualRatio * 100}%`,
-            backgroundColor: "#fff",
+            backgroundColor: isDark
+              ? "rgba(255,255,255,0.9)"
+              : "rgba(0,0,0,0.9)",
           }}
         />
       </View>
@@ -866,7 +903,7 @@ const VolumeSlider = ({
           width: knobSize,
           height: knobSize,
           borderRadius: knobSize / 2,
-          backgroundColor: "#fff",
+          backgroundColor: themeColorForeground,
           shadowColor: "#000",
           shadowOpacity: 0.35,
           shadowRadius: 10,
@@ -880,6 +917,11 @@ const VolumeSlider = ({
 
 export const PlayerBar = () => {
   const { width: screenWidth } = useWindowDimensions();
+  const { isDark } = useAppTheme();
+  const themeColorBackground = useThemeColor("background");
+  const themeColorForeground = useThemeColor("foreground");
+  const themeColorPrimary = useThemeColor("primary");
+  const themeColorContent3 = useThemeColor("content3");
   const {
     currentTrack,
     isPlaying,
@@ -1094,8 +1136,9 @@ export const PlayerBar = () => {
       return {
         width: isCollapsed ? collapsedWidth : "100%",
         left: 0,
-        bottom: insets.bottom + 56,
-        height: isCollapsed ? 58 : 64,
+        bottom: 62,
+        height: isCollapsed ? 48 : 56,
+        zIndex: 50,
         opacity:
           miniPlayerOpacity.value *
           interpolate(dragY.value, [-100, 0], [0.5, 1], "clamp"),
@@ -1127,8 +1170,9 @@ export const PlayerBar = () => {
     return {
       width,
       left,
-      height: interpolate(collapseProgress.value, [0, 1], [64, 58], "clamp"),
-      bottom: insets.bottom + 56,
+      height: interpolate(collapseProgress.value, [0, 1], [56, 48], "clamp"),
+      bottom: 62 + margin,
+      zIndex: 50,
       opacity:
         miniPlayerOpacity.value *
         interpolate(dragY.value, [-100, 0], [0.5, 1], "clamp"),
@@ -1166,8 +1210,8 @@ export const PlayerBar = () => {
 
   const animatedCardStyle = useAnimatedStyle(() => {
     return {
-      paddingHorizontal: interpolate(collapseProgress.value, [0, 1], [12, 4]),
-      paddingVertical: interpolate(collapseProgress.value, [0, 1], [8, 4]),
+      paddingHorizontal: interpolate(collapseProgress.value, [0, 1], [10, 4]),
+      paddingVertical: interpolate(collapseProgress.value, [0, 1], [6, 4]),
     };
   });
 
@@ -1226,7 +1270,7 @@ export const PlayerBar = () => {
           style={[
             props.style,
             {
-              backgroundColor: "#000",
+              backgroundColor: themeColorBackground,
               borderTopLeftRadius: 24,
               borderTopRightRadius: 24,
               overflow: "hidden",
@@ -1241,7 +1285,7 @@ export const PlayerBar = () => {
                 left: 0,
                 right: 0,
                 bottom: 0,
-                backgroundColor: "#000",
+                backgroundColor: themeColorBackground,
               }}
             >
               <Image
@@ -1398,7 +1442,7 @@ export const PlayerBar = () => {
                   left: 0,
                   right: 0,
                   bottom: 0,
-                  backgroundColor: "#000",
+                  backgroundColor: themeColorBackground,
                 }}
               >
                 <Image
@@ -1409,13 +1453,13 @@ export const PlayerBar = () => {
                     left: 0,
                     right: 0,
                     bottom: 0,
-                    opacity: 0.8,
+                    opacity: isDark ? 0.8 : 0.4,
                   }}
                   resizeMode="cover"
                 />
                 <BlurView
                   intensity={Platform.OS === "ios" ? 50 : 100}
-                  tint="dark"
+                  tint={isDark ? "dark" : "light"}
                   style={{
                     position: "absolute",
                     top: 0,
@@ -1431,7 +1475,9 @@ export const PlayerBar = () => {
                     left: 0,
                     right: 0,
                     bottom: 0,
-                    backgroundColor: "rgba(0,0,0,0.3)",
+                    backgroundColor: isDark
+                      ? "rgba(0,0,0,0.3)"
+                      : "rgba(255,255,255,0.3)",
                   }}
                 />
               </View>
@@ -1443,7 +1489,7 @@ export const PlayerBar = () => {
                   left: 0,
                   right: 0,
                   bottom: 0,
-                  backgroundColor: "#000",
+                  backgroundColor: themeColorBackground,
                 }}
               />
             )}
@@ -1498,8 +1544,9 @@ export const PlayerBar = () => {
                 <View>
                   <SpinningCover
                     uri={resolvedArtwork}
-                    size={38}
+                    size={32}
                     isPlaying={isPlaying}
+                    isDark={isDark}
                   />
                   <Animated.View
                     style={[
@@ -1516,9 +1563,10 @@ export const PlayerBar = () => {
                     ]}
                   >
                     <CircularProgress
-                      size={52}
+                      size={44}
                       strokeWidth={2}
                       progress={miniProgressRatio}
+                      isDark={isDark}
                     />
                   </Animated.View>
                   <Animated.View
@@ -1548,7 +1596,7 @@ export const PlayerBar = () => {
                           <Ionicons
                             name="chevron-back"
                             size={12}
-                            color="#fff"
+                            color={themeColorForeground}
                           />
                         </Animated.View>
                       )}
@@ -1581,7 +1629,7 @@ export const PlayerBar = () => {
                           <Ionicons
                             name="chevron-forward"
                             size={12}
-                            color="#fff"
+                            color={themeColorForeground}
                           />
                         </Animated.View>
                       )}
@@ -1618,6 +1666,7 @@ export const PlayerBar = () => {
                       size={52}
                       strokeWidth={2}
                       progress={miniProgressRatio}
+                      isDark={isDark}
                     />
                   </Animated.View>
                   <Animated.View
@@ -1647,7 +1696,7 @@ export const PlayerBar = () => {
                           <Ionicons
                             name="chevron-back"
                             size={12}
-                            color="#fff"
+                            color={isDark ? "#fff" : "#000"}
                           />
                         </Animated.View>
                       )}
@@ -1680,7 +1729,7 @@ export const PlayerBar = () => {
                           <Ionicons
                             name="chevron-forward"
                             size={12}
-                            color="#fff"
+                            color={themeColorForeground}
                           />
                         </Animated.View>
                       )}
@@ -1697,7 +1746,7 @@ export const PlayerBar = () => {
             >
               <View className="flex-1 mr-2 items-start justify-center">
                 <Text
-                  className="text-white font-bold text-sm text-left select-none"
+                  className="text-foreground font-bold text-[13px] text-left select-none"
                   numberOfLines={1}
                   selectable={false}
                 >
@@ -1708,7 +1757,7 @@ export const PlayerBar = () => {
                     <Ionicons name="flash" size={10} color="#4ade80" />
                   )}
                   <Text
-                    className="text-white/70 text-xs text-left select-none shrink"
+                    className="text-foreground opacity-70 text-[11px] text-left select-none shrink"
                     numberOfLines={1}
                     selectable={false}
                   >
@@ -1728,13 +1777,15 @@ export const PlayerBar = () => {
                 {({ pressed }) => (
                   <Ionicons
                     name="play-skip-back"
-                    size={20}
+                    size={18}
                     color={
                       controlsDisabled
-                        ? "rgba(255,255,255,0.35)"
+                        ? isDark
+                          ? "rgba(255,255,255,0.35)"
+                          : "rgba(0,0,0,0.35)"
                         : pressed
                         ? "#ef4444"
-                        : "#fff"
+                        : themeColorForeground
                     }
                   />
                 )}
@@ -1750,12 +1801,15 @@ export const PlayerBar = () => {
               >
                 {({ pressed }) =>
                   isLoading || isTrackLoading ? (
-                    <ActivityIndicator size="small" color="#fff" />
+                    <ActivityIndicator
+                      size="small"
+                      color={themeColorForeground}
+                    />
                   ) : (
                     <Ionicons
                       name={isPlaying ? "pause" : "play"}
-                      size={24}
-                      color={pressed ? "#ef4444" : "#fff"}
+                      size={22}
+                      color={pressed ? "#ef4444" : themeColorForeground}
                     />
                   )
                 }
@@ -1772,13 +1826,15 @@ export const PlayerBar = () => {
                 {({ pressed }) => (
                   <Ionicons
                     name="play-skip-forward"
-                    size={20}
+                    size={18}
                     color={
                       controlsDisabled
-                        ? "rgba(255,255,255,0.35)"
+                        ? isDark
+                          ? "rgba(255,255,255,0.35)"
+                          : "rgba(0,0,0,0.35)"
                         : pressed
                         ? "#ef4444"
-                        : "#fff"
+                        : themeColorForeground
                     }
                   />
                 )}
@@ -1794,8 +1850,12 @@ export const PlayerBar = () => {
                 {({ pressed }) => (
                   <Ionicons
                     name={isCurrentFavorited ? "heart" : "heart-outline"}
-                    size={20}
-                    color={isCurrentFavorited || pressed ? "#ef4444" : "#fff"}
+                    size={18}
+                    color={
+                      isCurrentFavorited || pressed
+                        ? "#ef4444"
+                        : themeColorForeground
+                    }
                   />
                 )}
               </Pressable>
@@ -1810,8 +1870,8 @@ export const PlayerBar = () => {
                 {({ pressed }) => (
                   <Ionicons
                     name="list"
-                    size={20}
-                    color={pressed ? "#60a5fa" : "#fff"}
+                    size={18}
+                    color={pressed ? "#60a5fa" : themeColorForeground}
                   />
                 )}
               </Pressable>
@@ -1834,7 +1894,7 @@ export const PlayerBar = () => {
         onChange={(index) => setIsSheetOpen(index >= 0)}
         onDismiss={() => setIsSheetOpen(false)}
         handleIndicatorStyle={{
-          backgroundColor: "rgba(255,255,255,0.3)",
+          backgroundColor: isDark ? "rgba(255,255,255,0.3)" : "rgba(0,0,0,0.3)",
           width: 40,
         }}
       >
@@ -1851,6 +1911,7 @@ export const PlayerBar = () => {
                 phase={sharedPhase}
                 audioAnalysis={audioAnalysis}
                 positionMillis={positionMillis}
+                isDark={isDark}
               />
             )}
             <View className="flex-1 max-w-md w-full mx-auto relative">
@@ -1864,7 +1925,7 @@ export const PlayerBar = () => {
                       <Ionicons
                         name="chevron-down"
                         size={28}
-                        color={pressed ? "#ef4444" : "#fff"}
+                        color={pressed ? "#ef4444" : themeColorForeground}
                       />
                     )}
                   </Pressable>
@@ -1895,7 +1956,9 @@ export const PlayerBar = () => {
                         }
                         size={20}
                         color={
-                          showSpectrumSelector || pressed ? "#60a5fa" : "#fff"
+                          showSpectrumSelector || pressed
+                            ? "#60a5fa"
+                            : themeColorForeground
                         }
                       />
                     )}
@@ -1909,7 +1972,9 @@ export const PlayerBar = () => {
                         name={isCurrentFavorited ? "heart" : "heart-outline"}
                         size={22}
                         color={
-                          isCurrentFavorited || pressed ? "#ef4444" : "#fff"
+                          isCurrentFavorited || pressed
+                            ? "#ef4444"
+                            : themeColorForeground
                         }
                       />
                     )}
@@ -1922,7 +1987,7 @@ export const PlayerBar = () => {
                       <Ionicons
                         name="list"
                         size={22}
-                        color={pressed ? "#60a5fa" : "#fff"}
+                        color={pressed ? "#60a5fa" : themeColorForeground}
                       />
                     )}
                   </Pressable>
@@ -1932,8 +1997,12 @@ export const PlayerBar = () => {
                   <View className="absolute top-16 left-0 right-0 z-50 items-center">
                     <BlurView
                       intensity={80}
-                      tint="dark"
-                      className="flex-row items-center bg-black/40 px-4 py-3 rounded-2xl border border-white/10"
+                      tint={isDark ? "dark" : "light"}
+                      className={`flex-row items-center ${
+                        isDark ? "bg-black/40" : "bg-white/40"
+                      } px-4 py-3 rounded-2xl border ${
+                        isDark ? "border-white/10" : "border-black/10"
+                      }`}
                     >
                       {[
                         { id: "wave", icon: "water-outline", label: "Wave" },
@@ -1973,14 +2042,22 @@ export const PlayerBar = () => {
                           }}
                           className={`mx-2 items-center justify-center w-10 h-10 rounded-full ${
                             spectrumVariant === v.id
-                              ? "bg-blue-500"
-                              : "bg-white/10"
+                              ? "bg-primary"
+                              : isDark
+                              ? "bg-white/10"
+                              : "bg-black/10"
                           }`}
                         >
                           <Ionicons
                             name={v.icon as any}
                             size={18}
-                            color={spectrumVariant === v.id ? "#fff" : "#ccc"}
+                            color={
+                              spectrumVariant === v.id
+                                ? "#fff"
+                                : isDark
+                                ? "rgba(255,255,255,0.7)"
+                                : "rgba(0,0,0,0.7)"
+                            }
                           />
                         </TouchableOpacity>
                       ))}
@@ -1990,13 +2067,13 @@ export const PlayerBar = () => {
 
                 <View className="items-center px-8 mb-4">
                   <Text
-                    className="text-xs text-gray-300 mb-2 select-none"
+                    className="text-xs text-foreground opacity-70 mb-2 select-none"
                     selectable={false}
                   >
                     Now Playing
                   </Text>
                   <Text
-                    className="text-2xl font-bold text-white mb-1 select-none"
+                    className="text-2xl font-bold text-foreground mb-1 select-none"
                     numberOfLines={1}
                     selectable={false}
                   >
@@ -2012,7 +2089,7 @@ export const PlayerBar = () => {
                       </View>
                     )}
                     <Text
-                      className="text-gray-300 select-none shrink"
+                      className="text-foreground opacity-70 select-none shrink"
                       numberOfLines={1}
                       selectable={false}
                     >
@@ -2049,6 +2126,7 @@ export const PlayerBar = () => {
                         phase={sharedPhase}
                         audioAnalysis={audioAnalysis}
                         positionMillis={positionMillis}
+                        isDark={isDark}
                       />
                     )}
                     {resolvedArtwork ? (
@@ -2057,6 +2135,7 @@ export const PlayerBar = () => {
                         size={202}
                         isPlaying={isPlaying}
                         phase={sharedPhase}
+                        isDark={isDark}
                       />
                     ) : (
                       <View
@@ -2064,7 +2143,9 @@ export const PlayerBar = () => {
                           width: 214,
                           height: 214,
                           borderRadius: 107,
-                          backgroundColor: "#000",
+                          backgroundColor: isDark
+                            ? "rgba(255,255,255,0.06)"
+                            : "rgba(0,0,0,0.06)",
                           alignItems: "center",
                           justifyContent: "center",
                         }}
@@ -2077,7 +2158,7 @@ export const PlayerBar = () => {
                   <View className="w-full px-10 mt-4">
                     <View className="flex-row justify-between mb-1">
                       <Text
-                        className="text-[11px] text-gray-400 select-none"
+                        className="text-[11px] text-foreground opacity-60 select-none"
                         selectable={false}
                       >
                         {formatMillis(
@@ -2087,7 +2168,7 @@ export const PlayerBar = () => {
                         )}
                       </Text>
                       <Text
-                        className="text-[11px] text-gray-400 select-none"
+                        className="text-[11px] text-foreground opacity-60 select-none"
                         selectable={false}
                       >
                         {durationMillis > 0
@@ -2108,6 +2189,7 @@ export const PlayerBar = () => {
                           setScrubMillis(null);
                         }
                       }}
+                      isDark={isDark}
                     />
 
                     <View className="flex-row items-center justify-between mt-2 px-2">
@@ -2123,8 +2205,10 @@ export const PlayerBar = () => {
                               pressed
                                 ? "#ef4444"
                                 : shuffleEnabled
-                                ? "#fff"
-                                : "rgba(255,255,255,0.45)"
+                                ? themeColorForeground
+                                : isDark
+                                ? "rgba(255,255,255,0.45)"
+                                : "rgba(0,0,0,0.45)"
                             }
                           />
                         )}
@@ -2132,16 +2216,20 @@ export const PlayerBar = () => {
 
                       <View className="flex-row items-center gap-3">
                         <TouchableOpacity
-                          className="px-3 py-2 rounded-full bg-white/10"
+                          className={`px-3 py-2 rounded-full ${
+                            isDark ? "bg-white/10" : "bg-black/10"
+                          }`}
                           onPress={() => seekByMillis(-10_000)}
                         >
-                          <Text className="text-xs text-white">-10s</Text>
+                          <Text className="text-xs text-foreground">-10s</Text>
                         </TouchableOpacity>
                         <TouchableOpacity
-                          className="px-3 py-2 rounded-full bg-white/10"
+                          className={`px-3 py-2 rounded-full ${
+                            isDark ? "bg-white/10" : "bg-black/10"
+                          }`}
                           onPress={() => seekByMillis(10_000)}
                         >
-                          <Text className="text-xs text-white">+10s</Text>
+                          <Text className="text-xs text-foreground">+10s</Text>
                         </TouchableOpacity>
                       </View>
 
@@ -2164,14 +2252,20 @@ export const PlayerBar = () => {
                                 pressed
                                   ? "#ef4444"
                                   : repeatMode !== "off"
-                                  ? "#fff"
-                                  : "rgba(255,255,255,0.45)"
+                                  ? themeColorForeground
+                                  : isDark
+                                  ? "rgba(255,255,255,0.45)"
+                                  : "rgba(0,0,0,0.45)"
                               }
                             />
                             {repeatMode === "one" && (
-                              <View className="absolute bottom-1 right-1 bg-white rounded-full w-3 h-3 items-center justify-center">
+                              <View
+                                className={`absolute bottom-1 right-1 ${
+                                  isDark ? "bg-white" : "bg-black"
+                                } rounded-full w-3 h-3 items-center justify-center`}
+                              >
                                 <Text
-                                  className="text-black font-bold"
+                                  className="text-background font-bold"
                                   style={{ fontSize: 7 }}
                                 >
                                   1
@@ -2189,7 +2283,9 @@ export const PlayerBar = () => {
                               position: "absolute",
                               bottom: 50,
                               right: 0,
-                              backgroundColor: "rgba(30,30,30,0.95)",
+                              backgroundColor: isDark
+                                ? "rgba(30,30,30,0.95)"
+                                : "rgba(240,240,240,0.95)",
                               borderRadius: 20,
                               paddingVertical: 12,
                               paddingHorizontal: 4,
@@ -2203,6 +2299,7 @@ export const PlayerBar = () => {
                             <VolumeSlider
                               volume={volume}
                               onVolumeChange={setVolume}
+                              isDark={isDark}
                             />
                           </View>
                         )}
@@ -2220,7 +2317,11 @@ export const PlayerBar = () => {
                             }
                             size={22}
                             color={
-                              showVolume ? "#fff" : "rgba(255,255,255,0.45)"
+                              showVolume
+                                ? themeColorForeground
+                                : isDark
+                                ? "rgba(255,255,255,0.45)"
+                                : "rgba(0,0,0,0.45)"
                             }
                           />
                         </TouchableOpacity>
@@ -2237,21 +2338,31 @@ export const PlayerBar = () => {
                       disabled={controlsDisabled}
                       style={{ opacity: controlsDisabled ? 0.35 : 1 }}
                     >
-                      <Ionicons name="play-skip-back" size={38} color="#fff" />
+                      <Ionicons
+                        name="play-skip-back"
+                        size={38}
+                        color={themeColorForeground}
+                      />
                     </TouchableOpacity>
 
                     <TouchableOpacity
                       onPress={isPlaying ? pauseTrack : resumeTrack}
-                      className="w-20 h-20 rounded-full bg-white items-center justify-center shadow-lg"
+                      className={`w-20 h-20 rounded-full ${
+                        isDark ? "bg-white" : "bg-black"
+                      } items-center justify-center shadow-lg`}
                       disabled={isLoading || isTrackLoading}
                     >
                       {isLoading || isTrackLoading ? (
-                        <ActivityIndicator size="large" color="#000" />
+                        <ActivityIndicator
+                          size="large"
+                          color={isDark ? "#000" : "#fff"}
+                        />
                       ) : (
                         <Ionicons
                           name={isPlaying ? "pause" : "play"}
                           size={42}
-                          color="#000"
+                          style={{ marginLeft: isPlaying ? 0 : 4 }}
+                          color={isDark ? "#000" : "#fff"}
                         />
                       )}
                     </TouchableOpacity>
@@ -2265,7 +2376,7 @@ export const PlayerBar = () => {
                       <Ionicons
                         name="play-skip-forward"
                         size={38}
-                        color="#fff"
+                        color={themeColorForeground}
                       />
                     </TouchableOpacity>
                   </View>

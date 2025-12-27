@@ -1,6 +1,13 @@
 import { Card } from "heroui-native";
 import type React from "react";
-import { Image, Text, TouchableOpacity, View, ActivityIndicator } from "react-native";
+import {
+  Image,
+  Text,
+  TouchableOpacity,
+  View,
+  ActivityIndicator,
+} from "react-native";
+import { useThemeColor } from "heroui-native";
 import { resolveArtwork } from "../utils/resolvers";
 
 export interface Artist {
@@ -13,16 +20,21 @@ export interface Artist {
 }
 
 interface ArtistItemProps {
-	artist: Artist;
-	onPress?: () => void;
+  artist: Artist;
+  onPress?: () => void;
   isLoading?: boolean;
 }
 
-export const ArtistItem: React.FC<ArtistItemProps> = ({ artist, onPress, isLoading }) => {
+export const ArtistItem: React.FC<ArtistItemProps> = ({
+  artist,
+  onPress,
+  isLoading,
+}) => {
   const artwork = resolveArtwork(artist);
+  const themeColorForeground = useThemeColor("foreground");
 
   return (
-    <TouchableOpacity 
+    <TouchableOpacity
       onPress={onPress}
       className="items-center mb-6 px-2"
       style={{ width: "50%" }}
@@ -42,7 +54,7 @@ export const ArtistItem: React.FC<ArtistItemProps> = ({ artist, onPress, isLoadi
         )}
         {isLoading && (
           <View className="absolute inset-0 bg-black/40 items-center justify-center">
-            <ActivityIndicator color="#fff" size="small" />
+            <ActivityIndicator color={themeColorForeground} size="small" />
           </View>
         )}
       </View>

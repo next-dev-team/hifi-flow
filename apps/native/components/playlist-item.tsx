@@ -1,6 +1,12 @@
-import { Card } from "heroui-native";
+import { Card, useThemeColor } from "heroui-native";
 import type React from "react";
-import { Image, Text, TouchableOpacity, View, ActivityIndicator } from "react-native";
+import {
+  Image,
+  Text,
+  TouchableOpacity,
+  View,
+  ActivityIndicator,
+} from "react-native";
 
 export interface Playlist {
   id: string;
@@ -16,7 +22,12 @@ interface PlaylistItemProps {
   isLoading?: boolean;
 }
 
-export const PlaylistItem: React.FC<PlaylistItemProps> = ({ playlist, onPress, isLoading }) => {
+export const PlaylistItem: React.FC<PlaylistItemProps> = ({
+  playlist,
+  onPress,
+  isLoading,
+}) => {
+  const themeColorForeground = useThemeColor("foreground");
   return (
     <TouchableOpacity onPress={onPress} disabled={isLoading}>
       <Card className="flex-row items-center p-3 mb-2 bg-content2 border-none shadow-sm">
@@ -34,7 +45,7 @@ export const PlaylistItem: React.FC<PlaylistItemProps> = ({ playlist, onPress, i
           )}
           {isLoading && (
             <View className="absolute inset-0 bg-black/40 items-center justify-center rounded-md">
-              <ActivityIndicator color="#fff" size="small" />
+              <ActivityIndicator color={themeColorForeground} size="small" />
             </View>
           )}
         </View>
@@ -45,9 +56,12 @@ export const PlaylistItem: React.FC<PlaylistItemProps> = ({ playlist, onPress, i
           >
             {playlist.title}
           </Text>
-          <Text className="text-foreground opacity-60 text-sm" numberOfLines={1}>
+          <Text
+            className="text-foreground opacity-60 text-sm"
+            numberOfLines={1}
+          >
             {playlist.creator ? `By ${playlist.creator}` : "Playlist"}
-             {playlist.trackCount ? ` • ${playlist.trackCount} tracks` : ""}
+            {playlist.trackCount ? ` • ${playlist.trackCount} tracks` : ""}
           </Text>
         </View>
         <View className="px-2">

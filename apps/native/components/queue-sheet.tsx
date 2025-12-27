@@ -30,6 +30,8 @@ import {
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useThemeColor } from "heroui-native";
+import { useAppTheme } from "@/contexts/app-theme-context";
 import { usePlayer, type PreBufferStatus } from "@/contexts/player-context";
 import { getSheetMargin, SHEET_MAX_WIDTH } from "@/utils/layout";
 import { resolveArtwork } from "@/utils/resolvers";
@@ -49,6 +51,7 @@ export const OPEN_QUEUE_SHEET_EVENT = "open-queue-sheet";
  * Pulsing buffer status indicator
  */
 const BufferBadge: React.FC<{ status: PreBufferStatus }> = ({ status }) => {
+  const { isDark } = useAppTheme();
   const opacity = useRef(new Animated.Value(1)).current;
 
   useEffect(() => {
@@ -94,13 +97,13 @@ const BufferBadge: React.FC<{ status: PreBufferStatus }> = ({ status }) => {
           alignItems: "center",
           justifyContent: "center",
           borderWidth: 2,
-          borderColor: "#0a0a0a",
+          borderColor: isDark ? "#0a0a0a" : "#fff",
         }}
       >
         <Ionicons
           name={status === "ready" ? "checkmark" : "hourglass-outline"}
           size={10}
-          color="#fff"
+          color={isDark ? "#fff" : "#000"}
         />
       </View>
     </Animated.View>
@@ -112,6 +115,10 @@ export const QueueSheet = forwardRef<QueueSheetRef, QueueSheetProps>(
     const bottomSheetRef = useRef<BottomSheetModal>(null);
     const insets = useSafeAreaInsets();
     const { width: screenWidth } = useWindowDimensions();
+    const { isDark } = useAppTheme();
+    const themeColorForeground = useThemeColor("foreground");
+    const themeColorBackground = useThemeColor("background");
+    const themeColorMuted = useThemeColor("muted");
     const {
       queue,
       currentTrack,
@@ -299,7 +306,7 @@ export const QueueSheet = forwardRef<QueueSheetRef, QueueSheetProps>(
                 borderRadius: 24, // Circle for artist
                 overflow: "hidden",
                 marginRight: 12,
-                backgroundColor: "#333",
+                backgroundColor: isDark ? "#333" : "#eee",
                 alignItems: "center",
                 justifyContent: "center",
               }}
@@ -311,24 +318,39 @@ export const QueueSheet = forwardRef<QueueSheetRef, QueueSheetProps>(
                   resizeMode="cover"
                 />
               ) : (
-                <Ionicons name="person" size={24} color="#666" />
+                <Ionicons
+                  name="person"
+                  size={24}
+                  color={isDark ? "#666" : "#999"}
+                />
               )}
             </View>
             <View style={{ flex: 1 }}>
               <Text
-                style={{ color: "#fff", fontSize: 16, fontWeight: "500" }}
+                style={{
+                  color: themeColorForeground,
+                  fontSize: 16,
+                  fontWeight: "500",
+                }}
                 numberOfLines={1}
               >
                 {artistName}
               </Text>
-              <Text style={{ color: "rgba(255,255,255,0.6)", fontSize: 13 }}>
+              <Text
+                style={{
+                  color: themeColorForeground,
+                  opacity: 0.6,
+                  fontSize: 13,
+                }}
+              >
                 {count} {count === 1 ? "song" : "songs"}
               </Text>
             </View>
             <Ionicons
               name="chevron-forward"
               size={20}
-              color="rgba(255,255,255,0.4)"
+              color={themeColorForeground}
+              style={{ opacity: 0.4 }}
             />
           </TouchableOpacity>
         );
@@ -383,12 +405,16 @@ export const QueueSheet = forwardRef<QueueSheetRef, QueueSheetProps>(
                       width: 48,
                       height: 48,
                       borderRadius: 6,
-                      backgroundColor: "#333",
+                      backgroundColor: isDark ? "#333" : "#eee",
                       alignItems: "center",
                       justifyContent: "center",
                     }}
                   >
-                    <Ionicons name="musical-note" size={20} color="#666" />
+                    <Ionicons
+                      name="musical-note"
+                      size={20}
+                      color={isDark ? "#666" : "#999"}
+                    />
                   </View>
                 )}
                 {isActive && (
@@ -400,7 +426,9 @@ export const QueueSheet = forwardRef<QueueSheetRef, QueueSheetProps>(
                       right: 0,
                       bottom: 0,
                       borderRadius: 6,
-                      backgroundColor: "rgba(0,0,0,0.4)",
+                      backgroundColor: isDark
+                        ? "rgba(0,0,0,0.4)"
+                        : "rgba(255,255,255,0.4)",
                       alignItems: "center",
                       justifyContent: "center",
                     }}
@@ -408,7 +436,7 @@ export const QueueSheet = forwardRef<QueueSheetRef, QueueSheetProps>(
                     <Ionicons
                       name={isPlaying ? "pause" : "play"}
                       size={20}
-                      color="#fff"
+                      color={themeColorForeground}
                     />
                   </View>
                 )}
@@ -422,7 +450,7 @@ export const QueueSheet = forwardRef<QueueSheetRef, QueueSheetProps>(
                 <Text
                   numberOfLines={1}
                   style={{
-                    color: isActive ? "#60a5fa" : "#fff",
+                    color: isActive ? "#60a5fa" : themeColorForeground,
                     fontWeight: "500",
                     fontSize: 14,
                   }}
@@ -432,7 +460,8 @@ export const QueueSheet = forwardRef<QueueSheetRef, QueueSheetProps>(
                 <Text
                   numberOfLines={1}
                   style={{
-                    color: "rgba(255,255,255,0.6)",
+                    color: themeColorForeground,
+                    opacity: 0.6,
                     fontSize: 12,
                     marginTop: 2,
                   }}
@@ -471,7 +500,8 @@ export const QueueSheet = forwardRef<QueueSheetRef, QueueSheetProps>(
               <Ionicons
                 name={favorited ? "heart" : "heart-outline"}
                 size={22}
-                color={favorited ? "#ef4444" : "rgba(255,255,255,0.4)"}
+                color={favorited ? "#ef4444" : themeColorForeground}
+                style={{ opacity: favorited ? 1 : 0.4 }}
               />
             </TouchableOpacity>
 
@@ -485,7 +515,8 @@ export const QueueSheet = forwardRef<QueueSheetRef, QueueSheetProps>(
                 <Ionicons
                   name="close-circle-outline"
                   size={20}
-                  color="rgba(255,255,255,0.3)"
+                  color={themeColorForeground}
+                  style={{ opacity: 0.3 }}
                 />
               </TouchableOpacity>
             )}
@@ -498,7 +529,13 @@ export const QueueSheet = forwardRef<QueueSheetRef, QueueSheetProps>(
                 width: 30,
               }}
             >
-              <Text style={{ color: "rgba(255,255,255,0.4)", fontSize: 12 }}>
+              <Text
+                style={{
+                  color: themeColorForeground,
+                  opacity: 0.4,
+                  fontSize: 12,
+                }}
+              >
                 {index + 1}
               </Text>
             </View>
@@ -530,10 +567,16 @@ export const QueueSheet = forwardRef<QueueSheetRef, QueueSheetProps>(
             paddingVertical: 80,
           }}
         >
-          <Ionicons name="musical-notes-outline" size={48} color="#666" />
+          <Ionicons
+            name="musical-notes-outline"
+            size={48}
+            color={themeColorForeground}
+            style={{ opacity: 0.4 }}
+          />
           <Text
             style={{
-              color: "rgba(255,255,255,0.5)",
+              color: themeColorForeground,
+              opacity: 0.5,
               fontSize: 16,
               marginTop: 16,
             }}
@@ -542,7 +585,8 @@ export const QueueSheet = forwardRef<QueueSheetRef, QueueSheetProps>(
           </Text>
           <Text
             style={{
-              color: "rgba(255,255,255,0.3)",
+              color: themeColorForeground,
+              opacity: 0.3,
               fontSize: 14,
               marginTop: 4,
             }}
@@ -561,26 +605,29 @@ export const QueueSheet = forwardRef<QueueSheetRef, QueueSheetProps>(
         index={0}
         enablePanDownToClose
         enableDismissOnClose
+        enableContentPanningGesture={Platform.OS !== "web"}
         backdropComponent={renderBackdrop}
         style={{
           marginHorizontal: sheetMargin,
         }}
         backgroundStyle={{
-          backgroundColor: Platform.OS === "ios" ? "transparent" : "#0a0a0a",
+          backgroundColor:
+            Platform.OS === "ios" ? "transparent" : themeColorBackground,
         }}
         handleIndicatorStyle={{
-          backgroundColor: "rgba(255,255,255,0.3)",
+          backgroundColor: isDark ? "rgba(255,255,255,0.3)" : "rgba(0,0,0,0.3)",
           width: 40,
         }}
         onDismiss={onClose}
       >
-        <BottomSheetView style={{ flex: 1 }}>
+        <View style={{ flex: 1 }}>
           <BlurView
             intensity={Platform.OS === "ios" ? 80 : 0}
-            tint="dark"
+            tint={isDark ? "dark" : "light"}
             style={{
               flex: 1,
-              backgroundColor: Platform.OS === "ios" ? undefined : "#0a0a0a",
+              backgroundColor:
+                Platform.OS === "ios" ? undefined : themeColorBackground,
             }}
           >
             {/* Fixed Header - Always visible at top */}
@@ -590,9 +637,15 @@ export const QueueSheet = forwardRef<QueueSheetRef, QueueSheetProps>(
                 paddingTop: 8,
                 paddingBottom: 12,
                 borderBottomWidth: 1,
-                borderBottomColor: "rgba(255,255,255,0.1)",
+                borderBottomColor: isDark
+                  ? "rgba(255,255,255,0.1)"
+                  : "rgba(0,0,0,0.1)",
                 backgroundColor:
-                  Platform.OS === "ios" ? "rgba(10,10,10,0.8)" : "#0a0a0a",
+                  Platform.OS === "ios"
+                    ? isDark
+                      ? "rgba(10,10,10,0.8)"
+                      : "rgba(255,255,255,0.8)"
+                    : themeColorBackground,
               }}
             >
               {/* Title Row */}
@@ -605,7 +658,7 @@ export const QueueSheet = forwardRef<QueueSheetRef, QueueSheetProps>(
               >
                 <Text
                   style={{
-                    color: "#fff",
+                    color: themeColorForeground,
                     fontSize: 18,
                     fontWeight: "bold",
                   }}
@@ -629,7 +682,7 @@ export const QueueSheet = forwardRef<QueueSheetRef, QueueSheetProps>(
                       <Ionicons
                         name="shuffle"
                         size={22}
-                        color={isShuffling ? "#60a5fa" : "#fff"}
+                        color={isShuffling ? "#60a5fa" : themeColorForeground}
                       />
                     </Animated.View>
                   </TouchableOpacity>
@@ -642,7 +695,11 @@ export const QueueSheet = forwardRef<QueueSheetRef, QueueSheetProps>(
                     }}
                     hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                   >
-                    <Ionicons name="trash-outline" size={22} color="#fff" />
+                    <Ionicons
+                      name="trash-outline"
+                      size={22}
+                      color={themeColorForeground}
+                    />
                   </TouchableOpacity>
                   <TouchableOpacity
                     onPress={handleToggleAllFavorites}
@@ -655,7 +712,7 @@ export const QueueSheet = forwardRef<QueueSheetRef, QueueSheetProps>(
                     <Ionicons
                       name={areAllFavorited ? "heart" : "heart-outline"}
                       size={22}
-                      color={areAllFavorited ? "#ef4444" : "#fff"}
+                      color={areAllFavorited ? "#ef4444" : themeColorForeground}
                     />
                   </TouchableOpacity>
 
@@ -673,7 +730,11 @@ export const QueueSheet = forwardRef<QueueSheetRef, QueueSheetProps>(
                     }}
                     hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                   >
-                    <Ionicons name="library-outline" size={22} color="#fff" />
+                    <Ionicons
+                      name="library-outline"
+                      size={22}
+                      color={themeColorForeground}
+                    />
                   </TouchableOpacity>
 
                   <TouchableOpacity
@@ -684,7 +745,11 @@ export const QueueSheet = forwardRef<QueueSheetRef, QueueSheetProps>(
                     }}
                     hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                   >
-                    <Ionicons name="close" size={24} color="#fff" />
+                    <Ionicons
+                      name="close"
+                      size={24}
+                      color={themeColorForeground}
+                    />
                   </TouchableOpacity>
                 </View>
               </View>
@@ -695,7 +760,9 @@ export const QueueSheet = forwardRef<QueueSheetRef, QueueSheetProps>(
                   style={{
                     flexDirection: "row",
                     alignItems: "center",
-                    backgroundColor: "rgba(255,255,255,0.08)",
+                    backgroundColor: isDark
+                      ? "rgba(255,255,255,0.08)"
+                      : "rgba(0,0,0,0.05)",
                     borderRadius: 10,
                     paddingHorizontal: 10,
                     height: 36,
@@ -704,17 +771,20 @@ export const QueueSheet = forwardRef<QueueSheetRef, QueueSheetProps>(
                   <Ionicons
                     name="search"
                     size={16}
-                    color="rgba(255,255,255,0.4)"
+                    color={themeColorForeground}
+                    style={{ opacity: 0.4 }}
                   />
                   <TextInput
                     value={searchQuery}
                     onChangeText={setSearchQuery}
                     placeholder="Filter songs or artists..."
-                    placeholderTextColor="rgba(255,255,255,0.3)"
+                    placeholderTextColor={
+                      isDark ? "rgba(255,255,255,0.3)" : "rgba(0,0,0,0.3)"
+                    }
                     style={{
                       flex: 1,
                       marginLeft: 8,
-                      color: "#fff",
+                      color: themeColorForeground,
                       fontSize: 14,
                       height: "100%",
                     }}
@@ -724,7 +794,8 @@ export const QueueSheet = forwardRef<QueueSheetRef, QueueSheetProps>(
                       <Ionicons
                         name="close-circle"
                         size={16}
-                        color="rgba(255,255,255,0.4)"
+                        color={themeColorForeground}
+                        style={{ opacity: 0.4 }}
                       />
                     </TouchableOpacity>
                   )}
@@ -746,13 +817,13 @@ export const QueueSheet = forwardRef<QueueSheetRef, QueueSheetProps>(
                         paddingHorizontal: 12,
                         paddingVertical: 6,
                         borderRadius: 14,
-                        backgroundColor: "#fff",
+                        backgroundColor: themeColorForeground,
                         marginRight: 8,
                       }}
                     >
                       <Text
                         style={{
-                          color: "#000",
+                          color: themeColorBackground,
                           fontSize: 13,
                           fontWeight: "600",
                           marginRight: 4,
@@ -760,7 +831,11 @@ export const QueueSheet = forwardRef<QueueSheetRef, QueueSheetProps>(
                       >
                         Artist: {artistFilter}
                       </Text>
-                      <Ionicons name="close-circle" size={16} color="#000" />
+                      <Ionicons
+                        name="close-circle"
+                        size={16}
+                        color={themeColorBackground}
+                      />
                     </TouchableOpacity>
                   ) : (
                     // Show View Mode chips
@@ -778,16 +853,19 @@ export const QueueSheet = forwardRef<QueueSheetRef, QueueSheetProps>(
                             paddingVertical: 6,
                             borderRadius: 14,
                             backgroundColor: isActive
-                              ? "#fff"
-                              : "rgba(255,255,255,0.08)",
+                              ? themeColorForeground
+                              : isDark
+                              ? "rgba(255,255,255,0.08)"
+                              : "rgba(0,0,0,0.05)",
                             marginRight: 8,
                           }}
                         >
                           <Text
                             style={{
                               color: isActive
-                                ? "#000"
-                                : "rgba(255,255,255,0.6)",
+                                ? themeColorBackground
+                                : themeColorForeground,
+                              opacity: isActive ? 1 : 0.6,
                               fontSize: 13,
                               fontWeight: isActive ? "600" : "400",
                             }}
@@ -808,7 +886,8 @@ export const QueueSheet = forwardRef<QueueSheetRef, QueueSheetProps>(
                 !artistFilter && (
                   <Text
                     style={{
-                      color: "rgba(255,255,255,0.4)",
+                      color: themeColorForeground,
+                      opacity: 0.4,
                       fontSize: 12,
                       marginTop: 10,
                     }}
@@ -829,6 +908,7 @@ export const QueueSheet = forwardRef<QueueSheetRef, QueueSheetProps>(
               contentContainerStyle={{
                 paddingBottom: insets.bottom + 20,
               }}
+              style={{ flex: 1 }}
               showsVerticalScrollIndicator={false}
               keyboardShouldPersistTaps="handled"
             />
@@ -850,14 +930,16 @@ export const QueueSheet = forwardRef<QueueSheetRef, QueueSheetProps>(
               >
                 <View
                   style={{
-                    backgroundColor: "#1c1c1e",
+                    backgroundColor: themeColorBackground,
                     padding: 24,
                     borderRadius: 20,
                     width: "80%",
                     maxWidth: 320,
                     alignItems: "center",
                     borderWidth: 1,
-                    borderColor: "rgba(255,255,255,0.1)",
+                    borderColor: isDark
+                      ? "rgba(255,255,255,0.1)"
+                      : "rgba(0,0,0,0.1)",
                   }}
                 >
                   <View
@@ -878,7 +960,7 @@ export const QueueSheet = forwardRef<QueueSheetRef, QueueSheetProps>(
                     style={{
                       fontSize: 20,
                       fontWeight: "bold",
-                      color: "#fff",
+                      color: themeColorForeground,
                       marginBottom: 8,
                     }}
                   >
@@ -886,7 +968,8 @@ export const QueueSheet = forwardRef<QueueSheetRef, QueueSheetProps>(
                   </Text>
                   <Text
                     style={{
-                      color: "rgba(255,255,255,0.6)",
+                      color: themeColorForeground,
+                      opacity: 0.6,
                       textAlign: "center",
                       marginBottom: 24,
                       fontSize: 15,
@@ -909,14 +992,16 @@ export const QueueSheet = forwardRef<QueueSheetRef, QueueSheetProps>(
                       style={{
                         flex: 1,
                         paddingVertical: 14,
-                        backgroundColor: "rgba(255,255,255,0.1)",
+                        backgroundColor: isDark
+                          ? "rgba(255,255,255,0.1)"
+                          : "rgba(0,0,0,0.05)",
                         borderRadius: 14,
                         alignItems: "center",
                       }}
                     >
                       <Text
                         style={{
-                          color: "#fff",
+                          color: themeColorForeground,
                           fontWeight: "600",
                           fontSize: 16,
                         }}
@@ -939,7 +1024,7 @@ export const QueueSheet = forwardRef<QueueSheetRef, QueueSheetProps>(
                     >
                       <Text
                         style={{
-                          color: "#fff",
+                          color: isDark ? "#fff" : "#fff", // Keep white on red background
                           fontWeight: "600",
                           fontSize: 16,
                         }}
@@ -952,7 +1037,7 @@ export const QueueSheet = forwardRef<QueueSheetRef, QueueSheetProps>(
               </View>
             )}
           </BlurView>
-        </BottomSheetView>
+        </View>
       </BottomSheetModal>
     );
   }

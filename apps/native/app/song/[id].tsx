@@ -1,7 +1,7 @@
 import { Ionicons } from "@expo/vector-icons";
 import { useQuery } from "@tanstack/react-query";
 import { useLocalSearchParams } from "expo-router";
-import { Card } from "heroui-native";
+import { Card, useThemeColor } from "heroui-native";
 import {
   ActivityIndicator,
   Image,
@@ -23,6 +23,7 @@ const StyledText = withUniwind(Text);
 
 export default function SongPage() {
   const { id } = useLocalSearchParams<{ id: string }>();
+  const themeColorForeground = useThemeColor("foreground");
   const {
     playTrack,
     isPlaying,
@@ -46,7 +47,7 @@ export default function SongPage() {
   if (isLoading) {
     return (
       <StyledView className="flex-1 justify-center items-center bg-background">
-        <ActivityIndicator size="large" color="#ef4444" />
+        <ActivityIndicator size="large" color={themeColorForeground} />
       </StyledView>
     );
   }
@@ -151,7 +152,11 @@ export default function SongPage() {
           {/* Controls */}
           <View className="flex-row justify-center items-center gap-12 mb-10">
             <TouchableOpacity onPress={() => {}}>
-              <Ionicons name="play-skip-back" size={40} color="#fff" />
+              <Ionicons
+                name="play-skip-back"
+                size={40}
+                color={themeColorForeground}
+              />
             </TouchableOpacity>
 
             <TouchableOpacity
@@ -172,7 +177,11 @@ export default function SongPage() {
             </TouchableOpacity>
 
             <TouchableOpacity onPress={() => {}}>
-              <Ionicons name="play-skip-forward" size={40} color="#fff" />
+              <Ionicons
+                name="play-skip-forward"
+                size={40}
+                color={themeColorForeground}
+              />
             </TouchableOpacity>
           </View>
 

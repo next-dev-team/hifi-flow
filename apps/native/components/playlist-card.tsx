@@ -1,6 +1,13 @@
 import { Card } from "heroui-native";
 import type React from "react";
-import { Image, Text, TouchableOpacity, View, ActivityIndicator } from "react-native";
+import {
+  Image,
+  Text,
+  TouchableOpacity,
+  View,
+  ActivityIndicator,
+} from "react-native";
+import { useThemeColor } from "heroui-native";
 import type { Playlist } from "./playlist-item";
 
 interface PlaylistCardProps {
@@ -9,9 +16,18 @@ interface PlaylistCardProps {
   isLoading?: boolean;
 }
 
-export const PlaylistCard: React.FC<PlaylistCardProps> = ({ playlist, onPress, isLoading }) => {
+export const PlaylistCard: React.FC<PlaylistCardProps> = ({
+  playlist,
+  onPress,
+  isLoading,
+}) => {
+  const themeColorForeground = useThemeColor("foreground");
   return (
-    <TouchableOpacity onPress={onPress} className="mr-4 w-32" disabled={isLoading}>
+    <TouchableOpacity
+      onPress={onPress}
+      className="mr-4 w-32"
+      disabled={isLoading}
+    >
       <View className="w-32 h-32 rounded-xl overflow-hidden mb-2 bg-black/5 dark:bg-white/5 border border-black/10 dark:border-white/10 items-center justify-center relative">
         {playlist.artwork ? (
           <Image
@@ -24,7 +40,7 @@ export const PlaylistCard: React.FC<PlaylistCardProps> = ({ playlist, onPress, i
         )}
         {isLoading && (
           <View className="absolute inset-0 bg-black/40 items-center justify-center">
-            <ActivityIndicator color="#fff" size="small" />
+            <ActivityIndicator color={themeColorForeground} size="small" />
           </View>
         )}
       </View>
@@ -35,7 +51,10 @@ export const PlaylistCard: React.FC<PlaylistCardProps> = ({ playlist, onPress, i
         >
           {playlist.title}
         </Text>
-        <Text className="text-foreground opacity-60 text-[11px] font-medium" numberOfLines={1}>
+        <Text
+          className="text-foreground opacity-60 text-[11px] font-medium"
+          numberOfLines={1}
+        >
           {playlist.creator ? `By ${playlist.creator}` : "Playlist"}
         </Text>
       </View>

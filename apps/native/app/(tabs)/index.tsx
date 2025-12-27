@@ -146,10 +146,14 @@ export default function Home() {
     playPrevious,
   } = usePlayer();
   const { isDark, setTheme } = useAppTheme();
+
   const { showToast } = useToast();
   const { width: screenWidth } = useWindowDimensions();
   const themeColorBackground = useThemeColor("background");
   const themeColorForeground = useThemeColor("foreground");
+  const themeColorDanger = useThemeColor("danger");
+  const themeColorSuccess = useThemeColor("success");
+  const themeColorPrimary = useThemeColor("primary");
 
   // Desktop max-width container style for sheets
   // Desktop: calculate margin to center the sheets
@@ -876,7 +880,7 @@ export default function Home() {
             void removeFavorite(item.id);
           }}
         >
-          <Ionicons name="trash-outline" size={20} color="#ff4444" />
+          <Ionicons name="trash-outline" size={20} color={themeColorDanger} />
         </TouchableOpacity>
       </Card>
     );
@@ -977,7 +981,7 @@ export default function Home() {
                 />
                 {voiceActionStatus === "processing" && (
                   <View className="flex-row items-center ml-1">
-                    <StyledText className="text-[#007AFF] font-bold text-[10px]">
+                    <StyledText className="text-primary font-bold text-[10px]">
                       Thinking
                     </StyledText>
                     <ThinkingDots />
@@ -1011,9 +1015,9 @@ export default function Home() {
                     <Ionicons
                       name="cloud-offline-outline"
                       size={10}
-                      color="#ef4444"
+                      color={themeColorDanger}
                     />
-                    <StyledText className="text-[9px] text-red-500 font-bold ml-1">
+                    <StyledText className="text-danger font-bold ml-1 text-[9px]">
                       OFFLINE
                     </StyledText>
                   </View>
@@ -1075,7 +1079,7 @@ export default function Home() {
                         className="mr-1.5"
                       />
                     )}
-                    <StyledText className="text-[13px] font-medium text-default-700 dark:text-white">
+                    <StyledText className="text-[13px] font-medium text-foreground">
                       {name}
                     </StyledText>
                   </StyledTouchableOpacity>
@@ -1117,7 +1121,7 @@ export default function Home() {
                     className={`text-[13px] font-semibold ${
                       isActive
                         ? "text-background"
-                        : "text-foreground opacity-70 dark:text-white"
+                        : "text-foreground opacity-70"
                     }`}
                   >
                     {f.label}
@@ -1140,7 +1144,7 @@ export default function Home() {
         />
       ) : isLoading ? (
         <StyledView className="flex-1 justify-center items-center">
-          <ActivityIndicator size="large" color="#fff" />
+          <ActivityIndicator size="large" color={themeColorForeground} />
         </StyledView>
       ) : error ? (
         <StyledView className="flex-1 justify-center items-center px-4">
@@ -1202,7 +1206,9 @@ export default function Home() {
         backdropComponent={favoritesBackdrop}
         animationConfigs={favoritesAnimationConfigs}
         style={{ marginHorizontal: sheetMargin }}
-        handleIndicatorStyle={{ backgroundColor: "#ccc" }}
+        handleIndicatorStyle={{
+          backgroundColor: isDark ? "rgba(255,255,255,0.3)" : "rgba(0,0,0,0.3)",
+        }}
         backgroundStyle={{ backgroundColor: themeColorBackground }}
       >
         <BottomSheetView style={{ flex: 1 }}>
@@ -1254,7 +1260,7 @@ export default function Home() {
             (selectedAlbum && isAlbumLoading) ||
             (selectedPlaylist && isPlaylistLoading) ? (
               <View className="flex-1 items-center justify-center">
-                <ActivityIndicator size="large" color="#fff" />
+                <ActivityIndicator size="large" color={themeColorForeground} />
               </View>
             ) : (
               <BottomSheetFlatList
@@ -1347,7 +1353,7 @@ export default function Home() {
                                             String(artist.id) && (
                                             <View className="absolute inset-0 bg-black/40 items-center justify-center">
                                               <ActivityIndicator
-                                                color="#fff"
+                                                color={themeColorForeground}
                                                 size="small"
                                               />
                                             </View>
@@ -1524,7 +1530,7 @@ export default function Home() {
                                   String(album.id) && (
                                   <View className="absolute inset-0 bg-black/40 items-center justify-center">
                                     <ActivityIndicator
-                                      color="#fff"
+                                      color={themeColorForeground}
                                       size="small"
                                     />
                                   </View>
@@ -1563,7 +1569,9 @@ export default function Home() {
         backdropComponent={favoritesBackdrop}
         animationConfigs={favoritesAnimationConfigs}
         style={{ marginHorizontal: sheetMargin }}
-        handleIndicatorStyle={{ backgroundColor: "#ccc" }}
+        handleIndicatorStyle={{
+          backgroundColor: isDark ? "rgba(255,255,255,0.3)" : "rgba(0,0,0,0.3)",
+        }}
         backgroundStyle={{ backgroundColor: themeColorBackground }}
       >
         <BottomSheetView style={{ flex: 1 }}>
@@ -1715,7 +1723,9 @@ export default function Home() {
         backdropComponent={favoritesBackdrop}
         animationConfigs={favoritesAnimationConfigs}
         style={{ marginHorizontal: sheetMargin }}
-        handleIndicatorStyle={{ backgroundColor: "#ccc" }}
+        handleIndicatorStyle={{
+          backgroundColor: isDark ? "rgba(255,255,255,0.3)" : "rgba(0,0,0,0.3)",
+        }}
         backgroundStyle={{ backgroundColor: themeColorBackground }}
       >
         <BottomSheetView style={{ flex: 1 }}>
@@ -1745,10 +1755,13 @@ export default function Home() {
                       <Ionicons
                         name="cloud-done-outline"
                         size={20}
-                        color="#17c964"
+                        color={themeColorSuccess}
                         style={{ marginRight: 6 }}
                       />
-                      <Text className="text-[#17c964] font-medium text-sm">
+                      <Text
+                        style={{ color: themeColorSuccess }}
+                        className="font-medium text-sm"
+                      >
                         {speechLang === "en-US" ? "Active" : "សកម្ម"}
                       </Text>
                     </View>
@@ -1800,7 +1813,11 @@ export default function Home() {
                         ? "Clear audio cache"
                         : "សម្អាតឃ្លាំងសម្ងាត់បទចម្រៀង"}
                     </Text>
-                    <Ionicons name="trash-outline" size={20} color="#ef4444" />
+                    <Ionicons
+                      name="trash-outline"
+                      size={20}
+                      color={themeColorDanger}
+                    />
                   </TouchableOpacity>
                 </>
               )}
@@ -1921,14 +1938,16 @@ export default function Home() {
         backdropComponent={favoritesBackdrop}
         animationConfigs={favoritesAnimationConfigs}
         style={{ marginHorizontal: sheetMargin }}
-        handleIndicatorStyle={{ backgroundColor: "#ccc" }}
+        handleIndicatorStyle={{
+          backgroundColor: isDark ? "rgba(255,255,255,0.3)" : "rgba(0,0,0,0.3)",
+        }}
         backgroundStyle={{ backgroundColor: themeColorBackground }}
       >
         <BottomSheetView style={{ flex: 1 }}>
           <View className="flex-1 bg-background px-4">
             <View className="pt-3 pb-4 flex-row items-center justify-between">
               <View className="flex-row items-center">
-                <Ionicons name="sparkles" size={20} color="#007AFF" />
+                <Ionicons name="sparkles" size={20} color={themeColorPrimary} />
                 <Text className="text-xl font-bold text-foreground ml-2">
                   {speechLang === "en-US" ? "AI Assistant" : "ជំនួយការ AI"}
                 </Text>
