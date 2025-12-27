@@ -68,7 +68,9 @@ export default function Explore() {
       <TrackItem
         track={track}
         onPress={() => {
-          void playQueue(tracks, index);
+          void playQueue(tracks, index).catch((e) => {
+            console.warn("[Explore] playQueue failed", e);
+          });
         }}
       />
     );

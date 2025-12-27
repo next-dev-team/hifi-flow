@@ -14,6 +14,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { withUniwind } from "uniwind";
 import { usePlayer } from "@/contexts/player-context";
 import { losslessAPI } from "@/utils/api";
+import { audioCacheService } from "@/utils/audio-cache";
 import { resolveArtwork, resolveName } from "@/utils/resolvers";
 
 const StyledSafeAreaView = withUniwind(SafeAreaView);
@@ -79,8 +80,15 @@ export default function SongPage() {
   const handlePlay = () => {
     if (isTrackLoading) return;
     if (isCurrentTrack) {
-      if (isPlaying) void pauseTrack();
-      else void resumeTrack();
+      if (isPlaying) {
+        void pauseTrack().catch((e) => {
+          console.warn("[SongPage] pauseTrack failed", e);
+        });
+      } else {
+        void resumeTrack().catch((e) => {
+          console.warn("[SongPage] resumeTrack failed", e);
+        });
+      }
     } else if (track) {
       void playTrack({
         id: String(id),
@@ -88,8 +96,23 @@ export default function SongPage() {
         artist,
         artwork: artworkUrl,
         url: streamUrl || "",
+      }).catch((e) => {
+        console.warn("[SongPage] playTrack failed", e);
       });
     }
+  };
+
+  const handleDownload = async () => {
+    if (!track) return;
+    const sourceUrl = streamUrl || (track as any)?.url;
+    if (!sourceUrl || typeof sourceUrl !== "string") return;
+    await audioCacheService.cacheUrl(sourceUrl, {
+      id: String(id),
+      title,
+      artist,
+      artwork: artworkUrl,
+      durationSec: (track as any)?.duration,
+    });
   };
 
   return (
@@ -165,7 +188,7 @@ export default function SongPage() {
               <Ionicons name="share-outline" size={28} color="#94a3b8" />
               <Text className="text-xs text-default-400 mt-1">Share</Text>
             </TouchableOpacity>
-            <TouchableOpacity className="items-center">
+            <TouchableOpacity className="items-center" onPress={handleDownload}>
               <Ionicons name="download-outline" size={28} color="#94a3b8" />
               <Text className="text-xs text-default-400 mt-1">Offline</Text>
             </TouchableOpacity>

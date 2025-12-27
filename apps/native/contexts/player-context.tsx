@@ -225,6 +225,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
   const preBufferedPlayerRef = useRef<{
     player: AudioPlayer;
     trackId: string;
+    quality: AudioQuality;
     url: string;
     baseUrl: string;
   } | null>(null);
@@ -333,7 +334,9 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
     const statusAny = status as any;
     if (statusAny?.error) {
       console.log("Playback error, attempting auto-skip:", statusAny.error);
-      void playNextRef.current();
+      void playNextRef.current().catch((e: unknown) => {
+        console.warn("[Player] Auto-skip failed", e);
+      });
     }
   }, [status]);
 
@@ -452,6 +455,82 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
     );
   }, []);
 
+  const getWebContentType = useCallback(async (url: string) => {
+    if (Platform.OS !== "web") return null;
+    try {
+      const resp = await fetch(url, {
+        headers: {
+          Range: "bytes=0-1",
+        },
+      });
+      if (!resp.ok) return null;
+      const contentType = (resp.headers.get("content-type") || "")
+        .toLowerCase()
+        .trim();
+      return contentType || null;
+    } catch {
+      return null;
+    }
+  }, []);
+
+  const canPlayWebContentType = useCallback((contentType: string | null) => {
+    if (Platform.OS !== "web") return true;
+    if (!contentType) return true;
+    const normalized = contentType.split(";")[0]?.trim().toLowerCase();
+    if (!normalized) return true;
+    if (!normalized.startsWith("audio/") && !normalized.startsWith("video/")) {
+      return true;
+    }
+    try {
+      const audio = document.createElement("audio");
+      const result = audio.canPlayType(normalized);
+      return result === "probably" || result === "maybe";
+    } catch {
+      return true;
+    }
+  }, []);
+
+  const canLoadWebProxyUrl = useCallback(async (proxyUrl: string) => {
+    if (Platform.OS !== "web") return true;
+    try {
+      const contentType = await getWebContentType(proxyUrl);
+      if (!contentType) return true;
+      if (contentType.startsWith("audio/") || contentType.startsWith("video/")) {
+        return canPlayWebContentType(contentType);
+      }
+      if (contentType.startsWith("application/octet-stream")) {
+        return true;
+      }
+      return false;
+    } catch {
+      return false;
+    }
+  }, [getWebContentType, canPlayWebContentType]);
+
+  useEffect(() => {
+    if (Platform.OS !== "web") return;
+    const anyGlobal = globalThis as any;
+    if (!anyGlobal?.addEventListener) return;
+
+    const onUnhandledRejection = (event: any) => {
+      const reason = event?.reason;
+      if (!isNotSupportedPlaybackError(reason)) return;
+      try {
+        event.preventDefault?.();
+      } catch {}
+    };
+
+    anyGlobal.addEventListener("unhandledrejection", onUnhandledRejection);
+    return () => {
+      try {
+        anyGlobal.removeEventListener(
+          "unhandledrejection",
+          onUnhandledRejection
+        );
+      } catch {}
+    };
+  }, [isNotSupportedPlaybackError]);
+
   const clearWebCachesForUrl = useCallback(async (url: string) => {
     if (Platform.OS !== "web") return;
 
@@ -550,9 +629,24 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
         }
       }
 
+      if (isOffline) {
+        try {
+          const cachedUrl = await audioCacheService.findCachedUrlByTrackId(
+            trackIdStr
+          );
+          if (cachedUrl) {
+            streamUrlCacheRef.current.set(cacheKey, {
+              url: cachedUrl,
+              timestamp: Date.now(),
+            });
+            return cachedUrl;
+          }
+        } catch {}
+      }
+
       // Fetch from API
       let streamUrl: string | null = null;
-      if (Number.isFinite(trackId)) {
+      if (!isOffline && Number.isFinite(trackId)) {
         try {
           streamUrl = await losslessAPI.getStreamUrl(trackId, currentQuality);
         } catch {
@@ -575,7 +669,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
 
       return streamUrl;
     },
-    [recentlyPlayed, favorites]
+    [recentlyPlayed, favorites, isOffline]
   );
 
   // ==================== Player Control - SINGLE PLAYER PATTERN ====================
@@ -709,9 +803,17 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
 
         const trackId = Number(track.id);
         const trackIdStr = String(track.id);
-        const effectiveQuality =
+        const preferredQuality: AudioQuality =
           quality === "HI_RES_LOSSLESS" ? "LOSSLESS" : quality;
-        const cacheKey = `${trackIdStr}:${effectiveQuality}`;
+
+        const qualityCandidates: AudioQuality[] =
+          Platform.OS === "web"
+            ? Array.from(new Set([preferredQuality, "HIGH", "LOW"]))
+            : [preferredQuality];
+        const attemptQualities = qualityCandidates.slice(
+          0,
+          Math.min(3, qualityCandidates.length)
+        );
 
         const trackMetadata = {
           id: String(track.id),
@@ -731,10 +833,18 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
 
         const offlineWeb = Platform.OS === "web" && isOffline;
 
-        for (let attempt = 1; attempt <= 3; attempt += 1) {
+        for (
+          let attemptIndex = 0;
+          attemptIndex < attemptQualities.length;
+          attemptIndex += 1
+        ) {
+          const attemptQuality: AudioQuality =
+            attemptQualities[attemptIndex] ?? preferredQuality;
+          const cacheKey = `${trackIdStr}:${attemptQuality}`;
           if (
             allowPreBuffered &&
-            preBufferedPlayerRef.current?.trackId === trackIdStr
+            preBufferedPlayerRef.current?.trackId === trackIdStr &&
+            preBufferedPlayerRef.current?.quality === attemptQuality
           ) {
             console.log("[Player] Using pre-buffered player for:", track.title);
             const { player: bufferedPlayer, url } =
@@ -836,16 +946,14 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
               return false;
             }
           } else {
-            if (attempt === 1) {
-              baseStreamUrl = await getStreamUrlForTrack(
-                track,
-                effectiveQuality
-              );
-            } else if (Number.isFinite(trackId)) {
+            const forceRefresh = attemptIndex > 0;
+            if (!forceRefresh) {
+              baseStreamUrl = await getStreamUrlForTrack(track, attemptQuality);
+            } else if (!isOffline && Number.isFinite(trackId)) {
               try {
                 baseStreamUrl = await losslessAPI.getStreamUrl(
                   trackId,
-                  effectiveQuality
+                  attemptQuality
                 );
                 streamUrlCacheRef.current.set(cacheKey, {
                   url: baseStreamUrl,
@@ -854,6 +962,8 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
               } catch {
                 baseStreamUrl = null;
               }
+            } else {
+              baseStreamUrl = await getStreamUrlForTrack(track, attemptQuality);
             }
           }
           if (!baseStreamUrl) {
@@ -873,16 +983,28 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
           }
 
           let streamUrl = baseStreamUrl;
-          if (attempt === 1) {
-            try {
-              streamUrl = await audioCacheService.resolveUrl(
-                baseStreamUrl,
-                trackMetadata
-              );
-            } catch (e) {
+          try {
+            streamUrl = await audioCacheService.resolveUrl(
+              baseStreamUrl,
+              trackMetadata
+            );
+          } catch (e) {
+            console.warn(
+              "[Player] Cache resolution failed, using original URL:",
+              e
+            );
+            streamUrl = baseStreamUrl;
+          }
+
+          if (
+            Platform.OS === "web" &&
+            streamUrl !== baseStreamUrl &&
+            streamUrl.includes("/__hififlow_audio_stream")
+          ) {
+            const ok = await canLoadWebProxyUrl(streamUrl);
+            if (!ok) {
               console.warn(
-                "[Player] Cache resolution failed, using original URL:",
-                e
+                "[Player] Proxy stream failed preflight, using direct URL"
               );
               streamUrl = baseStreamUrl;
             }
@@ -899,6 +1021,28 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
             }
           }
 
+          if (Platform.OS === "web" && !offlineWeb) {
+            const contentType = await getWebContentType(streamUrl);
+            if (contentType && !canPlayWebContentType(contentType)) {
+              console.warn(
+                "[Player] Browser cannot play content-type, trying next quality:",
+                contentType
+              );
+              if (streamUrl.startsWith("blob:")) {
+                try {
+                  URL.revokeObjectURL(streamUrl);
+                } catch {}
+              }
+              await clearWebCachesForUrl(baseStreamUrl);
+              streamUrlCacheRef.current.delete(cacheKey);
+              if (attemptIndex < attemptQualities.length - 1) {
+                await new Promise((r) => setTimeout(r, 100));
+                continue;
+              }
+              return false;
+            }
+          }
+
           console.log("[Player] Creating new player for:", track.title);
           const newPlayer = createAudioPlayer(streamUrl, {
             downloadFirst: false,
@@ -907,7 +1051,16 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
 
           const savedPos = savedPositions[trackIdStr];
           if (savedPos && savedPos > 5) {
-            void newPlayer.seekTo(savedPos);
+            try {
+              const seekResult = (newPlayer as any).seekTo?.(savedPos);
+              if (seekResult && typeof seekResult.then === "function") {
+                void seekResult.catch((e: unknown) => {
+                  console.warn("[Player] Restore seek failed", e);
+                });
+              }
+            } catch (e) {
+              console.warn("[Player] Restore seek threw", e);
+            }
           }
 
           newPlayer.volume = volume;
@@ -956,12 +1109,23 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
             }
             await clearWebCachesForUrl(baseStreamUrl);
             streamUrlCacheRef.current.delete(cacheKey);
-          } else if (!offlineWeb && Platform.OS === "web" && attempt === 1) {
+            if (
+              Platform.OS === "web" &&
+              (quality === "LOSSLESS" || quality === "HI_RES_LOSSLESS") &&
+              attemptQuality === preferredQuality &&
+              (attemptQualities.includes("HIGH") || attemptQualities.includes("LOW"))
+            ) {
+              showToast({
+                message: "Stream format not supported, trying lower quality…",
+                type: "error",
+              });
+            }
+          } else if (!offlineWeb && Platform.OS === "web" && attemptIndex === 0) {
             await clearWebCachesForUrl(baseStreamUrl);
             streamUrlCacheRef.current.delete(cacheKey);
           }
 
-          if (attempt < 3) {
+          if (attemptIndex < attemptQualities.length - 1) {
             if (startResult.reason === "not_supported") {
               await new Promise((r) => setTimeout(r, 150));
             } else {
@@ -988,7 +1152,11 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
       savedPositions,
       waitForPlaybackStart,
       isNotSupportedPlaybackError,
+      canLoadWebProxyUrl,
+      getWebContentType,
+      canPlayWebContentType,
       clearWebCachesForUrl,
+      showToast,
       recentlyPlayed,
       favorites,
       isOffline,
@@ -1140,6 +1308,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
       preBufferedPlayerRef.current = {
         player: bufferedPlayer,
         trackId: nextTrackIdStr,
+        quality: effectiveQuality,
         url: streamUrl,
         baseUrl: baseStreamUrl,
       };
@@ -1561,6 +1730,10 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
           playError = e;
         }
 
+        if (playError) {
+          console.warn("[Player] Resume play() failed:", playError);
+        }
+
         const startResult = playError
           ? {
               ok: false as const,
@@ -1577,23 +1750,38 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
 
         if (currentTrack) {
           if (startResult.reason === "not_supported") {
+            showToast({
+              message: "NotSupportedError: refreshing stream and retrying…",
+              type: "error",
+            });
+          }
+          if (startResult.reason === "not_supported") {
             const effectiveQuality =
               quality === "HI_RES_LOSSLESS" ? "LOSSLESS" : quality;
             const cacheKey = `${String(currentTrack.id)}:${effectiveQuality}`;
             streamUrlCacheRef.current.delete(cacheKey);
 
             const urlToClear = currentStreamUrl;
-            if (urlToClear) {
-              if (urlToClear.startsWith("blob:")) {
-                try {
-                  URL.revokeObjectURL(urlToClear);
-                } catch {}
-              } else {
-                try {
-                  await clearWebCachesForUrl(urlToClear);
-                } catch {}
-              }
+            const baseUrlToClear = currentBaseStreamUrlRef.current;
+            if (urlToClear && urlToClear.startsWith("blob:")) {
+              try {
+                URL.revokeObjectURL(urlToClear);
+              } catch {}
             }
+
+            const uniqueUrlsToClear = new Set<string>();
+            if (baseUrlToClear) uniqueUrlsToClear.add(baseUrlToClear);
+            if (urlToClear && !urlToClear.startsWith("blob:")) {
+              uniqueUrlsToClear.add(urlToClear);
+            }
+
+            await Promise.all(
+              Array.from(uniqueUrlsToClear).map(async (u) => {
+                try {
+                  await clearWebCachesForUrl(u);
+                } catch {}
+              })
+            );
           }
 
           const success = await playSoundInternal(currentTrack, false);
@@ -1619,6 +1807,9 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
       } else if (currentTrack) {
         await playSoundInternal(currentTrack, false);
       }
+    } catch (e) {
+      console.warn("[Player] Resume failed:", e);
+      showToast({ message: "Playback failed", type: "error" });
     } finally {
       setLoadingTrackId(null);
     }
@@ -1755,10 +1946,21 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
       if (repeatMode === "one") {
         if (activePlayerRef.current) {
           activePlayerRef.current.seekTo(0);
-          activePlayerRef.current.play();
+          try {
+            const playResult = (activePlayerRef.current as any).play?.();
+            if (playResult && typeof playResult.then === "function") {
+              void playResult.catch((e: unknown) => {
+                console.warn("[Player] Repeat play() failed", e);
+              });
+            }
+          } catch (e) {
+            console.warn("[Player] Repeat play() threw", e);
+          }
         }
       } else {
-        void playNextRef.current();
+        void playNextRef.current().catch((e: unknown) => {
+          console.warn("[Player] Auto-advance failed", e);
+        });
       }
     }
   }, [status?.didJustFinish, repeatMode]);
@@ -1788,7 +1990,9 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
           type: "info",
         });
         // We use playNextRef to access the latest playNext closure
-        void playNextRef.current();
+        void playNextRef.current().catch((e: unknown) => {
+          console.warn("[Player] Stuck buffering skip failed", e);
+        });
       }, timeoutMs);
       return () => clearTimeout(timer);
     }
@@ -1808,14 +2012,28 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
 
   useEffect(() => {
     mediaSessionService.setHandlers({
-      onPlay: () => void resumeTrack(),
-      onPause: () => void pauseTrack(),
+      onPlay: () =>
+        void resumeTrack().catch((e: unknown) => {
+          console.warn("[Player] MediaSession play failed", e);
+        }),
+      onPause: () =>
+        void pauseTrack().catch((e: unknown) => {
+          console.warn("[Player] MediaSession pause failed", e);
+        }),
       onStop: () => {
-        void pauseTrack();
+        void pauseTrack().catch((e: unknown) => {
+          console.warn("[Player] MediaSession pause failed", e);
+        });
         activePlayerRef.current?.seekTo(0);
       },
-      onNextTrack: () => void playNextRef.current(),
-      onPreviousTrack: () => void playPrevious(),
+      onNextTrack: () =>
+        void playNextRef.current().catch((e: unknown) => {
+          console.warn("[Player] MediaSession next failed", e);
+        }),
+      onPreviousTrack: () =>
+        void playPrevious().catch((e: unknown) => {
+          console.warn("[Player] MediaSession previous failed", e);
+        }),
       onSeekTo: (positionMs) =>
         activePlayerRef.current?.seekTo(positionMs / 1000),
       onSeekForward: (offsetMs) => {
@@ -2185,7 +2403,9 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
       }, 1000);
 
       sleepTimerTimeoutRef.current = setTimeout(() => {
-        void pauseTrack();
+        void pauseTrack().catch((e: unknown) => {
+          console.warn("[Player] Sleep timer pause failed", e);
+        });
         clearSleepTimerHandles();
         setSleepTimerEndsAt(null);
         setSleepTimerRemainingMs(0);

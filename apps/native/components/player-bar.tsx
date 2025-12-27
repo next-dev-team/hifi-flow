@@ -9,7 +9,14 @@ import {
 } from "@gorhom/bottom-sheet";
 import type { AudioAnalysis } from "@siteed/expo-audio-studio";
 import { BlurView } from "expo-blur";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  forwardRef,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import {
   ActivityIndicator,
   BackHandler,
@@ -36,7 +43,6 @@ import Animated, {
 } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Circle, Svg } from "react-native-svg";
-import { withUniwind } from "uniwind";
 import {
   OPEN_QUEUE_SHEET_EVENT,
   QueueSheet,
@@ -46,8 +52,6 @@ import { usePlayer } from "@/contexts/player-context";
 import { losslessAPI } from "@/utils/api";
 import { getSheetMargin, SHEET_MAX_WIDTH } from "@/utils/layout";
 import { resolveArtwork } from "@/utils/resolvers";
-
-const StyledBottomSheetView = withUniwind(BottomSheetView);
 
 const clamp = (value: number, min: number, max: number) => {
   return Math.min(max, Math.max(min, value));
@@ -129,6 +133,8 @@ const SpectrumBar = ({
   phase,
   active,
   multiplier = 1,
+  amplitudeScale,
+  useAmplitudeScale = false,
   barWidth = 4,
   variant = "wave",
   totalBars,
@@ -138,6 +144,8 @@ const SpectrumBar = ({
   phase: SharedValue<number>;
   active: boolean;
   multiplier?: number;
+  amplitudeScale?: SharedValue<number>;
+  useAmplitudeScale?: boolean;
   barWidth?: number;
   variant?:
     | "wave"
@@ -156,6 +164,10 @@ const SpectrumBar = ({
     const base = active ? 0.25 : 0.06;
     const amp = active ? 0.75 : 0.12;
     let value = 0;
+
+    const effectiveMultiplier =
+      multiplier *
+      (useAmplitudeScale && amplitudeScale ? amplitudeScale.value : 1);
 
     switch (variant) {
       case "trap": {
@@ -265,7 +277,7 @@ const SpectrumBar = ({
     if (variant === "trap") {
       const angle = (index / totalBars) * Math.PI * 2;
       const baseRadius = barRadius;
-      const height = (2 + (base + amp * value) * 25) * multiplier;
+      const height = (2 + (base + amp * value) * 25) * effectiveMultiplier;
 
       // Rainbow color logic with white mix
       const hue = (index / totalBars) * 360;
@@ -306,7 +318,7 @@ const SpectrumBar = ({
       };
     }
 
-    const height = (3 + (base + amp * value) * 14) * multiplier;
+    const height = (3 + (base + amp * value) * 14) * effectiveMultiplier;
     return {
       height,
       width: barWidth,
@@ -319,6 +331,8 @@ const SpectrumBar = ({
     index,
     phase,
     multiplier,
+    amplitudeScale,
+    useAmplitudeScale,
     variant,
     totalBars,
     barWidth,
@@ -440,7 +454,9 @@ const SpectrumVisualizer = ({
           index={bar.index}
           phase={phase}
           active={isPlaying}
-          multiplier={multiplier * (audioAnalysis ? amplitudeScale.value : 1)}
+          multiplier={multiplier}
+          amplitudeScale={amplitudeScale}
+          useAmplitudeScale={!!audioAnalysis}
           barWidth={barWidth}
           variant={variant}
           totalBars={barCount}
@@ -1188,98 +1204,102 @@ export const PlayerBar = () => {
     easing: Easing.bezier(0.2, 0.9, 0.2, 1),
   });
 
-  const renderBackdrop = useMemo(() => {
-    return (props: BottomSheetBackdropProps) => (
-      <BottomSheetBackdrop
-        {...props}
-        opacity={0.6}
-        appearsOnIndex={0}
-        disappearsOnIndex={-1}
-        pressBehavior="close"
-      />
-    );
-  }, []);
+  const renderBackdrop = useMemo(
+    () =>
+      forwardRef<unknown, BottomSheetBackdropProps>((props, _ref) => (
+        <BottomSheetBackdrop
+          {...props}
+          opacity={0.6}
+          appearsOnIndex={0}
+          disappearsOnIndex={-1}
+          pressBehavior="close"
+        />
+      )),
+    []
+  );
 
-  const renderBackground = useCallback(
-    (props: BottomSheetBackgroundProps) => (
-      <View
-        style={[
-          props.style,
-          {
-            backgroundColor: "#000",
-            borderTopLeftRadius: 24,
-            borderTopRightRadius: 24,
-            overflow: "hidden",
-          },
-        ]}
-      >
-        {resolvedArtwork ? (
-          <View
-            style={{
-              position: "absolute",
-              top: 0,
-              left: 0,
-              right: 0,
-              bottom: 0,
+  const renderBackground = useMemo(
+    () =>
+      forwardRef<View, BottomSheetBackgroundProps>((props, ref) => (
+        <Animated.View
+          ref={ref as any}
+          style={[
+            props.style,
+            {
               backgroundColor: "#000",
-            }}
-          >
-            <Image
-              source={{ uri: resolvedArtwork }}
+              borderTopLeftRadius: 24,
+              borderTopRightRadius: 24,
+              overflow: "hidden",
+            },
+          ]}
+        >
+          {resolvedArtwork ? (
+            <View
               style={{
                 position: "absolute",
                 top: 0,
                 left: 0,
                 right: 0,
                 bottom: 0,
-                opacity: 0.8,
+                backgroundColor: "#000",
               }}
-              resizeMode="cover"
-            />
-            <BlurView
-              intensity={Platform.OS === "ios" ? 50 : 100}
-              tint="dark"
-              style={{
-                position: "absolute",
-                top: 0,
-                left: 0,
-                right: 0,
-                bottom: 0,
-              }}
-            />
-            {Platform.OS === "web" && typeof document !== "undefined" ? (
-              (require("react-dom") as any).createPortal(
-                <View
-                  pointerEvents="none"
-                  style={{
-                    position: "fixed",
-                    top: 0,
-                    left: 0,
-                    right: 0,
-                    bottom: 0,
-                    backgroundColor: "rgba(0,0,0,0.3)",
-                    zIndex: 2147483647,
-                  }}
-                />,
-                document.body
-              )
-            ) : (
-              <View
-                pointerEvents="none"
+            >
+              <Image
+                source={{ uri: resolvedArtwork }}
                 style={{
                   position: "absolute",
                   top: 0,
                   left: 0,
                   right: 0,
                   bottom: 0,
-                  backgroundColor: "rgba(0,0,0,0.3)",
+                  opacity: 0.8,
+                }}
+                resizeMode="cover"
+              />
+              <BlurView
+                intensity={Platform.OS === "ios" ? 50 : 100}
+                tint="dark"
+                style={{
+                  position: "absolute",
+                  top: 0,
+                  left: 0,
+                  right: 0,
+                  bottom: 0,
                 }}
               />
-            )}
-          </View>
-        ) : null}
-      </View>
-    ),
+              {Platform.OS === "web" && typeof document !== "undefined" ? (
+                (require("react-dom") as any).createPortal(
+                  <View
+                    pointerEvents="none"
+                    style={{
+                      position: "fixed",
+                      top: 0,
+                      left: 0,
+                      right: 0,
+                      bottom: 0,
+                      backgroundColor: "rgba(0,0,0,0.3)",
+                      zIndex: 2147483647,
+                    }}
+                  />,
+                  document.body
+                )
+              ) : (
+                <View
+                  pointerEvents="none"
+                  style={{
+                    position: "absolute",
+                    top: 0,
+                    left: 0,
+                    right: 0,
+                    bottom: 0,
+                    backgroundColor: "rgba(0,0,0,0.3)",
+                  }}
+                />
+              )}
+            </View>
+          ) : null}
+        </Animated.View>
+      )),
     [resolvedArtwork]
   );
 
@@ -1818,420 +1838,444 @@ export const PlayerBar = () => {
           width: 40,
         }}
       >
-        <StyledBottomSheetView className="flex-1 rounded-t-3xl overflow-hidden">
-          {spectrumVariant !== "trap" && (
-            <SpectrumVisualizer
-              isPlaying={isPlaying}
-              barCount={150}
-              multiplier={24}
-              opacity={0.25}
-              barWidth={4}
-              variant={spectrumVariant}
-              phase={sharedPhase}
-              audioAnalysis={audioAnalysis}
-              positionMillis={positionMillis}
-            />
-          )}
-          <View className="flex-1 max-w-md w-full mx-auto relative">
-            <View
-              className="flex-1 items-center justify-between pb-5"
-              style={{ paddingTop: insets.top + 12 }}
-            >
-              <View className="w-full px-5 flex-row items-center justify-between">
-                <Pressable onPress={handleCloseFullPlayer}>
-                  {({ pressed }) => (
-                    <Ionicons
-                      name="chevron-down"
-                      size={28}
-                      color={pressed ? "#ef4444" : "#fff"}
-                    />
-                  )}
-                </Pressable>
-                <Pressable
-                  className="w-7 items-center justify-center"
-                  onPress={() => setShowSpectrumSelector(!showSpectrumSelector)}
-                >
-                  {({ pressed }) => (
-                    <Ionicons
-                      name={
-                        spectrumVariant === "wave"
-                          ? "water-outline"
-                          : spectrumVariant === "symmetric"
-                          ? "git-compare-outline"
-                          : spectrumVariant === "pulse"
-                          ? "heart-outline"
-                          : spectrumVariant === "digital"
-                          ? "stats-chart-outline"
-                          : spectrumVariant === "natural"
-                          ? "leaf-outline"
-                          : spectrumVariant === "mirror"
-                          ? "repeat-outline"
-                          : spectrumVariant === "fountain"
-                          ? "sunny-outline"
-                          : "disc-outline"
-                      }
-                      size={20}
-                      color={
-                        showSpectrumSelector || pressed ? "#60a5fa" : "#fff"
-                      }
-                    />
-                  )}
-                </Pressable>
-                <Pressable
-                  className="w-7 items-end"
-                  onPress={() => void toggleCurrentFavorite(resolvedArtwork)}
-                >
-                  {({ pressed }) => (
-                    <Ionicons
-                      name={isCurrentFavorited ? "heart" : "heart-outline"}
-                      size={22}
-                      color={isCurrentFavorited || pressed ? "#ef4444" : "#fff"}
-                    />
-                  )}
-                </Pressable>
-                <Pressable
-                  className="w-7 items-end ml-4"
-                  onPress={handleOpenQueue}
-                >
-                  {({ pressed }) => (
-                    <Ionicons
-                      name="list"
-                      size={22}
-                      color={pressed ? "#60a5fa" : "#fff"}
-                    />
-                  )}
-                </Pressable>
-              </View>
-
-              {showSpectrumSelector && (
-                <View className="absolute top-16 left-0 right-0 z-50 items-center">
-                  <BlurView
-                    intensity={80}
-                    tint="dark"
-                    className="flex-row items-center bg-black/40 px-4 py-3 rounded-2xl border border-white/10"
+        <BottomSheetView style={{ flex: 1 }}>
+          <View className="flex-1 rounded-t-3xl overflow-hidden">
+            {spectrumVariant !== "trap" && (
+              <SpectrumVisualizer
+                isPlaying={isPlaying}
+                barCount={150}
+                multiplier={24}
+                opacity={0.25}
+                barWidth={4}
+                variant={spectrumVariant}
+                phase={sharedPhase}
+                audioAnalysis={audioAnalysis}
+                positionMillis={positionMillis}
+              />
+            )}
+            <View className="flex-1 max-w-md w-full mx-auto relative">
+              <View
+                className="flex-1 items-center justify-between pb-5"
+                style={{ paddingTop: insets.top + 12 }}
+              >
+                <View className="w-full px-5 flex-row items-center justify-between">
+                  <Pressable onPress={handleCloseFullPlayer}>
+                    {({ pressed }) => (
+                      <Ionicons
+                        name="chevron-down"
+                        size={28}
+                        color={pressed ? "#ef4444" : "#fff"}
+                      />
+                    )}
+                  </Pressable>
+                  <Pressable
+                    className="w-7 items-center justify-center"
+                    onPress={() =>
+                      setShowSpectrumSelector(!showSpectrumSelector)
+                    }
                   >
-                    {[
-                      { id: "wave", icon: "water-outline", label: "Wave" },
-                      {
-                        id: "symmetric",
-                        icon: "git-compare-outline",
-                        label: "Symmetric",
-                      },
-                      { id: "pulse", icon: "heart-outline", label: "Pulse" },
-                      {
-                        id: "digital",
-                        icon: "stats-chart-outline",
-                        label: "Digital",
-                      },
-                      { id: "natural", icon: "leaf-outline", label: "Natural" },
-                      { id: "mirror", icon: "repeat-outline", label: "Mirror" },
-                      {
-                        id: "fountain",
-                        icon: "sunny-outline",
-                        label: "Fountain",
-                      },
-                      { id: "trap", icon: "disc-outline", label: "Trap" },
-                    ].map((v) => (
-                      <TouchableOpacity
-                        key={v.id}
-                        onPress={() => {
-                          setSpectrumVariant(v.id as any);
-                          setShowSpectrumSelector(false);
-                        }}
-                        className={`mx-2 items-center justify-center w-10 h-10 rounded-full ${
-                          spectrumVariant === v.id
-                            ? "bg-blue-500"
-                            : "bg-white/10"
-                        }`}
-                      >
-                        <Ionicons
-                          name={v.icon as any}
-                          size={18}
-                          color={spectrumVariant === v.id ? "#fff" : "#ccc"}
-                        />
-                      </TouchableOpacity>
-                    ))}
-                  </BlurView>
+                    {({ pressed }) => (
+                      <Ionicons
+                        name={
+                          spectrumVariant === "wave"
+                            ? "water-outline"
+                            : spectrumVariant === "symmetric"
+                            ? "git-compare-outline"
+                            : spectrumVariant === "pulse"
+                            ? "heart-outline"
+                            : spectrumVariant === "digital"
+                            ? "stats-chart-outline"
+                            : spectrumVariant === "natural"
+                            ? "leaf-outline"
+                            : spectrumVariant === "mirror"
+                            ? "repeat-outline"
+                            : spectrumVariant === "fountain"
+                            ? "sunny-outline"
+                            : "disc-outline"
+                        }
+                        size={20}
+                        color={
+                          showSpectrumSelector || pressed ? "#60a5fa" : "#fff"
+                        }
+                      />
+                    )}
+                  </Pressable>
+                  <Pressable
+                    className="w-7 items-end"
+                    onPress={() => void toggleCurrentFavorite(resolvedArtwork)}
+                  >
+                    {({ pressed }) => (
+                      <Ionicons
+                        name={isCurrentFavorited ? "heart" : "heart-outline"}
+                        size={22}
+                        color={
+                          isCurrentFavorited || pressed ? "#ef4444" : "#fff"
+                        }
+                      />
+                    )}
+                  </Pressable>
+                  <Pressable
+                    className="w-7 items-end ml-4"
+                    onPress={handleOpenQueue}
+                  >
+                    {({ pressed }) => (
+                      <Ionicons
+                        name="list"
+                        size={22}
+                        color={pressed ? "#60a5fa" : "#fff"}
+                      />
+                    )}
+                  </Pressable>
                 </View>
-              )}
 
-              <View className="items-center px-8 mb-4">
-                <Text
-                  className="text-xs text-gray-300 mb-2 select-none"
-                  selectable={false}
-                >
-                  Now Playing
-                </Text>
-                <Text
-                  className="text-2xl font-bold text-white mb-1 select-none"
-                  numberOfLines={1}
-                  selectable={false}
-                >
-                  {currentTrack.title}
-                </Text>
-                <View className="flex-row items-center justify-center gap-2 max-w-full">
-                  {isCached && (
-                    <View className="bg-green-500/20 px-2 py-0.5 rounded-full border border-green-500/50 flex-row items-center gap-1 shrink-0">
-                      <Ionicons name="flash" size={10} color="#4ade80" />
-                      <Text className="text-[9px] text-green-400 font-bold uppercase">
-                        Fast
-                      </Text>
-                    </View>
-                  )}
+                {showSpectrumSelector && (
+                  <View className="absolute top-16 left-0 right-0 z-50 items-center">
+                    <BlurView
+                      intensity={80}
+                      tint="dark"
+                      className="flex-row items-center bg-black/40 px-4 py-3 rounded-2xl border border-white/10"
+                    >
+                      {[
+                        { id: "wave", icon: "water-outline", label: "Wave" },
+                        {
+                          id: "symmetric",
+                          icon: "git-compare-outline",
+                          label: "Symmetric",
+                        },
+                        { id: "pulse", icon: "heart-outline", label: "Pulse" },
+                        {
+                          id: "digital",
+                          icon: "stats-chart-outline",
+                          label: "Digital",
+                        },
+                        {
+                          id: "natural",
+                          icon: "leaf-outline",
+                          label: "Natural",
+                        },
+                        {
+                          id: "mirror",
+                          icon: "repeat-outline",
+                          label: "Mirror",
+                        },
+                        {
+                          id: "fountain",
+                          icon: "sunny-outline",
+                          label: "Fountain",
+                        },
+                        { id: "trap", icon: "disc-outline", label: "Trap" },
+                      ].map((v) => (
+                        <TouchableOpacity
+                          key={v.id}
+                          onPress={() => {
+                            setSpectrumVariant(v.id as any);
+                            setShowSpectrumSelector(false);
+                          }}
+                          className={`mx-2 items-center justify-center w-10 h-10 rounded-full ${
+                            spectrumVariant === v.id
+                              ? "bg-blue-500"
+                              : "bg-white/10"
+                          }`}
+                        >
+                          <Ionicons
+                            name={v.icon as any}
+                            size={18}
+                            color={spectrumVariant === v.id ? "#fff" : "#ccc"}
+                          />
+                        </TouchableOpacity>
+                      ))}
+                    </BlurView>
+                  </View>
+                )}
+
+                <View className="items-center px-8 mb-4">
                   <Text
-                    className="text-gray-300 select-none shrink"
+                    className="text-xs text-gray-300 mb-2 select-none"
+                    selectable={false}
+                  >
+                    Now Playing
+                  </Text>
+                  <Text
+                    className="text-2xl font-bold text-white mb-1 select-none"
                     numberOfLines={1}
                     selectable={false}
                   >
-                    {currentTrack.artist}
+                    {currentTrack.title}
                   </Text>
-                </View>
-              </View>
-
-              <View className="items-center">
-                <Pressable
-                  onPress={() => {
-                    if (isLoading) return;
-                    if (isPlaying) {
-                      void pauseTrack();
-                    } else {
-                      void resumeTrack();
-                    }
-                  }}
-                  className="items-center justify-center mt-2 mb-8 relative"
-                >
-                  {spectrumVariant === "trap" && (
-                    <SpectrumVisualizer
-                      isPlaying={isPlaying}
-                      barCount={80}
-                      multiplier={1.2}
-                      opacity={1}
-                      barWidth={3}
-                      variant="trap"
-                      radius={104}
-                      phase={sharedPhase}
-                      audioAnalysis={audioAnalysis}
-                      positionMillis={positionMillis}
-                    />
-                  )}
-                  {resolvedArtwork ? (
-                    <SpinningCover
-                      uri={resolvedArtwork}
-                      size={202}
-                      isPlaying={isPlaying}
-                      phase={sharedPhase}
-                    />
-                  ) : (
-                    <View
-                      style={{
-                        width: 214,
-                        height: 214,
-                        borderRadius: 107,
-                        backgroundColor: "#000",
-                        alignItems: "center",
-                        justifyContent: "center",
-                      }}
-                    >
-                      <Text className="text-6xl">🎵</Text>
-                    </View>
-                  )}
-                </Pressable>
-
-                <View className="w-full px-10 mt-4">
-                  <View className="flex-row justify-between mb-1">
+                  <View className="flex-row items-center justify-center gap-2 max-w-full">
+                    {isCached && (
+                      <View className="bg-green-500/20 px-2 py-0.5 rounded-full border border-green-500/50 flex-row items-center gap-1 shrink-0">
+                        <Ionicons name="flash" size={10} color="#4ade80" />
+                        <Text className="text-[9px] text-green-400 font-bold uppercase">
+                          Fast
+                        </Text>
+                      </View>
+                    )}
                     <Text
-                      className="text-[11px] text-gray-400 select-none"
+                      className="text-gray-300 select-none shrink"
+                      numberOfLines={1}
                       selectable={false}
                     >
-                      {formatMillis(
-                        isScrubbing
-                          ? scrubMillis ?? positionMillis
-                          : positionMillis
-                      )}
-                    </Text>
-                    <Text
-                      className="text-[11px] text-gray-400 select-none"
-                      selectable={false}
-                    >
-                      {durationMillis > 0
-                        ? formatMillis(durationMillis)
-                        : "--:--"}
+                      {currentTrack.artist}
                     </Text>
                   </View>
-                  <SeekBar
-                    positionMillis={positionMillis}
-                    durationMillis={durationMillis}
-                    onSeekToMillis={(value) => {
-                      void seekToMillis(value);
-                    }}
-                    onScrubMillisChange={(value) => setScrubMillis(value)}
-                    onScrubStateChange={(value) => {
-                      setIsScrubbing(value);
-                      if (!value) {
-                        setScrubMillis(null);
+                </View>
+
+                <View className="items-center">
+                  <Pressable
+                    onPress={() => {
+                      if (isLoading) return;
+                      if (isPlaying) {
+                        void pauseTrack().catch((e) => {
+                          console.warn("[PlayerBar] pauseTrack failed", e);
+                        });
+                      } else {
+                        void resumeTrack().catch((e) => {
+                          console.warn("[PlayerBar] resumeTrack failed", e);
+                        });
                       }
                     }}
-                  />
-
-                  <View className="flex-row items-center justify-between mt-2 px-2">
-                    <Pressable
-                      className="w-10 h-10 rounded-full items-center justify-center"
-                      onPress={toggleShuffle}
-                    >
-                      {({ pressed }) => (
-                        <Ionicons
-                          name="shuffle"
-                          size={22}
-                          color={
-                            pressed
-                              ? "#ef4444"
-                              : shuffleEnabled
-                              ? "#fff"
-                              : "rgba(255,255,255,0.45)"
-                          }
-                        />
-                      )}
-                    </Pressable>
-
-                    <View className="flex-row items-center gap-3">
-                      <TouchableOpacity
-                        className="px-3 py-2 rounded-full bg-white/10"
-                        onPress={() => seekByMillis(-10_000)}
+                    className="items-center justify-center mt-2 mb-8 relative"
+                  >
+                    {spectrumVariant === "trap" && (
+                      <SpectrumVisualizer
+                        isPlaying={isPlaying}
+                        barCount={80}
+                        multiplier={1.2}
+                        opacity={1}
+                        barWidth={3}
+                        variant="trap"
+                        radius={104}
+                        phase={sharedPhase}
+                        audioAnalysis={audioAnalysis}
+                        positionMillis={positionMillis}
+                      />
+                    )}
+                    {resolvedArtwork ? (
+                      <SpinningCover
+                        uri={resolvedArtwork}
+                        size={202}
+                        isPlaying={isPlaying}
+                        phase={sharedPhase}
+                      />
+                    ) : (
+                      <View
+                        style={{
+                          width: 214,
+                          height: 214,
+                          borderRadius: 107,
+                          backgroundColor: "#000",
+                          alignItems: "center",
+                          justifyContent: "center",
+                        }}
                       >
-                        <Text className="text-xs text-white">-10s</Text>
-                      </TouchableOpacity>
-                      <TouchableOpacity
-                        className="px-3 py-2 rounded-full bg-white/10"
-                        onPress={() => seekByMillis(10_000)}
+                        <Text className="text-6xl">🎵</Text>
+                      </View>
+                    )}
+                  </Pressable>
+
+                  <View className="w-full px-10 mt-4">
+                    <View className="flex-row justify-between mb-1">
+                      <Text
+                        className="text-[11px] text-gray-400 select-none"
+                        selectable={false}
                       >
-                        <Text className="text-xs text-white">+10s</Text>
-                      </TouchableOpacity>
+                        {formatMillis(
+                          isScrubbing
+                            ? scrubMillis ?? positionMillis
+                            : positionMillis
+                        )}
+                      </Text>
+                      <Text
+                        className="text-[11px] text-gray-400 select-none"
+                        selectable={false}
+                      >
+                        {durationMillis > 0
+                          ? formatMillis(durationMillis)
+                          : "--:--"}
+                      </Text>
                     </View>
+                    <SeekBar
+                      positionMillis={positionMillis}
+                      durationMillis={durationMillis}
+                      onSeekToMillis={(value) => {
+                        void seekToMillis(value);
+                      }}
+                      onScrubMillisChange={(value) => setScrubMillis(value)}
+                      onScrubStateChange={(value) => {
+                        setIsScrubbing(value);
+                        if (!value) {
+                          setScrubMillis(null);
+                        }
+                      }}
+                    />
 
-                    <Pressable
-                      className="w-10 h-10 rounded-full items-center justify-center"
-                      onPress={cycleRepeatMode}
-                    >
-                      {({ pressed }) => (
-                        <>
+                    <View className="flex-row items-center justify-between mt-2 px-2">
+                      <Pressable
+                        className="w-10 h-10 rounded-full items-center justify-center"
+                        onPress={toggleShuffle}
+                      >
+                        {({ pressed }) => (
                           <Ionicons
-                            name={
-                              repeatMode === "one"
-                                ? "repeat"
-                                : repeatMode === "all"
-                                ? "repeat"
-                                : "repeat-outline"
-                            }
+                            name="shuffle"
                             size={22}
                             color={
                               pressed
                                 ? "#ef4444"
-                                : repeatMode !== "off"
+                                : shuffleEnabled
                                 ? "#fff"
                                 : "rgba(255,255,255,0.45)"
                             }
                           />
-                          {repeatMode === "one" && (
-                            <View className="absolute bottom-1 right-1 bg-white rounded-full w-3 h-3 items-center justify-center">
-                              <Text
-                                className="text-black font-bold"
-                                style={{ fontSize: 7 }}
-                              >
-                                1
-                              </Text>
-                            </View>
-                          )}
-                        </>
-                      )}
-                    </Pressable>
+                        )}
+                      </Pressable>
 
-                    <View className="relative">
-                      {showVolume && (
-                        <View
-                          style={{
-                            position: "absolute",
-                            bottom: 50,
-                            right: 0,
-                            backgroundColor: "rgba(30,30,30,0.95)",
-                            borderRadius: 20,
-                            paddingVertical: 12,
-                            paddingHorizontal: 4,
-                            shadowColor: "#000",
-                            shadowOpacity: 0.3,
-                            shadowRadius: 10,
-                            elevation: 5,
-                            zIndex: 100,
-                          }}
+                      <View className="flex-row items-center gap-3">
+                        <TouchableOpacity
+                          className="px-3 py-2 rounded-full bg-white/10"
+                          onPress={() => seekByMillis(-10_000)}
                         >
-                          <VolumeSlider
-                            volume={volume}
-                            onVolumeChange={setVolume}
-                          />
-                        </View>
-                      )}
-                      <TouchableOpacity
-                        onPress={() => setShowVolume(!showVolume)}
+                          <Text className="text-xs text-white">-10s</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                          className="px-3 py-2 rounded-full bg-white/10"
+                          onPress={() => seekByMillis(10_000)}
+                        >
+                          <Text className="text-xs text-white">+10s</Text>
+                        </TouchableOpacity>
+                      </View>
+
+                      <Pressable
                         className="w-10 h-10 rounded-full items-center justify-center"
+                        onPress={cycleRepeatMode}
                       >
-                        <Ionicons
-                          name={
-                            volume === 0
-                              ? "volume-mute"
-                              : volume < 0.5
-                              ? "volume-low"
-                              : "volume-high"
-                          }
-                          size={22}
-                          color={showVolume ? "#fff" : "rgba(255,255,255,0.45)"}
-                        />
-                      </TouchableOpacity>
+                        {({ pressed }) => (
+                          <>
+                            <Ionicons
+                              name={
+                                repeatMode === "one"
+                                  ? "repeat"
+                                  : repeatMode === "all"
+                                  ? "repeat"
+                                  : "repeat-outline"
+                              }
+                              size={22}
+                              color={
+                                pressed
+                                  ? "#ef4444"
+                                  : repeatMode !== "off"
+                                  ? "#fff"
+                                  : "rgba(255,255,255,0.45)"
+                              }
+                            />
+                            {repeatMode === "one" && (
+                              <View className="absolute bottom-1 right-1 bg-white rounded-full w-3 h-3 items-center justify-center">
+                                <Text
+                                  className="text-black font-bold"
+                                  style={{ fontSize: 7 }}
+                                >
+                                  1
+                                </Text>
+                              </View>
+                            )}
+                          </>
+                        )}
+                      </Pressable>
+
+                      <View className="relative">
+                        {showVolume && (
+                          <View
+                            style={{
+                              position: "absolute",
+                              bottom: 50,
+                              right: 0,
+                              backgroundColor: "rgba(30,30,30,0.95)",
+                              borderRadius: 20,
+                              paddingVertical: 12,
+                              paddingHorizontal: 4,
+                              shadowColor: "#000",
+                              shadowOpacity: 0.3,
+                              shadowRadius: 10,
+                              elevation: 5,
+                              zIndex: 100,
+                            }}
+                          >
+                            <VolumeSlider
+                              volume={volume}
+                              onVolumeChange={setVolume}
+                            />
+                          </View>
+                        )}
+                        <TouchableOpacity
+                          onPress={() => setShowVolume(!showVolume)}
+                          className="w-10 h-10 rounded-full items-center justify-center"
+                        >
+                          <Ionicons
+                            name={
+                              volume === 0
+                                ? "volume-mute"
+                                : volume < 0.5
+                                ? "volume-low"
+                                : "volume-high"
+                            }
+                            size={22}
+                            color={
+                              showVolume ? "#fff" : "rgba(255,255,255,0.45)"
+                            }
+                          />
+                        </TouchableOpacity>
+                      </View>
                     </View>
                   </View>
                 </View>
-              </View>
 
-              <View className="w-full flex-row items-center justify-center px-6 mt-6">
-                <View className="flex-row items-center justify-center flex-1">
-                  <TouchableOpacity
-                    onPress={playPrevious}
-                    className="p-4"
-                    disabled={controlsDisabled}
-                    style={{ opacity: controlsDisabled ? 0.35 : 1 }}
-                  >
-                    <Ionicons name="play-skip-back" size={38} color="#fff" />
-                  </TouchableOpacity>
+                <View className="w-full flex-row items-center justify-center px-6 mt-6">
+                  <View className="flex-row items-center justify-center flex-1">
+                    <TouchableOpacity
+                      onPress={playPrevious}
+                      className="p-4"
+                      disabled={controlsDisabled}
+                      style={{ opacity: controlsDisabled ? 0.35 : 1 }}
+                    >
+                      <Ionicons name="play-skip-back" size={38} color="#fff" />
+                    </TouchableOpacity>
 
-                  <TouchableOpacity
-                    onPress={isPlaying ? pauseTrack : resumeTrack}
-                    className="w-20 h-20 rounded-full bg-white items-center justify-center shadow-lg"
-                    disabled={isLoading || isTrackLoading}
-                  >
-                    {isLoading || isTrackLoading ? (
-                      <ActivityIndicator size="large" color="#000" />
-                    ) : (
+                    <TouchableOpacity
+                      onPress={isPlaying ? pauseTrack : resumeTrack}
+                      className="w-20 h-20 rounded-full bg-white items-center justify-center shadow-lg"
+                      disabled={isLoading || isTrackLoading}
+                    >
+                      {isLoading || isTrackLoading ? (
+                        <ActivityIndicator size="large" color="#000" />
+                      ) : (
+                        <Ionicons
+                          name={isPlaying ? "pause" : "play"}
+                          size={42}
+                          color="#000"
+                        />
+                      )}
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
+                      onPress={playNext}
+                      className="p-4"
+                      disabled={controlsDisabled}
+                      style={{ opacity: controlsDisabled ? 0.35 : 1 }}
+                    >
                       <Ionicons
-                        name={isPlaying ? "pause" : "play"}
-                        size={42}
-                        color="#000"
+                        name="play-skip-forward"
+                        size={38}
+                        color="#fff"
                       />
-                    )}
-                  </TouchableOpacity>
-
-                  <TouchableOpacity
-                    onPress={playNext}
-                    className="p-4"
-                    disabled={controlsDisabled}
-                    style={{ opacity: controlsDisabled ? 0.35 : 1 }}
-                  >
-                    <Ionicons name="play-skip-forward" size={38} color="#fff" />
-                  </TouchableOpacity>
+                    </TouchableOpacity>
+                  </View>
                 </View>
-              </View>
 
-              <View className="h-6" />
+                <View className="h-6" />
+              </View>
             </View>
           </View>
-        </StyledBottomSheetView>
+        </BottomSheetView>
       </BottomSheetModal>
       <QueueSheet ref={queueSheetRef} />
     </>

@@ -146,16 +146,22 @@ export const TrackItem: React.FC<TrackItemProps> = ({
     if (isLoading) return;
     if (isActive) {
       if (isPlaying) {
-        void pauseTrack();
+        void pauseTrack().catch((e) => {
+          console.warn("[TrackItem] pauseTrack failed", e);
+        });
       } else {
-        void resumeTrack();
+        void resumeTrack().catch((e) => {
+          console.warn("[TrackItem] resumeTrack failed", e);
+        });
       }
       return;
     }
     if (onPress) {
       onPress();
     } else {
-      void playTrack(track);
+      void playTrack(track).catch((e) => {
+        console.warn("[TrackItem] playTrack failed", e);
+      });
     }
   };
 

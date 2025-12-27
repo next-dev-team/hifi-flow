@@ -85,7 +85,9 @@ export default function PlaylistScreen() {
       <TrackItem
         track={item}
         onPress={() => {
-          void playQueue(tracks, index);
+          void playQueue(tracks, index).catch((e) => {
+            console.warn("[Playlist] playQueue failed", e);
+          });
         }}
       />
     );

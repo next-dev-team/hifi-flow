@@ -120,6 +120,7 @@ if (workbox) {
   const AUDIO_CHUNK_CACHE = `hififlow-audio-chunks-${AUDIO_CACHE_VERSION}`;
   const AUDIO_META_PATH = '/__hififlow_audio_meta';
   const AUDIO_CHUNK_PATH = '/__hififlow_audio_chunk';
+  const AUDIO_STREAM_PATH = '/__hififlow_audio_stream';
   const CHUNK_DURATION_SEC = 5;
   const WINDOW_AHEAD_SEC = 60;
   const MIN_CHUNK_BYTES = 16384;
@@ -147,6 +148,16 @@ if (workbox) {
     if (!Number.isFinite(start) || start < 0) return null;
     if (end !== null && (!Number.isFinite(end) || end < start)) return null;
     return { start, end };
+  };
+
+  const decodeStreamParam = (urlObj) => {
+    try {
+      const param = urlObj?.searchParams?.get('u');
+      if (!param) return null;
+      return decodeURIComponent(param);
+    } catch {
+      return null;
+    }
   };
 
   const postToClients = async (message) => {
@@ -505,6 +516,7 @@ if (workbox) {
         request.method === 'GET' &&
         (request.destination === 'audio' ||
           request.destination === 'video' ||
+          url.pathname === AUDIO_STREAM_PATH ||
           url.pathname.endsWith('.mp3') ||
           url.pathname.endsWith('.m4a') ||
           url.pathname.endsWith('.wav') ||
@@ -514,13 +526,17 @@ if (workbox) {
     },
     async ({ event, request, url }) => {
       const rangeHeader = request.headers.get('range');
-      const originalUrl = url.href;
+      const sourceUrl =
+        url.pathname === AUDIO_STREAM_PATH ? decodeStreamParam(url) : url.href;
+      if (!sourceUrl) {
+        return new Response('', { status: 400 });
+      }
       if (rangeHeader) {
         const parsed = parseRangeHeader(rangeHeader);
         if (parsed) {
           try {
             const cached = await tryServeRangeFromChunks(
-              originalUrl,
+              sourceUrl,
               parsed.start,
               parsed.end
             );
@@ -530,13 +546,48 @@ if (workbox) {
       }
 
       try {
+        if (url.pathname === AUDIO_STREAM_PATH) {
+          const headers = new Headers();
+          if (rangeHeader) headers.set('Range', rangeHeader);
+          let meta = null;
+          try {
+            meta = await ensureMetaDetails(sourceUrl);
+          } catch {}
+
+          const resp = await fetch(sourceUrl, { headers });
+          const nextHeaders = new Headers(resp.headers);
+          const respContentType = (nextHeaders.get('content-type') || '').toLowerCase();
+          const metaContentType =
+            meta && typeof meta.contentType === 'string' && meta.contentType
+              ? meta.contentType
+              : '';
+
+          if (
+            metaContentType &&
+            (!respContentType ||
+              respContentType.startsWith('application/octet-stream') ||
+              respContentType.startsWith('binary/octet-stream'))
+          ) {
+            nextHeaders.set('Content-Type', metaContentType);
+          }
+
+          if (!nextHeaders.get('Accept-Ranges')) {
+            nextHeaders.set('Accept-Ranges', 'bytes');
+          }
+
+          if (resp.body) {
+            return new Response(resp.body, { status: resp.status, headers: nextHeaders });
+          }
+          const blob = await resp.blob();
+          return new Response(blob, { status: resp.status, headers: nextHeaders });
+        }
         return await fetch(request);
       } catch {
         if (rangeHeader) {
           const parsed = parseRangeHeader(rangeHeader);
           if (parsed) {
             const cached = await tryServeRangeFromChunks(
-              originalUrl,
+              sourceUrl,
               parsed.start,
               parsed.end
             );

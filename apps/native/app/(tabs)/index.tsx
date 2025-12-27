@@ -19,7 +19,14 @@ import {
   useSpeechRecognitionEvent,
 } from "expo-speech-recognition";
 import { Card, Chip, useThemeColor } from "heroui-native";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  forwardRef,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import {
   ActivityIndicator,
   DeviceEventEmitter,
@@ -59,8 +66,11 @@ import { useToast } from "@/contexts/toast-context";
 import { useOfflineStatus } from "@/hooks/use-offline-status";
 import { usePersistentState } from "@/hooks/use-persistent-state";
 import { detectThemeVoiceAction } from "@/utils/ai";
-import { audioCacheService, type AudioCacheProgress } from "@/utils/audio-cache";
 import { getSuggestedArtists, losslessAPI } from "@/utils/api";
+import {
+  type AudioCacheProgress,
+  audioCacheService,
+} from "@/utils/audio-cache";
 import { getSheetMargin, SHEET_MAX_WIDTH } from "@/utils/layout";
 import { resolveArtwork, resolveName } from "@/utils/resolvers";
 
@@ -82,7 +92,8 @@ function formatBytes(value: number): string {
     Math.floor(Math.log(value) / Math.log(1024))
   );
   const scaled = value / 1024 ** exponent;
-  const rounded = scaled >= 100 ? Math.round(scaled) : Math.round(scaled * 10) / 10;
+  const rounded =
+    scaled >= 100 ? Math.round(scaled) : Math.round(scaled * 10) / 10;
   return `${rounded} ${units[exponent]}`;
 }
 
@@ -92,7 +103,6 @@ const StyledText = withUniwind(Text);
 const StyledTextInput = withUniwind(TextInput);
 const StyledScrollView = withUniwind(ScrollView);
 const StyledTouchableOpacity = withUniwind(TouchableOpacity);
-const StyledBottomSheetView = withUniwind(BottomSheetView);
 
 export default function Home() {
   const isOffline = useOfflineStatus();
@@ -211,7 +221,9 @@ export default function Home() {
       setCurrentAudioCacheProgress(null);
       return;
     }
-    setCurrentAudioCacheProgress(audioCacheService.getProgress(currentStreamUrl));
+    setCurrentAudioCacheProgress(
+      audioCacheService.getProgress(currentStreamUrl)
+    );
   }, [currentStreamUrl]);
 
   useEffect(() => {
@@ -221,11 +233,13 @@ export default function Home() {
     const unsubscribeCached = audioCacheService.addListener(() => {
       void refreshAudioCacheInfo();
     });
-    const unsubscribeProgress = audioCacheService.addProgressListener((progress) => {
-      if (progress.url && progress.url === currentStreamUrl) {
-        setCurrentAudioCacheProgress(progress);
+    const unsubscribeProgress = audioCacheService.addProgressListener(
+      (progress) => {
+        if (progress.url && progress.url === currentStreamUrl) {
+          setCurrentAudioCacheProgress(progress);
+        }
       }
-    });
+    );
 
     return () => {
       unsubscribeCached();
@@ -467,17 +481,19 @@ export default function Home() {
     easing: Easing.bezier(0.2, 0.9, 0.2, 1),
   });
 
-  const favoritesBackdrop = useMemo(() => {
-    return (props: BottomSheetBackdropProps) => (
-      <BottomSheetBackdrop
-        {...props}
-        opacity={0.6}
-        appearsOnIndex={0}
-        disappearsOnIndex={-1}
-        pressBehavior="close"
-      />
-    );
-  }, []);
+  const favoritesBackdrop = useMemo(
+    () =>
+      forwardRef<unknown, BottomSheetBackdropProps>((props, _ref) => (
+        <BottomSheetBackdrop
+          {...props}
+          opacity={0.6}
+          appearsOnIndex={0}
+          disappearsOnIndex={-1}
+          pressBehavior="close"
+        />
+      )),
+    []
+  );
 
   const formattedSleepRemaining = useMemo(() => {
     if (!sleepTimerEndsAt || sleepTimerRemainingMs <= 0) return "Off";
@@ -793,7 +809,9 @@ export default function Home() {
       <TrackItem
         track={track}
         onPress={() => {
-          void playQueue(tracks, index);
+          void playQueue(tracks, index).catch((e) => {
+            console.warn("[Home] playQueue failed", e);
+          });
         }}
       />
     );
@@ -818,7 +836,9 @@ export default function Home() {
         <TouchableOpacity
           className="flex-1 flex-row items-center"
           onPress={() => {
-            void playQueue(favoriteQueue, index);
+            void playQueue(favoriteQueue, index).catch((e) => {
+              console.warn("[Home] playQueue failed", e);
+            });
             favoritesSheetRef.current?.dismiss();
           }}
         >
@@ -1119,7 +1139,9 @@ export default function Home() {
       ) : (
         <FlatList
           data={listData}
-          keyExtractor={(item, index) => (item.id || index).toString()}
+          keyExtractor={(item: SearchResultItem, index: number) =>
+            (item.id || index).toString()
+          }
           renderItem={renderItem}
           numColumns={filter === "artists" ? 2 : 1}
           key={filter === "artists" ? "grid" : "list"}
@@ -1171,337 +1193,353 @@ export default function Home() {
         handleIndicatorStyle={{ backgroundColor: "#ccc" }}
         backgroundStyle={{ backgroundColor: themeColorBackground }}
       >
-        <StyledView className="flex-1 bg-background">
-          <View className="px-4 pt-3 pb-2 flex-row items-center justify-between">
-            <View className="flex-row items-center">
-              {(selectedAlbum || selectedPlaylist) && (
-                <TouchableOpacity
-                  onPress={() => {
-                    if (selectedAlbum) setSelectedAlbum(null);
-                    if (selectedPlaylist) setSelectedPlaylist(null);
-                  }}
-                  className="mr-3 p-1"
-                >
-                  <Ionicons
-                    name="arrow-back"
-                    size={24}
-                    color={themeColorForeground}
-                  />
-                </TouchableOpacity>
-              )}
-              <Text className="text-xl font-bold text-foreground">
-                {selectedAlbum
-                  ? speechLang === "en-US"
-                    ? "Album Tracks"
-                    : "បទក្នុងអាល់ប៊ុម"
-                  : selectedPlaylist
-                  ? speechLang === "en-US"
-                    ? "Playlist Tracks"
-                    : "បទក្នុងបញ្ជីចាក់"
-                  : speechLang === "en-US"
-                  ? "Artist Details"
-                  : "ព័ត៌មានសិល្បករ"}
-              </Text>
+        <BottomSheetView style={{ flex: 1 }}>
+          <StyledView className="flex-1 bg-background">
+            <View className="px-4 pt-3 pb-2 flex-row items-center justify-between">
+              <View className="flex-row items-center">
+                {(selectedAlbum || selectedPlaylist) && (
+                  <TouchableOpacity
+                    onPress={() => {
+                      if (selectedAlbum) setSelectedAlbum(null);
+                      if (selectedPlaylist) setSelectedPlaylist(null);
+                    }}
+                    className="mr-3 p-1"
+                  >
+                    <Ionicons
+                      name="arrow-back"
+                      size={24}
+                      color={themeColorForeground}
+                    />
+                  </TouchableOpacity>
+                )}
+                <Text className="text-xl font-bold text-foreground">
+                  {selectedAlbum
+                    ? speechLang === "en-US"
+                      ? "Album Tracks"
+                      : "បទក្នុងអាល់ប៊ុម"
+                    : selectedPlaylist
+                    ? speechLang === "en-US"
+                      ? "Playlist Tracks"
+                      : "បទក្នុងបញ្ជីចាក់"
+                    : speechLang === "en-US"
+                    ? "Artist Details"
+                    : "ព័ត៌មានសិល្បករ"}
+                </Text>
+              </View>
+              <TouchableOpacity
+                className="p-2"
+                onPress={() => {
+                  artistSheetRef.current?.dismiss();
+                  setSelectedAlbum(null);
+                  setSelectedPlaylist(null);
+                }}
+              >
+                <Ionicons name="close" size={22} color={themeColorForeground} />
+              </TouchableOpacity>
             </View>
-            <TouchableOpacity
-              className="p-2"
-              onPress={() => {
-                artistSheetRef.current?.dismiss();
-                setSelectedAlbum(null);
-                setSelectedPlaylist(null);
-              }}
-            >
-              <Ionicons name="close" size={22} color={themeColorForeground} />
-            </TouchableOpacity>
-          </View>
 
-          {isArtistLoading ||
-          (selectedAlbum && isAlbumLoading) ||
-          (selectedPlaylist && isPlaylistLoading) ? (
-            <View className="flex-1 items-center justify-center">
-              <ActivityIndicator size="large" color="#fff" />
-            </View>
-          ) : (
-            <BottomSheetFlatList
-              style={{ flex: 1 }}
-              ListHeaderComponent={
-                <View className="px-4 mb-6">
-                  {selectedAlbum ? (
-                    <View className="flex-row items-center mb-6">
-                      <View className="w-24 h-24 rounded-lg overflow-hidden mr-4 bg-content3 shadow-md">
-                        <Image
-                          source={{ uri: resolveArtwork(selectedAlbum) }}
-                          className="w-full h-full"
-                          resizeMode="cover"
-                        />
-                      </View>
-                      <View className="flex-1">
-                        <Text className="text-2xl font-bold text-foreground">
-                          {selectedAlbum.title}
-                        </Text>
-                        <Text className="text-default-500">
-                          {selectedAlbum.releaseDate?.split("-")[0] ||
-                            (speechLang === "en-US" ? "Album" : "អាល់ប៊ុម")}
-                        </Text>
-                      </View>
-                    </View>
-                  ) : selectedPlaylist ? (
-                    <View>
+            {isArtistLoading ||
+            (selectedAlbum && isAlbumLoading) ||
+            (selectedPlaylist && isPlaylistLoading) ? (
+              <View className="flex-1 items-center justify-center">
+                <ActivityIndicator size="large" color="#fff" />
+              </View>
+            ) : (
+              <BottomSheetFlatList
+                style={{ flex: 1 }}
+                ListHeaderComponent={
+                  <View className="px-4 mb-6">
+                    {selectedAlbum ? (
                       <View className="flex-row items-center mb-6">
                         <View className="w-24 h-24 rounded-lg overflow-hidden mr-4 bg-content3 shadow-md">
                           <Image
-                            source={{ uri: resolveArtwork(selectedPlaylist) }}
+                            source={{ uri: resolveArtwork(selectedAlbum) }}
                             className="w-full h-full"
                             resizeMode="cover"
                           />
                         </View>
                         <View className="flex-1">
                           <Text className="text-2xl font-bold text-foreground">
-                            {selectedPlaylist.title}
+                            {selectedAlbum.title}
                           </Text>
                           <Text className="text-default-500">
-                            {resolveName(
-                              selectedPlaylist.artist || selectedPlaylist.author
-                            ) ||
-                              (speechLang === "en-US"
-                                ? "Playlist"
-                                : "បញ្ជីចាក់")}
+                            {selectedAlbum.releaseDate?.split("-")[0] ||
+                              (speechLang === "en-US" ? "Album" : "អាល់ប៊ុម")}
                           </Text>
                         </View>
                       </View>
-
-                      {playlistDetails?.playlist?.promotedArtists &&
-                        playlistDetails.playlist.promotedArtists.length > 0 && (
-                          <View className="mb-4">
-                            <Text className="text-lg font-bold text-foreground mb-2">
-                              {speechLang === "en-US"
-                                ? "Promoted Artists"
-                                : "សិល្បករដែលបានផ្សព្វផ្សាយ"}
-                            </Text>
-                            <ScrollView
-                              horizontal
-                              showsHorizontalScrollIndicator={false}
-                            >
-                              {playlistDetails.playlist.promotedArtists.map(
-                                (artist: any) => (
-                                  <TouchableOpacity
-                                    key={artist.id}
-                                    className="mr-4 items-center"
-                                    onPress={() => {
-                                      setSelectedPlaylist(null);
-                                      setSelectedArtist(artist);
-                                    }}
-                                    disabled={
-                                      isArtistLoading &&
-                                      String(selectedArtist?.id) ===
-                                        String(artist.id)
-                                    }
-                                  >
-                                    <View className="w-16 h-16 rounded-full overflow-hidden bg-content3 mb-1 relative">
-                                      <Image
-                                        source={{ uri: resolveArtwork(artist) }}
-                                        className="w-full h-full"
-                                        resizeMode="cover"
-                                      />
-                                      {isArtistLoading &&
-                                        String(selectedArtist?.id) ===
-                                          String(artist.id) && (
-                                          <View className="absolute inset-0 bg-black/40 items-center justify-center">
-                                            <ActivityIndicator
-                                              color="#fff"
-                                              size="small"
-                                            />
-                                          </View>
-                                        )}
-                                    </View>
-                                    <Text
-                                      className="text-xs text-foreground text-center"
-                                      numberOfLines={1}
-                                      style={{ width: 64 }}
-                                    >
-                                      {artist.name}
-                                    </Text>
-                                  </TouchableOpacity>
-                                )
-                              )}
-                            </ScrollView>
-                          </View>
-                        )}
-                    </View>
-                  ) : (
-                    <View className="flex-row items-center mb-6">
-                      <View className="w-24 h-24 rounded-full overflow-hidden mr-4 bg-content3 shadow-md">
-                        {resolveArtwork(selectedArtist) ? (
-                          <Image
-                            source={{ uri: resolveArtwork(selectedArtist) }}
-                            className="w-full h-full"
-                            resizeMode="cover"
-                          />
-                        ) : (
-                          <View className="w-full h-full items-center justify-center">
-                            <Text className="text-3xl">👤</Text>
-                          </View>
-                        )}
-                      </View>
-                      <View className="flex-1">
-                        <Text className="text-2xl font-bold text-foreground">
-                          {selectedArtist?.name}
-                        </Text>
-                        <Text className="text-default-500">
-                          {selectedArtist?.subscribers ||
-                            (speechLang === "en-US" ? "Artist" : "សិល្បករ")}
-                        </Text>
-                      </View>
-                    </View>
-                  )}
-
-                  {((!selectedAlbum &&
-                    !selectedPlaylist &&
-                    artistTopTracks.length > 0) ||
-                    (selectedAlbum && albumTracks.length > 0) ||
-                    (selectedPlaylist && playlistTracks.length > 0)) && (
-                    <View className="mb-8">
-                      <View className="flex-row justify-between items-center mb-4">
-                        <View>
-                          <Text className="text-xl font-bold text-foreground">
-                            {selectedAlbum
-                              ? speechLang === "en-US"
-                                ? "Tracks"
-                                : "បទ"
-                              : selectedPlaylist
-                              ? speechLang === "en-US"
-                                ? "Tracks"
-                                : "បទ"
-                              : speechLang === "en-US"
-                              ? "Top Tracks"
-                              : "បទល្បីៗ"}
-                          </Text>
-                          <Text className="text-default-500 text-sm">
-                            {selectedAlbum
-                              ? speechLang === "en-US"
-                                ? `All songs from ${selectedAlbum.title}`
-                                : `បទទាំងអស់ពី ${selectedAlbum.title}`
-                              : selectedPlaylist
-                              ? speechLang === "en-US"
-                                ? `All songs from ${selectedPlaylist.title}`
-                                : `បទទាំងអស់ពី ${selectedPlaylist.title}`
-                              : speechLang === "en-US"
-                              ? `Best songs from ${selectedArtist?.name}`
-                              : `បទល្អបំផុតពី ${selectedArtist?.name}`}
-                          </Text>
-                        </View>
-                        <TouchableOpacity
-                          className="bg-primary px-4 py-2 rounded-full"
-                          onPress={() => {
-                            const tracksToPlay = selectedAlbum
-                              ? albumTracks
-                              : selectedPlaylist
-                              ? playlistTracks
-                              : artistTopTracks;
-                            if (tracksToPlay.length > 0) {
-                              void playQueue(tracksToPlay, 0);
-                            }
-                          }}
-                        >
-                          <Text className="text-primary-foreground font-bold">
-                            {speechLang === "en-US"
-                              ? "Play All"
-                              : "ចាក់ទាំងអស់"}
-                          </Text>
-                        </TouchableOpacity>
-                      </View>
-                    </View>
-                  )}
-                </View>
-              }
-              data={
-                selectedAlbum
-                  ? albumTracks
-                  : selectedPlaylist
-                  ? playlistTracks
-                  : artistTopTracks
-              }
-              keyExtractor={(item: Track) => item.id}
-              renderItem={({ item, index }: { item: Track; index: number }) => {
-                const tracksToPlay = selectedAlbum
-                  ? albumTracks
-                  : selectedPlaylist
-                  ? playlistTracks
-                  : artistTopTracks;
-                return (
-                  <View className="px-4">
-                    <TrackItem
-                      track={item}
-                      onPress={() => {
-                        void playQueue(tracksToPlay, index);
-                      }}
-                    />
-                  </View>
-                );
-              }}
-              ListFooterComponent={
-                !selectedAlbum &&
-                !selectedPlaylist &&
-                artistAlbums.length > 0 ? (
-                  <View className="px-4 mt-8">
-                    <Text className="text-xl font-bold text-foreground mb-4">
-                      Albums
-                    </Text>
-                    <ScrollView
-                      horizontal
-                      showsHorizontalScrollIndicator={false}
-                      className="flex-row"
-                    >
-                      {artistAlbums.map((album: any) => (
-                        <TouchableOpacity
-                          key={album.id}
-                          className="mr-4 w-32"
-                          onPress={() => {
-                            setSelectedAlbum(album);
-                          }}
-                          disabled={
-                            isAlbumLoading &&
-                            String(selectedAlbum?.id) === String(album.id)
-                          }
-                        >
-                          <View className="w-32 h-32 rounded-lg overflow-hidden bg-content3 mb-2 shadow-sm relative">
+                    ) : selectedPlaylist ? (
+                      <View>
+                        <View className="flex-row items-center mb-6">
+                          <View className="w-24 h-24 rounded-lg overflow-hidden mr-4 bg-content3 shadow-md">
                             <Image
-                              source={{ uri: resolveArtwork(album) }}
+                              source={{ uri: resolveArtwork(selectedPlaylist) }}
                               className="w-full h-full"
                               resizeMode="cover"
                             />
-                            {isAlbumLoading &&
-                              String(selectedAlbum?.id) ===
-                                String(album.id) && (
-                                <View className="absolute inset-0 bg-black/40 items-center justify-center">
-                                  <ActivityIndicator
-                                    color="#fff"
-                                    size="small"
-                                  />
-                                </View>
-                              )}
                           </View>
-                          <Text
-                            className="text-foreground font-medium text-sm"
-                            numberOfLines={1}
+                          <View className="flex-1">
+                            <Text className="text-2xl font-bold text-foreground">
+                              {selectedPlaylist.title}
+                            </Text>
+                            <Text className="text-default-500">
+                              {resolveName(
+                                selectedPlaylist.artist ||
+                                  selectedPlaylist.author
+                              ) ||
+                                (speechLang === "en-US"
+                                  ? "Playlist"
+                                  : "បញ្ជីចាក់")}
+                            </Text>
+                          </View>
+                        </View>
+
+                        {playlistDetails?.playlist?.promotedArtists &&
+                          playlistDetails.playlist.promotedArtists.length >
+                            0 && (
+                            <View className="mb-4">
+                              <Text className="text-lg font-bold text-foreground mb-2">
+                                {speechLang === "en-US"
+                                  ? "Promoted Artists"
+                                  : "សិល្បករដែលបានផ្សព្វផ្សាយ"}
+                              </Text>
+                              <ScrollView
+                                horizontal
+                                showsHorizontalScrollIndicator={false}
+                              >
+                                {playlistDetails.playlist.promotedArtists.map(
+                                  (artist: any) => (
+                                    <TouchableOpacity
+                                      key={artist.id}
+                                      className="mr-4 items-center"
+                                      onPress={() => {
+                                        setSelectedPlaylist(null);
+                                        setSelectedArtist(artist);
+                                      }}
+                                      disabled={
+                                        isArtistLoading &&
+                                        String(selectedArtist?.id) ===
+                                          String(artist.id)
+                                      }
+                                    >
+                                      <View className="w-16 h-16 rounded-full overflow-hidden bg-content3 mb-1 relative">
+                                        <Image
+                                          source={{
+                                            uri: resolveArtwork(artist),
+                                          }}
+                                          className="w-full h-full"
+                                          resizeMode="cover"
+                                        />
+                                        {isArtistLoading &&
+                                          String(selectedArtist?.id) ===
+                                            String(artist.id) && (
+                                            <View className="absolute inset-0 bg-black/40 items-center justify-center">
+                                              <ActivityIndicator
+                                                color="#fff"
+                                                size="small"
+                                              />
+                                            </View>
+                                          )}
+                                      </View>
+                                      <Text
+                                        className="text-xs text-foreground text-center"
+                                        numberOfLines={1}
+                                        style={{ width: 64 }}
+                                      >
+                                        {artist.name}
+                                      </Text>
+                                    </TouchableOpacity>
+                                  )
+                                )}
+                              </ScrollView>
+                            </View>
+                          )}
+                      </View>
+                    ) : (
+                      <View className="flex-row items-center mb-6">
+                        <View className="w-24 h-24 rounded-full overflow-hidden mr-4 bg-content3 shadow-md">
+                          {resolveArtwork(selectedArtist) ? (
+                            <Image
+                              source={{ uri: resolveArtwork(selectedArtist) }}
+                              className="w-full h-full"
+                              resizeMode="cover"
+                            />
+                          ) : (
+                            <View className="w-full h-full items-center justify-center">
+                              <Text className="text-3xl">👤</Text>
+                            </View>
+                          )}
+                        </View>
+                        <View className="flex-1">
+                          <Text className="text-2xl font-bold text-foreground">
+                            {selectedArtist?.name}
+                          </Text>
+                          <Text className="text-default-500">
+                            {selectedArtist?.subscribers ||
+                              (speechLang === "en-US" ? "Artist" : "សិល្បករ")}
+                          </Text>
+                        </View>
+                      </View>
+                    )}
+
+                    {((!selectedAlbum &&
+                      !selectedPlaylist &&
+                      artistTopTracks.length > 0) ||
+                      (selectedAlbum && albumTracks.length > 0) ||
+                      (selectedPlaylist && playlistTracks.length > 0)) && (
+                      <View className="mb-8">
+                        <View className="flex-row justify-between items-center mb-4">
+                          <View>
+                            <Text className="text-xl font-bold text-foreground">
+                              {selectedAlbum
+                                ? speechLang === "en-US"
+                                  ? "Tracks"
+                                  : "បទ"
+                                : selectedPlaylist
+                                ? speechLang === "en-US"
+                                  ? "Tracks"
+                                  : "បទ"
+                                : speechLang === "en-US"
+                                ? "Top Tracks"
+                                : "បទល្បីៗ"}
+                            </Text>
+                            <Text className="text-default-500 text-sm">
+                              {selectedAlbum
+                                ? speechLang === "en-US"
+                                  ? `All songs from ${selectedAlbum.title}`
+                                  : `បទទាំងអស់ពី ${selectedAlbum.title}`
+                                : selectedPlaylist
+                                ? speechLang === "en-US"
+                                  ? `All songs from ${selectedPlaylist.title}`
+                                  : `បទទាំងអស់ពី ${selectedPlaylist.title}`
+                                : speechLang === "en-US"
+                                ? `Best songs from ${selectedArtist?.name}`
+                                : `បទល្អបំផុតពី ${selectedArtist?.name}`}
+                            </Text>
+                          </View>
+                          <TouchableOpacity
+                            className="bg-primary px-4 py-2 rounded-full"
+                            onPress={() => {
+                              const tracksToPlay = selectedAlbum
+                                ? albumTracks
+                                : selectedPlaylist
+                                ? playlistTracks
+                                : artistTopTracks;
+                              if (tracksToPlay.length > 0) {
+                                void playQueue(tracksToPlay, 0).catch((e) => {
+                                  console.warn("[Home] playQueue failed", e);
+                                });
+                              }
+                            }}
                           >
-                            {album.title}
-                          </Text>
-                          <Text className="text-default-500 text-xs">
-                            {album.releaseDate?.split("-")[0] || "Album"}
-                          </Text>
-                        </TouchableOpacity>
-                      ))}
-                    </ScrollView>
+                            <Text className="text-primary-foreground font-bold">
+                              {speechLang === "en-US"
+                                ? "Play All"
+                                : "ចាក់ទាំងអស់"}
+                            </Text>
+                          </TouchableOpacity>
+                        </View>
+                      </View>
+                    )}
                   </View>
-                ) : null
-              }
-              contentContainerStyle={{
-                paddingBottom: 60,
-              }}
-            />
-          )}
-        </StyledView>
+                }
+                data={
+                  selectedAlbum
+                    ? albumTracks
+                    : selectedPlaylist
+                    ? playlistTracks
+                    : artistTopTracks
+                }
+                keyExtractor={(item: Track) => item.id}
+                renderItem={({
+                  item,
+                  index,
+                }: {
+                  item: Track;
+                  index: number;
+                }) => {
+                  const tracksToPlay = selectedAlbum
+                    ? albumTracks
+                    : selectedPlaylist
+                    ? playlistTracks
+                    : artistTopTracks;
+                  return (
+                    <View className="px-4">
+                      <TrackItem
+                        track={item}
+                        onPress={() => {
+                          void playQueue(tracksToPlay, index).catch((e) => {
+                            console.warn("[Home] playQueue failed", e);
+                          });
+                        }}
+                      />
+                    </View>
+                  );
+                }}
+                ListFooterComponent={
+                  !selectedAlbum &&
+                  !selectedPlaylist &&
+                  artistAlbums.length > 0 ? (
+                    <View className="px-4 mt-8">
+                      <Text className="text-xl font-bold text-foreground mb-4">
+                        Albums
+                      </Text>
+                      <ScrollView
+                        horizontal
+                        showsHorizontalScrollIndicator={false}
+                        className="flex-row"
+                      >
+                        {artistAlbums.map((album: any) => (
+                          <TouchableOpacity
+                            key={album.id}
+                            className="mr-4 w-32"
+                            onPress={() => {
+                              setSelectedAlbum(album);
+                            }}
+                            disabled={
+                              isAlbumLoading &&
+                              String(selectedAlbum?.id) === String(album.id)
+                            }
+                          >
+                            <View className="w-32 h-32 rounded-lg overflow-hidden bg-content3 mb-2 shadow-sm relative">
+                              <Image
+                                source={{ uri: resolveArtwork(album) }}
+                                className="w-full h-full"
+                                resizeMode="cover"
+                              />
+                              {isAlbumLoading &&
+                                String(selectedAlbum?.id) ===
+                                  String(album.id) && (
+                                  <View className="absolute inset-0 bg-black/40 items-center justify-center">
+                                    <ActivityIndicator
+                                      color="#fff"
+                                      size="small"
+                                    />
+                                  </View>
+                                )}
+                            </View>
+                            <Text
+                              className="text-foreground font-medium text-sm"
+                              numberOfLines={1}
+                            >
+                              {album.title}
+                            </Text>
+                            <Text className="text-default-500 text-xs">
+                              {album.releaseDate?.split("-")[0] || "Album"}
+                            </Text>
+                          </TouchableOpacity>
+                        ))}
+                      </ScrollView>
+                    </View>
+                  ) : null
+                }
+                contentContainerStyle={{
+                  paddingBottom: 60,
+                }}
+              />
+            )}
+          </StyledView>
+        </BottomSheetView>
       </BottomSheetModal>
 
       <BottomSheetModal
@@ -1516,135 +1554,144 @@ export default function Home() {
         handleIndicatorStyle={{ backgroundColor: "#ccc" }}
         backgroundStyle={{ backgroundColor: themeColorBackground }}
       >
-        <StyledView className="flex-1 bg-background">
-          <View className="px-4 pt-3 pb-2 flex-col items-start justify-between">
-            <View className="flex-row items-center justify-between w-full">
-              <Text className="text-xl font-bold text-foreground">
-                {speechLang === "en-US" ? "Favorites" : "ចំណូលចិត្ត"}
-              </Text>
-              <TouchableOpacity
-                className="p-2"
-                onPress={() => favoritesSheetRef.current?.dismiss()}
-              >
-                <Ionicons name="close" size={22} color={themeColorForeground} />
-              </TouchableOpacity>
-            </View>
-            <View className="flex-row gap-2 mt-2">
-              <Chip
-                variant={favViewMode === "songs" ? "primary" : "secondary"}
-                color={favViewMode === "songs" ? "accent" : "default"}
-                onPress={() => {
-                  setFavViewMode("songs");
-                  setFavArtistFilter(null);
-                }}
-              >
-                {speechLang === "en-US" ? "Songs" : "បទចម្រៀង"}
-              </Chip>
-              <Chip
-                variant={favViewMode === "artists" ? "primary" : "secondary"}
-                color={favViewMode === "artists" ? "accent" : "default"}
-                onPress={() => setFavViewMode("artists")}
-              >
-                {speechLang === "en-US" ? "Artists" : "សិល្បករ"}
-              </Chip>
-            </View>
-          </View>
-
-          {favorites.length === 0 ? (
-            <View className="flex-1 items-center justify-center px-6">
-              <Text className="text-default-500 text-center">
-                {speechLang === "en-US"
-                  ? "No favorites yet."
-                  : "មិនទាន់មានចំណូលចិត្តនៅឡើយទេ។"}
-              </Text>
-              <Text className="text-default-500 text-center mt-2">
-                {speechLang === "en-US"
-                  ? "Tap the heart in the player to save tracks."
-                  : "ចុចលើបេះដូងក្នុងកម្មវិធីចាក់ដើម្បីរក្សាទុកបទចម្រៀង។"}
-              </Text>
-            </View>
-          ) : favViewMode === "artists" ? (
-            <BottomSheetFlatList
-              data={Array.from(
-                new Set(
-                  favorites
-                    .map((t) => t.artist)
-                    .filter((a): a is string => typeof a === "string" && !!a)
-                )
-              ).sort()}
-              keyExtractor={(item: string) => item}
-              renderItem={({ item: artistName }: { item: string }) => (
+        <BottomSheetView style={{ flex: 1 }}>
+          <StyledView className="flex-1 bg-background">
+            <View className="px-4 pt-3 pb-2 flex-col items-start justify-between">
+              <View className="flex-row items-center justify-between w-full">
+                <Text className="text-xl font-bold text-foreground">
+                  {speechLang === "en-US" ? "Favorites" : "ចំណូលចិត្ត"}
+                </Text>
                 <TouchableOpacity
-                  onPress={() => {
-                    setFavArtistFilter(artistName);
-                    setFavViewMode("songs");
-                  }}
-                  className="flex-row items-center px-4 py-3 active:bg-content2"
+                  className="p-2"
+                  onPress={() => favoritesSheetRef.current?.dismiss()}
                 >
-                  <View className="w-12 h-12 rounded-full bg-content3 items-center justify-center mr-3 overflow-hidden">
-                    {/* Try to find artwork from the first track of this artist */}
-                    <Image
-                      source={{
-                        uri: resolveArtwork(
-                          favorites.find((t) => t.artist === artistName)
-                        ),
-                      }}
-                      className="w-full h-full"
-                    />
-                  </View>
-                  <View className="flex-1">
-                    <Text className="text-foreground font-medium text-lg">
-                      {artistName}
-                    </Text>
-                    <Text className="text-default-500 text-sm">
-                      {favorites.filter((t) => t.artist === artistName).length}{" "}
-                      {speechLang === "en-US" ? "songs" : "បទ"}
-                    </Text>
-                  </View>
                   <Ionicons
-                    name="chevron-forward"
-                    size={20}
+                    name="close"
+                    size={22}
                     color={themeColorForeground}
                   />
                 </TouchableOpacity>
-              )}
-              contentContainerStyle={{
-                paddingBottom: 24,
-              }}
-            />
-          ) : (
-            <>
-              {favArtistFilter && (
-                <View className="px-4 py-2 flex-row items-center">
-                  <Text className="text-foreground text-sm mr-2">
-                    {speechLang === "en-US" ? "Filtered by: " : "ត្រងដោយ៖ "}
-                    <Text className="font-bold">{favArtistFilter}</Text>
-                  </Text>
-                  <TouchableOpacity onPress={() => setFavArtistFilter(null)}>
+              </View>
+              <View className="flex-row gap-2 mt-2">
+                <Chip
+                  variant={favViewMode === "songs" ? "primary" : "secondary"}
+                  color={favViewMode === "songs" ? "accent" : "default"}
+                  onPress={() => {
+                    setFavViewMode("songs");
+                    setFavArtistFilter(null);
+                  }}
+                >
+                  {speechLang === "en-US" ? "Songs" : "បទចម្រៀង"}
+                </Chip>
+                <Chip
+                  variant={favViewMode === "artists" ? "primary" : "secondary"}
+                  color={favViewMode === "artists" ? "accent" : "default"}
+                  onPress={() => setFavViewMode("artists")}
+                >
+                  {speechLang === "en-US" ? "Artists" : "សិល្បករ"}
+                </Chip>
+              </View>
+            </View>
+
+            {favorites.length === 0 ? (
+              <View className="flex-1 items-center justify-center px-6">
+                <Text className="text-default-500 text-center">
+                  {speechLang === "en-US"
+                    ? "No favorites yet."
+                    : "មិនទាន់មានចំណូលចិត្តនៅឡើយទេ។"}
+                </Text>
+                <Text className="text-default-500 text-center mt-2">
+                  {speechLang === "en-US"
+                    ? "Tap the heart in the player to save tracks."
+                    : "ចុចលើបេះដូងក្នុងកម្មវិធីចាក់ដើម្បីរក្សាទុកបទចម្រៀង។"}
+                </Text>
+              </View>
+            ) : favViewMode === "artists" ? (
+              <BottomSheetFlatList
+                data={Array.from(
+                  new Set(
+                    favorites
+                      .map((t) => t.artist)
+                      .filter((a): a is string => typeof a === "string" && !!a)
+                  )
+                ).sort()}
+                keyExtractor={(item: string) => item}
+                renderItem={({ item: artistName }: { item: string }) => (
+                  <TouchableOpacity
+                    onPress={() => {
+                      setFavArtistFilter(artistName);
+                      setFavViewMode("songs");
+                    }}
+                    className="flex-row items-center px-4 py-3 active:bg-content2"
+                  >
+                    <View className="w-12 h-12 rounded-full bg-content3 items-center justify-center mr-3 overflow-hidden">
+                      {/* Try to find artwork from the first track of this artist */}
+                      <Image
+                        source={{
+                          uri: resolveArtwork(
+                            favorites.find((t) => t.artist === artistName)
+                          ),
+                        }}
+                        className="w-full h-full"
+                      />
+                    </View>
+                    <View className="flex-1">
+                      <Text className="text-foreground font-medium text-lg">
+                        {artistName}
+                      </Text>
+                      <Text className="text-default-500 text-sm">
+                        {
+                          favorites.filter((t) => t.artist === artistName)
+                            .length
+                        }{" "}
+                        {speechLang === "en-US" ? "songs" : "បទ"}
+                      </Text>
+                    </View>
                     <Ionicons
-                      name="close-circle"
-                      size={18}
+                      name="chevron-forward"
+                      size={20}
                       color={themeColorForeground}
                     />
                   </TouchableOpacity>
-                </View>
-              )}
-              <BottomSheetFlatList
-                data={
-                  favArtistFilter
-                    ? favorites.filter((t) => t.artist === favArtistFilter)
-                    : favorites
-                }
-                keyExtractor={(item: SavedTrack) => item.id}
-                renderItem={renderSavedItem}
+                )}
                 contentContainerStyle={{
-                  paddingHorizontal: 16,
                   paddingBottom: 24,
                 }}
               />
-            </>
-          )}
-        </StyledView>
+            ) : (
+              <>
+                {favArtistFilter && (
+                  <View className="px-4 py-2 flex-row items-center">
+                    <Text className="text-foreground text-sm mr-2">
+                      {speechLang === "en-US" ? "Filtered by: " : "ត្រងដោយ៖ "}
+                      <Text className="font-bold">{favArtistFilter}</Text>
+                    </Text>
+                    <TouchableOpacity onPress={() => setFavArtistFilter(null)}>
+                      <Ionicons
+                        name="close-circle"
+                        size={18}
+                        color={themeColorForeground}
+                      />
+                    </TouchableOpacity>
+                  </View>
+                )}
+                <BottomSheetFlatList
+                  data={
+                    favArtistFilter
+                      ? favorites.filter((t) => t.artist === favArtistFilter)
+                      : favorites
+                  }
+                  keyExtractor={(item: SavedTrack) => item.id}
+                  renderItem={renderSavedItem}
+                  contentContainerStyle={{
+                    paddingHorizontal: 16,
+                    paddingBottom: 24,
+                  }}
+                />
+              </>
+            )}
+          </StyledView>
+        </BottomSheetView>
       </BottomSheetModal>
 
       <BottomSheetModal
@@ -1659,181 +1706,198 @@ export default function Home() {
         handleIndicatorStyle={{ backgroundColor: "#ccc" }}
         backgroundStyle={{ backgroundColor: themeColorBackground }}
       >
-        <StyledBottomSheetView className="flex-1 bg-background">
-          <View className="px-4 pt-3 pb-2 flex-row items-center justify-between">
-            <Text className="text-xl font-bold text-foreground">
-              {speechLang === "en-US" ? "Settings" : "ការកំណត់"}
-            </Text>
-            <TouchableOpacity
-              className="p-2"
-              onPress={() => settingsSheetRef.current?.dismiss()}
-            >
-              <Ionicons name="close" size={22} color={themeColorForeground} />
-            </TouchableOpacity>
-          </View>
+        <BottomSheetView style={{ flex: 1 }}>
+          <View className="flex-1 bg-background">
+            <View className="px-4 pt-3 pb-2 flex-row items-center justify-between">
+              <Text className="text-xl font-bold text-foreground">
+                {speechLang === "en-US" ? "Settings" : "ការកំណត់"}
+              </Text>
+              <TouchableOpacity
+                className="p-2"
+                onPress={() => settingsSheetRef.current?.dismiss()}
+              >
+                <Ionicons name="close" size={22} color={themeColorForeground} />
+              </TouchableOpacity>
+            </View>
 
-          <View className="px-4 pt-2">
-            {isPwaSupported && (
-              <>
-                <View className="flex-row items-center justify-between py-3 border-b border-default-200">
-                  <Text className="text-base text-foreground font-medium">
-                    {speechLang === "en-US"
-                      ? "Offline Ready"
-                      : "ការប្រើប្រាស់ក្រៅបណ្តាញ"}
-                  </Text>
-                  <View className="flex-row items-center">
-                    <Ionicons
-                      name="cloud-done-outline"
-                      size={20}
-                      color="#17c964"
-                      style={{ marginRight: 6 }}
-                    />
-                    <Text className="text-[#17c964] font-medium text-sm">
-                      {speechLang === "en-US" ? "Active" : "សកម្ម"}
-                    </Text>
-                  </View>
-                </View>
-
-                <View className="py-3 border-b border-default-200">
-                  <View className="flex-row items-center justify-between">
+            <View className="px-4 pt-2">
+              {isPwaSupported && (
+                <>
+                  <View className="flex-row items-center justify-between py-3 border-b border-default-200">
                     <Text className="text-base text-foreground font-medium">
-                      {speechLang === "en-US" ? "Audio cache" : "ឃ្លាំងសម្ងាត់បទចម្រៀង"}
+                      {speechLang === "en-US"
+                        ? "Offline Ready"
+                        : "ការប្រើប្រាស់ក្រៅបណ្តាញ"}
                     </Text>
-                    <Text className="text-default-500 text-sm">
-                      {audioCacheTrackCount} {speechLang === "en-US" ? "tracks" : "បទ"}
-                    </Text>
+                    <View className="flex-row items-center">
+                      <Ionicons
+                        name="cloud-done-outline"
+                        size={20}
+                        color="#17c964"
+                        style={{ marginRight: 6 }}
+                      />
+                      <Text className="text-[#17c964] font-medium text-sm">
+                        {speechLang === "en-US" ? "Active" : "សកម្ម"}
+                      </Text>
+                    </View>
                   </View>
-                  {typeof audioCacheEstimate?.usage === "number" &&
-                    typeof audioCacheEstimate?.quota === "number" && (
-                      <Text className="text-default-500 text-sm mt-1">
-                        {formatBytes(audioCacheEstimate.usage)} / {formatBytes(audioCacheEstimate.quota)}
+
+                  <View className="py-3 border-b border-default-200">
+                    <View className="flex-row items-center justify-between">
+                      <Text className="text-base text-foreground font-medium">
+                        {speechLang === "en-US"
+                          ? "Audio cache"
+                          : "ឃ្លាំងសម្ងាត់បទចម្រៀង"}
+                      </Text>
+                      <Text className="text-default-500 text-sm">
+                        {audioCacheTrackCount}{" "}
+                        {speechLang === "en-US" ? "tracks" : "បទ"}
+                      </Text>
+                    </View>
+                    {typeof audioCacheEstimate?.usage === "number" &&
+                      typeof audioCacheEstimate?.quota === "number" && (
+                        <Text className="text-default-500 text-sm mt-1">
+                          {formatBytes(audioCacheEstimate.usage)} /{" "}
+                          {formatBytes(audioCacheEstimate.quota)}
+                        </Text>
+                      )}
+                    {currentTrack && currentAudioCacheProgress && (
+                      <Text
+                        className="text-default-500 text-sm mt-1"
+                        numberOfLines={1}
+                      >
+                        {speechLang === "en-US"
+                          ? `Caching: ${currentTrack.title} (+${Math.floor(
+                              currentAudioCacheProgress.cachedSecondsAhead
+                            )}s)`
+                          : `កំពុងរក្សាទុក៖ ${
+                              currentTrack.title
+                            } (+${Math.floor(
+                              currentAudioCacheProgress.cachedSecondsAhead
+                            )}វិនាទី)`}
                       </Text>
                     )}
-                  {currentTrack && currentAudioCacheProgress && (
-                    <Text className="text-default-500 text-sm mt-1" numberOfLines={1}>
+                  </View>
+
+                  <TouchableOpacity
+                    className="flex-row items-center justify-between py-3 border-b border-default-200 active:opacity-70"
+                    onPress={handleClearCache}
+                  >
+                    <Text className="text-base text-red-500 font-medium">
                       {speechLang === "en-US"
-                        ? `Caching: ${currentTrack.title} (+${Math.floor(currentAudioCacheProgress.cachedSecondsAhead)}s)`
-                        : `កំពុងរក្សាទុក៖ ${currentTrack.title} (+${Math.floor(currentAudioCacheProgress.cachedSecondsAhead)}វិនាទី)`}
+                        ? "Clear audio cache"
+                        : "សម្អាតឃ្លាំងសម្ងាត់បទចម្រៀង"}
                     </Text>
-                  )}
+                    <Ionicons name="trash-outline" size={20} color="#ef4444" />
+                  </TouchableOpacity>
+                </>
+              )}
+
+              <View className="flex-row items-center justify-between py-3 border-b border-default-200">
+                <Text className="text-base text-foreground font-medium">
+                  {speechLang === "en-US" ? "Dark mode" : "មុខងារងងឹត"}
+                </Text>
+                <Switch
+                  value={isDark}
+                  onValueChange={(next: boolean) =>
+                    setTheme(next ? "dark" : "light")
+                  }
+                />
+              </View>
+
+              <View className="py-4 border-b border-default-200">
+                <View className="flex-row items-center justify-between mb-3">
+                  <Text className="text-base text-foreground font-medium">
+                    {speechLang === "en-US"
+                      ? "Streaming quality"
+                      : "គុណភាពការចាក់"}
+                  </Text>
+                  <Text className="text-default-500">{quality}</Text>
+                </View>
+                <View className="flex-row flex-wrap">
+                  {qualityOptions.map((option) => {
+                    const selected = option.value === quality;
+                    return (
+                      <Chip
+                        key={option.value}
+                        onPress={() => setQuality(option.value)}
+                        color={selected ? "accent" : "default"}
+                        variant={selected ? "primary" : "secondary"}
+                        className="mr-2 mb-2"
+                      >
+                        <StyledText
+                          className={
+                            selected
+                              ? "text-accent-foreground font-medium"
+                              : "text-default-600"
+                          }
+                        >
+                          {option.label}
+                        </StyledText>
+                      </Chip>
+                    );
+                  })}
+                </View>
+              </View>
+
+              <View className="py-4">
+                <View className="flex-row items-center justify-between mb-3">
+                  <Text className="text-base text-foreground font-medium">
+                    {speechLang === "en-US" ? "Sleep timer" : "កំណត់ពេលបិទ"}
+                  </Text>
+                  <Text className="text-default-500">
+                    {formattedSleepRemaining}
+                  </Text>
                 </View>
 
-                <TouchableOpacity
-                  className="flex-row items-center justify-between py-3 border-b border-default-200 active:opacity-70"
-                  onPress={handleClearCache}
-                >
-                  <Text className="text-base text-red-500 font-medium">
-                    {speechLang === "en-US"
-                      ? "Clear audio cache"
-                      : "សម្អាតឃ្លាំងសម្ងាត់បទចម្រៀង"}
-                  </Text>
-                  <Ionicons name="trash-outline" size={20} color="#ef4444" />
-                </TouchableOpacity>
-              </>
-            )}
-
-            <View className="flex-row items-center justify-between py-3 border-b border-default-200">
-              <Text className="text-base text-foreground font-medium">
-                {speechLang === "en-US" ? "Dark mode" : "មុខងារងងឹត"}
-              </Text>
-              <Switch
-                value={isDark}
-                onValueChange={(next) => setTheme(next ? "dark" : "light")}
-              />
-            </View>
-
-            <View className="py-4 border-b border-default-200">
-              <View className="flex-row items-center justify-between mb-3">
-                <Text className="text-base text-foreground font-medium">
-                  {speechLang === "en-US"
-                    ? "Streaming quality"
-                    : "គុណភាពការចាក់"}
-                </Text>
-                <Text className="text-default-500">{quality}</Text>
-              </View>
-              <View className="flex-row flex-wrap">
-                {qualityOptions.map((option) => {
-                  const selected = option.value === quality;
-                  return (
-                    <Chip
-                      key={option.value}
-                      onPress={() => setQuality(option.value)}
-                      color={selected ? "accent" : "default"}
-                      variant={selected ? "primary" : "secondary"}
-                      className="mr-2 mb-2"
-                    >
-                      <StyledText
-                        className={
-                          selected
-                            ? "text-accent-foreground font-medium"
-                            : "text-default-600"
-                        }
-                      >
-                        {option.label}
-                      </StyledText>
-                    </Chip>
-                  );
-                })}
-              </View>
-            </View>
-
-            <View className="py-4">
-              <View className="flex-row items-center justify-between mb-3">
-                <Text className="text-base text-foreground font-medium">
-                  {speechLang === "en-US" ? "Sleep timer" : "កំណត់ពេលបិទ"}
-                </Text>
-                <Text className="text-default-500">
-                  {formattedSleepRemaining}
-                </Text>
-              </View>
-
-              <View className="flex-row flex-wrap">
-                <Chip
-                  onPress={() => startSleepTimer(10)}
-                  className="mr-2 mb-2 bg-default-200"
-                >
-                  <Text className="text-foreground">
-                    {speechLang === "en-US" ? "10m" : "10នាទី"}
-                  </Text>
-                </Chip>
-                <Chip
-                  onPress={() => startSleepTimer(20)}
-                  className="mr-2 mb-2 bg-default-200"
-                >
-                  <Text className="text-foreground">
-                    {speechLang === "en-US" ? "20m" : "20នាទី"}
-                  </Text>
-                </Chip>
-                <Chip
-                  onPress={() => startSleepTimer(30)}
-                  className="mr-2 mb-2 bg-default-200"
-                >
-                  <Text className="text-foreground">
-                    {speechLang === "en-US" ? "30m" : "30នាទី"}
-                  </Text>
-                </Chip>
-                <Chip
-                  onPress={() => startSleepTimer(60)}
-                  className="mr-2 mb-2 bg-default-200"
-                >
-                  <Text className="text-foreground">
-                    {speechLang === "en-US" ? "1h" : "1ម៉ោង"}
-                  </Text>
-                </Chip>
-                {sleepTimerEndsAt ? (
+                <View className="flex-row flex-wrap">
                   <Chip
-                    onPress={cancelSleepTimer}
+                    onPress={() => startSleepTimer(10)}
                     className="mr-2 mb-2 bg-default-200"
                   >
                     <Text className="text-foreground">
-                      {speechLang === "en-US" ? "Off" : "បិទ"}
+                      {speechLang === "en-US" ? "10m" : "10នាទី"}
                     </Text>
                   </Chip>
-                ) : null}
+                  <Chip
+                    onPress={() => startSleepTimer(20)}
+                    className="mr-2 mb-2 bg-default-200"
+                  >
+                    <Text className="text-foreground">
+                      {speechLang === "en-US" ? "20m" : "20នាទី"}
+                    </Text>
+                  </Chip>
+                  <Chip
+                    onPress={() => startSleepTimer(30)}
+                    className="mr-2 mb-2 bg-default-200"
+                  >
+                    <Text className="text-foreground">
+                      {speechLang === "en-US" ? "30m" : "30នាទី"}
+                    </Text>
+                  </Chip>
+                  <Chip
+                    onPress={() => startSleepTimer(60)}
+                    className="mr-2 mb-2 bg-default-200"
+                  >
+                    <Text className="text-foreground">
+                      {speechLang === "en-US" ? "1h" : "1ម៉ោង"}
+                    </Text>
+                  </Chip>
+                  {sleepTimerEndsAt ? (
+                    <Chip
+                      onPress={cancelSleepTimer}
+                      className="mr-2 mb-2 bg-default-200"
+                    >
+                      <Text className="text-foreground">
+                        {speechLang === "en-US" ? "Off" : "បិទ"}
+                      </Text>
+                    </Chip>
+                  ) : null}
+                </View>
               </View>
             </View>
           </View>
-        </StyledBottomSheetView>
+        </BottomSheetView>
       </BottomSheetModal>
 
       <BottomSheetModal
@@ -1848,120 +1912,124 @@ export default function Home() {
         handleIndicatorStyle={{ backgroundColor: "#ccc" }}
         backgroundStyle={{ backgroundColor: themeColorBackground }}
       >
-        <StyledBottomSheetView className="flex-1 bg-background px-4">
-          <View className="pt-3 pb-4 flex-row items-center justify-between">
-            <View className="flex-row items-center">
-              <Ionicons name="sparkles" size={20} color="#007AFF" />
-              <Text className="text-xl font-bold text-foreground ml-2">
-                {speechLang === "en-US" ? "AI Assistant" : "ជំនួយការ AI"}
-              </Text>
+        <BottomSheetView style={{ flex: 1 }}>
+          <View className="flex-1 bg-background px-4">
+            <View className="pt-3 pb-4 flex-row items-center justify-between">
+              <View className="flex-row items-center">
+                <Ionicons name="sparkles" size={20} color="#007AFF" />
+                <Text className="text-xl font-bold text-foreground ml-2">
+                  {speechLang === "en-US" ? "AI Assistant" : "ជំនួយការ AI"}
+                </Text>
+              </View>
+              <TouchableOpacity
+                className="p-2"
+                onPress={() => aiHelpSheetRef.current?.dismiss()}
+              >
+                <Ionicons name="close" size={22} color={themeColorForeground} />
+              </TouchableOpacity>
             </View>
-            <TouchableOpacity
-              className="p-2"
-              onPress={() => aiHelpSheetRef.current?.dismiss()}
-            >
-              <Ionicons name="close" size={22} color={themeColorForeground} />
-            </TouchableOpacity>
+
+            <StyledScrollView showsVerticalScrollIndicator={false}>
+              <View className="mb-6">
+                <Text className="text-default-500 text-sm mb-4">
+                  {speechLang === "en-US"
+                    ? "You can control HiFi Flow using natural voice commands. Tap the sparkle icon to start listening."
+                    : "អ្នកអាចបញ្ជា HiFi Flow ដោយប្រើសំឡេង។ ចុចលើរូបផ្កាយដើម្បីចាប់ផ្តើម។"}
+                </Text>
+
+                <View className="bg-content2 rounded-2xl p-4 mb-4">
+                  <Text className="text-foreground font-bold mb-3">
+                    {speechLang === "en-US"
+                      ? "Playback Controls"
+                      : "ការគ្រប់គ្រងការចាក់"}
+                  </Text>
+                  <View className="space-y-2">
+                    <Text className="text-default-600 text-sm">
+                      •{" "}
+                      {speechLang === "en-US"
+                        ? '"Pause the music" or "Stop"'
+                        : '"ផ្អាកតន្ត្រី" ឬ "ឈប់"'}
+                    </Text>
+                    <Text className="text-default-600 text-sm">
+                      •{" "}
+                      {speechLang === "en-US"
+                        ? '"Play", "Resume", or "Continue"'
+                        : '"ចាក់" ឬ "បន្ត"'}
+                    </Text>
+                    <Text className="text-default-600 text-sm">
+                      •{" "}
+                      {speechLang === "en-US"
+                        ? '"Next song" or "Skip this"'
+                        : '"បទបន្ទាប់" ឬ "រំលង"'}
+                    </Text>
+                    <Text className="text-default-600 text-sm">
+                      •{" "}
+                      {speechLang === "en-US"
+                        ? '"Previous track" or "Go back"'
+                        : '"បទមុន" ឬ "ត្រឡប់ក្រោយ"'}
+                    </Text>
+                  </View>
+                </View>
+
+                <View className="bg-content2 rounded-2xl p-4 mb-4">
+                  <Text className="text-foreground font-bold mb-3">
+                    {speechLang === "en-US"
+                      ? "Search & Discovery"
+                      : "ការស្វែងរក"}
+                  </Text>
+                  <View className="space-y-2">
+                    <Text className="text-default-600 text-sm">
+                      •{" "}
+                      {speechLang === "en-US"
+                        ? '"Search for Vannda"'
+                        : '"ស្វែងរក Vannda"'}
+                    </Text>
+                    <Text className="text-default-600 text-sm">
+                      •{" "}
+                      {speechLang === "en-US"
+                        ? '"Play and search for Lo-fi beats"'
+                        : '"ចាក់ និងស្វែងរក Lo-fi beats"'}
+                    </Text>
+                    <Text className="text-default-600 text-sm">
+                      •{" "}
+                      {speechLang === "en-US"
+                        ? '"Switch filter to artists"'
+                        : '"ប្តូរទៅតម្រងសិល្បករ"'}
+                    </Text>
+                    <Text className="text-default-600 text-sm">
+                      •{" "}
+                      {speechLang === "en-US"
+                        ? '"Refresh suggested artists"'
+                        : '"ផ្ទុកសិល្បករដែលបានណែនាំឡើងវិញ"'}
+                    </Text>
+                  </View>
+                </View>
+
+                <View className="bg-content2 rounded-2xl p-4">
+                  <Text className="text-foreground font-bold mb-3">
+                    {speechLang === "en-US"
+                      ? "System Settings"
+                      : "ការកំណត់ប្រព័ន្ធ"}
+                  </Text>
+                  <View className="space-y-2">
+                    <Text className="text-default-600 text-sm">
+                      •{" "}
+                      {speechLang === "en-US"
+                        ? '"Turn on dark mode"'
+                        : '"បើកមុខងារងងឹត"'}
+                    </Text>
+                    <Text className="text-default-600 text-sm">
+                      •{" "}
+                      {speechLang === "en-US"
+                        ? '"Switch to light theme"'
+                        : '"ប្តូរទៅស្បែកភ្លឺ"'}
+                    </Text>
+                  </View>
+                </View>
+              </View>
+            </StyledScrollView>
           </View>
-
-          <StyledScrollView showsVerticalScrollIndicator={false}>
-            <View className="mb-6">
-              <Text className="text-default-500 text-sm mb-4">
-                {speechLang === "en-US"
-                  ? "You can control HiFi Flow using natural voice commands. Tap the sparkle icon to start listening."
-                  : "អ្នកអាចបញ្ជា HiFi Flow ដោយប្រើសំឡេង។ ចុចលើរូបផ្កាយដើម្បីចាប់ផ្តើម។"}
-              </Text>
-
-              <View className="bg-content2 rounded-2xl p-4 mb-4">
-                <Text className="text-foreground font-bold mb-3">
-                  {speechLang === "en-US"
-                    ? "Playback Controls"
-                    : "ការគ្រប់គ្រងការចាក់"}
-                </Text>
-                <View className="space-y-2">
-                  <Text className="text-default-600 text-sm">
-                    •{" "}
-                    {speechLang === "en-US"
-                      ? '"Pause the music" or "Stop"'
-                      : '"ផ្អាកតន្ត្រី" ឬ "ឈប់"'}
-                  </Text>
-                  <Text className="text-default-600 text-sm">
-                    •{" "}
-                    {speechLang === "en-US"
-                      ? '"Play", "Resume", or "Continue"'
-                      : '"ចាក់" ឬ "បន្ត"'}
-                  </Text>
-                  <Text className="text-default-600 text-sm">
-                    •{" "}
-                    {speechLang === "en-US"
-                      ? '"Next song" or "Skip this"'
-                      : '"បទបន្ទាប់" ឬ "រំលង"'}
-                  </Text>
-                  <Text className="text-default-600 text-sm">
-                    •{" "}
-                    {speechLang === "en-US"
-                      ? '"Previous track" or "Go back"'
-                      : '"បទមុន" ឬ "ត្រឡប់ក្រោយ"'}
-                  </Text>
-                </View>
-              </View>
-
-              <View className="bg-content2 rounded-2xl p-4 mb-4">
-                <Text className="text-foreground font-bold mb-3">
-                  {speechLang === "en-US" ? "Search & Discovery" : "ការស្វែងរក"}
-                </Text>
-                <View className="space-y-2">
-                  <Text className="text-default-600 text-sm">
-                    •{" "}
-                    {speechLang === "en-US"
-                      ? '"Search for Vannda"'
-                      : '"ស្វែងរក Vannda"'}
-                  </Text>
-                  <Text className="text-default-600 text-sm">
-                    •{" "}
-                    {speechLang === "en-US"
-                      ? '"Play and search for Lo-fi beats"'
-                      : '"ចាក់ និងស្វែងរក Lo-fi beats"'}
-                  </Text>
-                  <Text className="text-default-600 text-sm">
-                    •{" "}
-                    {speechLang === "en-US"
-                      ? '"Switch filter to artists"'
-                      : '"ប្តូរទៅតម្រងសិល្បករ"'}
-                  </Text>
-                  <Text className="text-default-600 text-sm">
-                    •{" "}
-                    {speechLang === "en-US"
-                      ? '"Refresh suggested artists"'
-                      : '"ផ្ទុកសិល្បករដែលបានណែនាំឡើងវិញ"'}
-                  </Text>
-                </View>
-              </View>
-
-              <View className="bg-content2 rounded-2xl p-4">
-                <Text className="text-foreground font-bold mb-3">
-                  {speechLang === "en-US"
-                    ? "System Settings"
-                    : "ការកំណត់ប្រព័ន្ធ"}
-                </Text>
-                <View className="space-y-2">
-                  <Text className="text-default-600 text-sm">
-                    •{" "}
-                    {speechLang === "en-US"
-                      ? '"Turn on dark mode"'
-                      : '"បើកមុខងារងងឹត"'}
-                  </Text>
-                  <Text className="text-default-600 text-sm">
-                    •{" "}
-                    {speechLang === "en-US"
-                      ? '"Switch to light theme"'
-                      : '"ប្តូរទៅស្បែកភ្លឺ"'}
-                  </Text>
-                </View>
-              </View>
-            </View>
-          </StyledScrollView>
-        </StyledBottomSheetView>
+        </BottomSheetView>
       </BottomSheetModal>
     </StyledSafeAreaView>
   );

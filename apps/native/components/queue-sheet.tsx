@@ -4,6 +4,7 @@ import {
   type BottomSheetBackdropProps,
   BottomSheetFlatList,
   BottomSheetModal,
+  BottomSheetView,
 } from "@gorhom/bottom-sheet";
 import { BlurView } from "expo-blur";
 import {
@@ -169,10 +170,6 @@ export const QueueSheet = forwardRef<QueueSheetRef, QueueSheetProps>(
 
     // Handle clearing input when closed
     useEffect(() => {
-      if (artistFilter && viewMode === "songs") {
-        // If we have an active filter, don't clear it on re-render unless explicitly cleared?
-        // Actually this useEffect runs on mount (empty deps).
-      }
       return () => {
         setSearchQuery("");
         setViewMode("songs");
@@ -191,16 +188,17 @@ export const QueueSheet = forwardRef<QueueSheetRef, QueueSheetProps>(
 
     useImperativeHandle(ref, () => ({ open, close }), [open, close]);
 
-    const renderBackdrop = useCallback(
-      (props: BottomSheetBackdropProps) => (
-        <BottomSheetBackdrop
-          {...props}
-          opacity={0.5}
-          appearsOnIndex={0}
-          disappearsOnIndex={-1}
-          pressBehavior="close"
-        />
-      ),
+    const renderBackdrop = useMemo(
+      () =>
+        forwardRef<unknown, BottomSheetBackdropProps>((props, _ref) => (
+          <BottomSheetBackdrop
+            {...props}
+            opacity={0.5}
+            appearsOnIndex={0}
+            disappearsOnIndex={-1}
+            pressBehavior="close"
+          />
+        )),
       []
     );
 
@@ -208,7 +206,9 @@ export const QueueSheet = forwardRef<QueueSheetRef, QueueSheetProps>(
       (index: number) => {
         if (queue[index]) {
           // Play from this position in queue
-          void playQueue([queue[index]], 0);
+          void playQueue([queue[index]], 0).catch((e) => {
+            console.warn("[QueueSheet] playQueue failed", e);
+          });
         }
       },
       [queue, playQueue]
@@ -540,14 +540,15 @@ export const QueueSheet = forwardRef<QueueSheetRef, QueueSheetProps>(
         }}
         onDismiss={onClose}
       >
-        <BlurView
-          intensity={Platform.OS === "ios" ? 80 : 0}
-          tint="dark"
-          style={{
-            flex: 1,
-            backgroundColor: Platform.OS === "ios" ? undefined : "#0a0a0a",
-          }}
-        >
+        <BottomSheetView style={{ flex: 1 }}>
+          <BlurView
+            intensity={Platform.OS === "ios" ? 80 : 0}
+            tint="dark"
+            style={{
+              flex: 1,
+              backgroundColor: Platform.OS === "ios" ? undefined : "#0a0a0a",
+            }}
+          >
           {/* Fixed Header - Always visible at top */}
           <View
             style={{
@@ -881,7 +882,8 @@ export const QueueSheet = forwardRef<QueueSheetRef, QueueSheetProps>(
               </View>
             </View>
           )}
-        </BlurView>
+          </BlurView>
+        </BottomSheetView>
       </BottomSheetModal>
     );
   }

@@ -21,6 +21,7 @@ const WINDOW_AHEAD_SEC = 60;
 const CACHE_VERSION = "v2";
 const META_CACHE_NAME = `hififlow-audio-meta-${CACHE_VERSION}`;
 const CHUNK_CACHE_NAME = `hififlow-audio-chunks-${CACHE_VERSION}`;
+const AUDIO_STREAM_PATH = "/__hififlow_audio_stream";
 
 const progressByUrl = new Map<string, AudioCacheProgress>();
 const urlListeners = new Set<(url: string) => void>();
@@ -73,6 +74,16 @@ function initServiceWorkerListeners() {
       });
     }
   });
+}
+
+function canUseAudioStreamProxy() {
+  if (typeof navigator === "undefined") return false;
+  if (!("serviceWorker" in navigator)) return false;
+  return Boolean(navigator.serviceWorker.controller);
+}
+
+function buildStreamProxyUrl(url: string) {
+  return `${AUDIO_STREAM_PATH}?u=${encodeURIComponent(url)}`;
 }
 
 async function postToServiceWorker(message: any) {
@@ -207,6 +218,9 @@ export class ChunkedAudioLoader {
       url: this.url,
       positionSec: 0,
     });
+    if (canUseAudioStreamProxy()) {
+      return buildStreamProxyUrl(this.url);
+    }
     return this.url;
   }
 
