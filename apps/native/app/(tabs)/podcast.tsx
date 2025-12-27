@@ -21,7 +21,7 @@ export default function PodcastScreen() {
         <StyledText className="text-xl font-bold text-foreground mt-4">
           Coming Soon
         </StyledText>
-        <StyledText className="text-default-500 text-center mt-2">
+        <StyledText className="text-foreground opacity-60 text-center mt-2">
           We're working hard to bring podcasts to HiFi Flow. Stay tuned!
         </StyledText>
       </StyledView>

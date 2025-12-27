@@ -66,7 +66,8 @@ export default function PlaylistScreen() {
 
   const tracks = useMemo<Track[]>(() => {
     return items.map((item, index) => {
-      const resolvedId = item.id || item.videoId || `playlist-${String(id)}-${index}`;
+      const resolvedId =
+        item.id || item.videoId || `playlist-${String(id)}-${index}`;
       return {
         id: String(resolvedId),
         title: item.title || item.name || "Unknown Title",
@@ -116,7 +117,7 @@ export default function PlaylistScreen() {
           {title}
         </StyledText>
         {description ? (
-          <StyledText className="text-default-500" numberOfLines={2}>
+          <StyledText className="text-foreground opacity-60" numberOfLines={2}>
             {description}
           </StyledText>
         ) : null}
@@ -130,7 +131,7 @@ export default function PlaylistScreen() {
         </StyledView>
       ) : error ? (
         <StyledView className="flex-1 justify-center items-center px-4">
-          <StyledText className="text-default-500 text-center">
+          <StyledText className="text-foreground opacity-60 text-center">
             Unable to load playlist.
           </StyledText>
         </StyledView>

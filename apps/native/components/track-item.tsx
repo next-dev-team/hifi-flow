@@ -247,8 +247,8 @@ export const TrackItem: React.FC<TrackItemProps> = ({
             <Text
               className={`text-[13px] shrink ${
                 isActive
-                  ? "text-default-500 dark:text-white/60"
-                  : "text-default-500"
+                  ? "text-foreground opacity-70"
+                  : "text-foreground opacity-60"
               }`}
               numberOfLines={1}
             >

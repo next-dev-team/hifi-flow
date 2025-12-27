@@ -35,7 +35,7 @@ export const PlaylistCard: React.FC<PlaylistCardProps> = ({ playlist, onPress, i
         >
           {playlist.title}
         </Text>
-        <Text className="text-default-500 text-[11px] font-medium" numberOfLines={1}>
+        <Text className="text-foreground opacity-60 text-[11px] font-medium" numberOfLines={1}>
           {playlist.creator ? `By ${playlist.creator}` : "Playlist"}
         </Text>
       </View>

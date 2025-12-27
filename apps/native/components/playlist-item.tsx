@@ -45,13 +45,13 @@ export const PlaylistItem: React.FC<PlaylistItemProps> = ({ playlist, onPress, i
           >
             {playlist.title}
           </Text>
-          <Text className="text-default-500 text-sm" numberOfLines={1}>
+          <Text className="text-foreground opacity-60 text-sm" numberOfLines={1}>
             {playlist.creator ? `By ${playlist.creator}` : "Playlist"}
              {playlist.trackCount ? ` • ${playlist.trackCount} tracks` : ""}
           </Text>
         </View>
         <View className="px-2">
-          <Text className="text-default-400">›</Text>
+          <Text className="text-foreground opacity-50">›</Text>
         </View>
       </Card>
     </TouchableOpacity>

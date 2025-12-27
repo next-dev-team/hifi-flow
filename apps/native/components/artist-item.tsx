@@ -52,7 +52,7 @@ export const ArtistItem: React.FC<ArtistItemProps> = ({ artist, onPress, isLoadi
       >
         {artist.name}
       </Text>
-      <Text className="text-default-500 text-[12px] font-medium text-center">
+      <Text className="text-foreground opacity-60 text-[12px] font-medium text-center">
         {artist.subscribers || "Artist"}
       </Text>
     </TouchableOpacity>

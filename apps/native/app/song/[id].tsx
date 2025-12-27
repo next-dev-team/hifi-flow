@@ -54,7 +54,7 @@ export default function SongPage() {
   if (!trackDetails && !id.startsWith("saved:")) {
     return (
       <StyledView className="flex-1 justify-center items-center bg-background px-4">
-        <StyledText className="text-default-500 text-center">
+        <StyledText className="text-foreground opacity-60 text-center">
           Unable to load track details.
         </StyledText>
       </StyledView>
@@ -142,8 +142,10 @@ export default function SongPage() {
             >
               {title}
             </Text>
-            <Text className="text-xl text-default-500 mb-1">{artist}</Text>
-            <Text className="text-sm text-default-400">{album}</Text>
+            <Text className="text-xl text-foreground opacity-70 mb-1">
+              {artist}
+            </Text>
+            <Text className="text-sm text-foreground opacity-50">{album}</Text>
           </View>
 
           {/* Controls */}
@@ -178,19 +180,27 @@ export default function SongPage() {
           <View className="flex-row justify-between px-4">
             <TouchableOpacity className="items-center">
               <Ionicons name="heart-outline" size={28} color="#94a3b8" />
-              <Text className="text-xs text-default-400 mt-1">Like</Text>
+              <Text className="text-xs text-foreground opacity-50 mt-1">
+                Like
+              </Text>
             </TouchableOpacity>
             <TouchableOpacity className="items-center">
               <Ionicons name="add-circle-outline" size={28} color="#94a3b8" />
-              <Text className="text-xs text-default-400 mt-1">Playlist</Text>
+              <Text className="text-xs text-foreground opacity-50 mt-1">
+                Playlist
+              </Text>
             </TouchableOpacity>
             <TouchableOpacity className="items-center">
               <Ionicons name="share-outline" size={28} color="#94a3b8" />
-              <Text className="text-xs text-default-400 mt-1">Share</Text>
+              <Text className="text-xs text-foreground opacity-50 mt-1">
+                Share
+              </Text>
             </TouchableOpacity>
             <TouchableOpacity className="items-center" onPress={handleDownload}>
               <Ionicons name="download-outline" size={28} color="#94a3b8" />
-              <Text className="text-xs text-default-400 mt-1">Offline</Text>
+              <Text className="text-xs text-foreground opacity-50 mt-1">
+                Offline
+              </Text>
             </TouchableOpacity>
           </View>
         </View>

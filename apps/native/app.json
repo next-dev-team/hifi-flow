@@ -1,7 +1,7 @@
 {
   "expo": {
     "scheme": "hifi-flow",
-    "userInterfaceStyle": "light",
+    "userInterfaceStyle": "automatic",
     "orientation": "default",
     "icon": "./assets/images/icon.png",
     "splash": {

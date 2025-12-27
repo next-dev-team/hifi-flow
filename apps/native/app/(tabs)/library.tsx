@@ -72,12 +72,12 @@ export default function Library() {
               {title}
             </Text>
             {subtitle ? (
-              <Text className="text-default-500" numberOfLines={1}>
+              <Text className="text-foreground opacity-60" numberOfLines={1}>
                 {subtitle}
               </Text>
             ) : null}
             {trackCount ? (
-              <Text className="text-default-500 text-xs">
+              <Text className="text-foreground opacity-60 text-xs">
                 {trackCount} tracks
               </Text>
             ) : null}
@@ -95,7 +95,7 @@ export default function Library() {
           <Text className="text-3xl font-bold text-foreground mb-2">
             Library
           </Text>
-          <Text className="text-default-500 mb-4">
+          <Text className="text-foreground opacity-60 mb-4">
             Your playlists and mixes
           </Text>
         </View>
@@ -165,11 +165,13 @@ export default function Library() {
 
           {isLoading ? (
             <View className="flex-1 justify-center items-center">
-              <Text className="text-default-500">Loading library...</Text>
+              <Text className="text-foreground opacity-70">
+                Loading library...
+              </Text>
             </View>
           ) : error ? (
             <View className="flex-1 justify-center items-center px-4">
-              <Text className="text-default-500 text-center">
+              <Text className="text-foreground opacity-60 text-center">
                 Unable to load your library.
               </Text>
             </View>
@@ -204,7 +206,9 @@ export default function Library() {
           contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 100 }}
           ListEmptyComponent={
             <View className="flex-1 justify-center items-center mt-10">
-              <Text className="text-default-500">No downloaded tracks.</Text>
+              <Text className="text-foreground opacity-60">
+                No downloaded tracks.
+              </Text>
             </View>
           }
         />
@@ -234,7 +238,7 @@ export default function Library() {
           contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 100 }}
           ListEmptyComponent={
             <View className="flex-1 justify-center items-center mt-10">
-              <Text className="text-default-500">
+              <Text className="text-foreground opacity-70">
                 No recently played tracks.
               </Text>
             </View>

@@ -861,7 +861,10 @@ export default function Home() {
             >
               {item.title}
             </Text>
-            <Text className="text-default-500 text-sm" numberOfLines={1}>
+            <Text
+              className="text-foreground opacity-60 text-sm"
+              numberOfLines={1}
+            >
               {item.artist}
             </Text>
           </View>
@@ -926,7 +929,7 @@ export default function Home() {
     <StyledSafeAreaView className="flex-1 bg-background" edges={["top"]}>
       <StyledView className="px-4 pt-3 pb-2">
         <View className="flex-row items-center justify-between mb-2">
-          <TouchableOpacity
+          <StyledTouchableOpacity
             activeOpacity={0.8}
             onPress={() => {
               if (Platform.OS === "web") {
@@ -938,9 +941,11 @@ export default function Home() {
           >
             <StyledText className="text-xl font-bold text-foreground font-italic">
               HiFi Flow{" "}
-              <Text className="text-default-400 text-xs">v{appVersion}</Text>
+              <StyledText className="text-foreground opacity-50 text-xs">
+                v{appVersion}
+              </StyledText>
             </StyledText>
-          </TouchableOpacity>
+          </StyledTouchableOpacity>
           <View className="flex-row items-center gap-x-1.5">
             <TimerStatus absolute={false} />
             <View className="flex-row items-center bg-content2 border border-default-200 rounded-full overflow-hidden">
@@ -1040,10 +1045,10 @@ export default function Home() {
 
         {suggestedArtistNames.length > 0 ? (
           <StyledView className="mb-3">
-            <StyledText className="text-default-500 text-[11px] font-semibold uppercase tracking-wider mb-2 px-1">
+            <StyledText className="text-foreground text-[11px] font-semibold uppercase tracking-wider mb-2 px-1 opacity-60">
               {speechLang === "en-US"
                 ? "Suggested artists"
-                : "សិល្បករដែលបានណែនាំ"}
+                : "សិល្បករដែលបានស្នើ"}
             </StyledText>
             <StyledScrollView
               horizontal
@@ -1112,7 +1117,7 @@ export default function Home() {
                     className={`text-[13px] font-semibold ${
                       isActive
                         ? "text-background"
-                        : "text-default-600 dark:text-white"
+                        : "text-foreground opacity-70 dark:text-white"
                     }`}
                   >
                     {f.label}
@@ -1139,7 +1144,7 @@ export default function Home() {
         </StyledView>
       ) : error ? (
         <StyledView className="flex-1 justify-center items-center px-4">
-          <StyledText className="text-default-500 text-center">
+          <StyledText className="text-foreground text-center opacity-70">
             Unable to load music right now.
           </StyledText>
         </StyledView>
@@ -1159,12 +1164,12 @@ export default function Home() {
           ListHeaderComponent={
             !query ? (
               <StyledView className="mb-2">
-                <StyledText className="text-lg font-bold mb-1.5">
+                <StyledText className="text-lg font-bold text-foreground mb-1.5">
                   {speechLang === "en-US"
                     ? "Made for you"
                     : "បង្កើតសម្រាប់អ្នក"}
                 </StyledText>
-                <StyledText className="text-default-500 text-[13px] mb-2">
+                <StyledText className="text-foreground text-[13px] mb-2 opacity-70">
                   {speechLang === "en-US"
                     ? "Fresh tunes to get you started"
                     : "បទថ្មីៗដើម្បីចាប់ផ្តើម"}
@@ -1174,7 +1179,7 @@ export default function Home() {
           }
           ListEmptyComponent={
             <StyledView className="flex-1 justify-center items-center mt-20">
-              <StyledText className="text-default-500 text-lg text-center px-4">
+              <StyledText className="text-foreground text-lg text-center px-4 opacity-70">
                 {query
                   ? speechLang === "en-US"
                     ? "No results found"
@@ -1269,7 +1274,7 @@ export default function Home() {
                           <Text className="text-2xl font-bold text-foreground">
                             {selectedAlbum.title}
                           </Text>
-                          <Text className="text-default-500">
+                          <Text className="text-foreground opacity-60">
                             {selectedAlbum.releaseDate?.split("-")[0] ||
                               (speechLang === "en-US" ? "Album" : "អាល់ប៊ុម")}
                           </Text>
@@ -1289,7 +1294,7 @@ export default function Home() {
                             <Text className="text-2xl font-bold text-foreground">
                               {selectedPlaylist.title}
                             </Text>
-                            <Text className="text-default-500">
+                            <Text className="text-foreground opacity-60">
                               {resolveName(
                                 selectedPlaylist.artist ||
                                   selectedPlaylist.author
@@ -1381,7 +1386,7 @@ export default function Home() {
                           <Text className="text-2xl font-bold text-foreground">
                             {selectedArtist?.name}
                           </Text>
-                          <Text className="text-default-500">
+                          <Text className="text-foreground opacity-60">
                             {selectedArtist?.subscribers ||
                               (speechLang === "en-US" ? "Artist" : "សិល្បករ")}
                           </Text>
@@ -1410,7 +1415,7 @@ export default function Home() {
                                 ? "Top Tracks"
                                 : "បទល្បីៗ"}
                             </Text>
-                            <Text className="text-default-500 text-sm">
+                            <Text className="text-foreground opacity-60 text-sm">
                               {selectedAlbum
                                 ? speechLang === "en-US"
                                   ? `All songs from ${selectedAlbum.title}`
@@ -1531,7 +1536,7 @@ export default function Home() {
                             >
                               {album.title}
                             </Text>
-                            <Text className="text-default-500 text-xs">
+                            <Text className="text-foreground opacity-60 text-xs">
                               {album.releaseDate?.split("-")[0] || "Album"}
                             </Text>
                           </TouchableOpacity>
@@ -1602,12 +1607,12 @@ export default function Home() {
 
             {favorites.length === 0 ? (
               <View className="flex-1 items-center justify-center px-6">
-                <Text className="text-default-500 text-center">
+                <Text className="text-foreground opacity-60 text-center">
                   {speechLang === "en-US"
                     ? "No favorites yet."
                     : "មិនទាន់មានចំណូលចិត្តនៅឡើយទេ។"}
                 </Text>
-                <Text className="text-default-500 text-center mt-2">
+                <Text className="text-foreground opacity-60 text-center mt-2">
                   {speechLang === "en-US"
                     ? "Tap the heart in the player to save tracks."
                     : "ចុចលើបេះដូងក្នុងកម្មវិធីចាក់ដើម្បីរក្សាទុកបទចម្រៀង។"}
@@ -1646,7 +1651,7 @@ export default function Home() {
                       <Text className="text-foreground font-medium text-lg">
                         {artistName}
                       </Text>
-                      <Text className="text-default-500 text-sm">
+                      <Text className="text-foreground opacity-60 text-sm">
                         {
                           favorites.filter((t) => t.artist === artistName)
                             .length
@@ -1756,21 +1761,21 @@ export default function Home() {
                           ? "Audio cache"
                           : "ឃ្លាំងសម្ងាត់បទចម្រៀង"}
                       </Text>
-                      <Text className="text-default-500 text-sm">
+                      <StyledText className="text-foreground text-sm opacity-60">
                         {audioCacheTrackCount}{" "}
                         {speechLang === "en-US" ? "tracks" : "បទ"}
-                      </Text>
+                      </StyledText>
                     </View>
                     {typeof audioCacheEstimate?.usage === "number" &&
                       typeof audioCacheEstimate?.quota === "number" && (
-                        <Text className="text-default-500 text-sm mt-1">
+                        <StyledText className="text-foreground text-sm mt-1 opacity-60">
                           {formatBytes(audioCacheEstimate.usage)} /{" "}
                           {formatBytes(audioCacheEstimate.quota)}
-                        </Text>
+                        </StyledText>
                       )}
                     {currentTrack && currentAudioCacheProgress && (
-                      <Text
-                        className="text-default-500 text-sm mt-1"
+                      <StyledText
+                        className="text-foreground text-sm mt-1 opacity-60"
                         numberOfLines={1}
                       >
                         {speechLang === "en-US"
@@ -1782,7 +1787,7 @@ export default function Home() {
                             } (+${Math.floor(
                               currentAudioCacheProgress.cachedSecondsAhead
                             )}វិនាទី)`}
-                      </Text>
+                      </StyledText>
                     )}
                   </View>
 
@@ -1819,7 +1824,7 @@ export default function Home() {
                       ? "Streaming quality"
                       : "គុណភាពការចាក់"}
                   </Text>
-                  <Text className="text-default-500">{quality}</Text>
+                  <Text className="text-foreground opacity-70">{quality}</Text>
                 </View>
                 <View className="flex-row flex-wrap">
                   {qualityOptions.map((option) => {
@@ -1836,7 +1841,7 @@ export default function Home() {
                           className={
                             selected
                               ? "text-accent-foreground font-medium"
-                              : "text-default-600"
+                              : "text-foreground opacity-70"
                           }
                         >
                           {option.label}
@@ -1852,7 +1857,7 @@ export default function Home() {
                   <Text className="text-base text-foreground font-medium">
                     {speechLang === "en-US" ? "Sleep timer" : "កំណត់ពេលបិទ"}
                   </Text>
-                  <Text className="text-default-500">
+                  <Text className="text-foreground opacity-70">
                     {formattedSleepRemaining}
                   </Text>
                 </View>
@@ -1938,7 +1943,7 @@ export default function Home() {
 
             <StyledScrollView showsVerticalScrollIndicator={false}>
               <View className="mb-6">
-                <Text className="text-default-500 text-sm mb-4">
+                <Text className="text-foreground opacity-60 text-sm mb-4">
                   {speechLang === "en-US"
                     ? "You can control HiFi Flow using natural voice commands. Tap the sparkle icon to start listening."
                     : "អ្នកអាចបញ្ជា HiFi Flow ដោយប្រើសំឡេង។ ចុចលើរូបផ្កាយដើម្បីចាប់ផ្តើម។"}
@@ -1951,25 +1956,25 @@ export default function Home() {
                       : "ការគ្រប់គ្រងការចាក់"}
                   </Text>
                   <View className="space-y-2">
-                    <Text className="text-default-600 text-sm">
+                    <Text className="text-foreground opacity-70 text-sm">
                       •{" "}
                       {speechLang === "en-US"
                         ? '"Pause the music" or "Stop"'
                         : '"ផ្អាកតន្ត្រី" ឬ "ឈប់"'}
                     </Text>
-                    <Text className="text-default-600 text-sm">
+                    <Text className="text-foreground opacity-70 text-sm">
                       •{" "}
                       {speechLang === "en-US"
                         ? '"Play", "Resume", or "Continue"'
                         : '"ចាក់" ឬ "បន្ត"'}
                     </Text>
-                    <Text className="text-default-600 text-sm">
+                    <Text className="text-foreground opacity-70 text-sm">
                       •{" "}
                       {speechLang === "en-US"
                         ? '"Next song" or "Skip this"'
                         : '"បទបន្ទាប់" ឬ "រំលង"'}
                     </Text>
-                    <Text className="text-default-600 text-sm">
+                    <Text className="text-foreground opacity-70 text-sm">
                       •{" "}
                       {speechLang === "en-US"
                         ? '"Previous track" or "Go back"'
@@ -1985,25 +1990,25 @@ export default function Home() {
                       : "ការស្វែងរក"}
                   </Text>
                   <View className="space-y-2">
-                    <Text className="text-default-600 text-sm">
+                    <Text className="text-foreground opacity-70 text-sm">
                       •{" "}
                       {speechLang === "en-US"
                         ? '"Search for Vannda"'
                         : '"ស្វែងរក Vannda"'}
                     </Text>
-                    <Text className="text-default-600 text-sm">
+                    <Text className="text-foreground opacity-70 text-sm">
                       •{" "}
                       {speechLang === "en-US"
                         ? '"Play and search for Lo-fi beats"'
                         : '"ចាក់ និងស្វែងរក Lo-fi beats"'}
                     </Text>
-                    <Text className="text-default-600 text-sm">
+                    <Text className="text-foreground opacity-70 text-sm">
                       •{" "}
                       {speechLang === "en-US"
                         ? '"Switch filter to artists"'
                         : '"ប្តូរទៅតម្រងសិល្បករ"'}
                     </Text>
-                    <Text className="text-default-600 text-sm">
+                    <Text className="text-foreground opacity-70 text-sm">
                       •{" "}
                       {speechLang === "en-US"
                         ? '"Refresh suggested artists"'
@@ -2019,13 +2024,13 @@ export default function Home() {
                       : "ការកំណត់ប្រព័ន្ធ"}
                   </Text>
                   <View className="space-y-2">
-                    <Text className="text-default-600 text-sm">
+                    <Text className="text-foreground opacity-70 text-sm">
                       •{" "}
                       {speechLang === "en-US"
                         ? '"Turn on dark mode"'
                         : '"បើកមុខងារងងឹត"'}
                     </Text>
-                    <Text className="text-default-600 text-sm">
+                    <Text className="text-foreground opacity-70 text-sm">
                       •{" "}
                       {speechLang === "en-US"
                         ? '"Switch to light theme"'

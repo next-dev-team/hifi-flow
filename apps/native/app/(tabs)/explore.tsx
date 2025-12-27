@@ -83,7 +83,7 @@ export default function Explore() {
           <StyledText className="text-2xl font-bold text-foreground">
             Explore
           </StyledText>
-          <StyledText className="text-default-500">
+          <StyledText className="text-foreground opacity-70">
             Discover new music and trends
           </StyledText>
         </View>
@@ -98,7 +98,7 @@ export default function Explore() {
         </StyledView>
       ) : error ? (
         <StyledView className="flex-1 justify-center items-center px-4">
-          <StyledText className="text-default-500 text-center">
+          <StyledText className="text-foreground opacity-60 text-center">
             Unable to load explore content.
           </StyledText>
         </StyledView>
