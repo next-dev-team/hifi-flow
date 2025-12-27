@@ -9,6 +9,7 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
+import { useAppTheme } from "@/contexts/app-theme-context";
 import { usePlayer } from "@/contexts/player-context";
 
 export interface Track {
@@ -113,6 +114,7 @@ export const TrackItem: React.FC<TrackItemProps> = ({
     nextTrackBufferStatus,
     cachedTrackIds,
   } = usePlayer();
+  const { isDark } = useAppTheme();
 
   const isPlayerLoading = loadingTrackId === String(track.id);
   const isLoading = propLoading || isPlayerLoading;
@@ -182,7 +184,7 @@ export const TrackItem: React.FC<TrackItemProps> = ({
       disabled={isLoading}
     >
       <View
-        className={`flex-row items-center p-2 mb-2 rounded-xl border border-black/5 dark:border-white/5 ${
+        className={`flex-row items-center pt-2 px-2 pb-1 mb-2 rounded-xl border border-black/5 dark:border-white/5 ${
           isActive ? "bg-primary/10" : "bg-black/5 dark:bg-white/5"
         }`}
       >
@@ -232,7 +234,7 @@ export const TrackItem: React.FC<TrackItemProps> = ({
         <View className="flex-1 justify-center">
           <Text
             className={`font-semibold text-[15px] ${
-              isActive ? "text-primary" : "text-foreground"
+              isActive ? "text-primary dark:text-white" : "text-foreground"
             }`}
             numberOfLines={1}
           >
@@ -243,7 +245,11 @@ export const TrackItem: React.FC<TrackItemProps> = ({
               <Ionicons name="flash" size={10} color="#4ade80" />
             )}
             <Text
-              className="text-default-500 text-[13px] shrink"
+              className={`text-[13px] shrink ${
+                isActive
+                  ? "text-default-500 dark:text-white/60"
+                  : "text-default-500"
+              }`}
               numberOfLines={1}
             >
               {track.artist}
@@ -266,7 +272,7 @@ export const TrackItem: React.FC<TrackItemProps> = ({
             <Ionicons
               name={isActive && isPlaying ? "pause" : "play"}
               size={20}
-              color={isActive ? "#007AFF" : "#888"}
+              color={isActive ? (isDark ? "#fff" : "#007AFF") : "#888"}
             />
           )}
         </TouchableOpacity>
