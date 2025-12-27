@@ -153,7 +153,7 @@ export default function Home() {
   const themeColorForeground = useThemeColor("foreground");
   const themeColorDanger = useThemeColor("danger");
   const themeColorSuccess = useThemeColor("success");
-  const themeColorPrimary = useThemeColor("primary");
+  const themeColorAccent = useThemeColor("accent");
 
   // Desktop max-width container style for sheets
   // Desktop: calculate margin to center the sheets
@@ -1947,7 +1947,7 @@ export default function Home() {
           <View className="flex-1 bg-background px-4">
             <View className="pt-3 pb-4 flex-row items-center justify-between">
               <View className="flex-row items-center">
-                <Ionicons name="sparkles" size={20} color={themeColorPrimary} />
+                <Ionicons name="sparkles" size={20} color={themeColorAccent} />
                 <Text className="text-xl font-bold text-foreground ml-2">
                   {speechLang === "en-US" ? "AI Assistant" : "ជំនួយការ AI"}
                 </Text>

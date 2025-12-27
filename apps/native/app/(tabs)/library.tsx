@@ -204,7 +204,7 @@ export default function Library() {
         <FlatList
           data={downloadedTracks}
           keyExtractor={(item, index) =>
-            (item.id || item.url || index).toString()
+            (item.metadata?.id || item.url || index).toString()
           }
           renderItem={({ item }) => (
             <TrackItem

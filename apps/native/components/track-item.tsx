@@ -186,7 +186,7 @@ export const TrackItem: React.FC<TrackItemProps> = ({
       disabled={isLoading}
     >
       <View
-        className={`flex-row items-center pt-2 px-2 pb-1 mb-2 rounded-xl border border-black/5 dark:border-white/5 ${
+        className={`flex-row items-center p-3 mb-2 rounded-xl border border-black/5 dark:border-white/5 ${
           isActive ? "bg-primary/10" : "bg-black/5 dark:bg-white/5"
         }`}
       >

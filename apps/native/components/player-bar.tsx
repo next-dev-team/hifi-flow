@@ -654,6 +654,7 @@ const SeekBar = ({
   onScrubStateChange?: (value: boolean) => void;
   isDark?: boolean;
 }) => {
+  const themeColorForeground = useThemeColor("foreground");
   const barRef = useRef<View | null>(null);
   const barXRef = useRef(0);
   const scrubRatioRef = useRef(0);
@@ -801,6 +802,7 @@ const VolumeSlider = ({
   onVolumeChange: (value: number) => void;
   isDark?: boolean;
 }) => {
+  const themeColorForeground = useThemeColor("foreground");
   const barRef = useRef<View | null>(null);
   const barYRef = useRef(0);
   const [barHeight, setBarHeight] = useState(0);
@@ -920,8 +922,6 @@ export const PlayerBar = () => {
   const { isDark } = useAppTheme();
   const themeColorBackground = useThemeColor("background");
   const themeColorForeground = useThemeColor("foreground");
-  const themeColorPrimary = useThemeColor("primary");
-  const themeColorContent3 = useThemeColor("content3");
   const {
     currentTrack,
     isPlaying,
@@ -1137,7 +1137,7 @@ export const PlayerBar = () => {
         width: isCollapsed ? collapsedWidth : "100%",
         left: 0,
         bottom: 62,
-        height: isCollapsed ? 48 : 56,
+        height: isCollapsed ? 56 : 68,
         zIndex: 50,
         opacity:
           miniPlayerOpacity.value *
@@ -1170,7 +1170,7 @@ export const PlayerBar = () => {
     return {
       width,
       left,
-      height: interpolate(collapseProgress.value, [0, 1], [56, 48], "clamp"),
+      height: interpolate(collapseProgress.value, [0, 1], [68, 56], "clamp"),
       bottom: 62 + margin,
       zIndex: 50,
       opacity:
@@ -1210,8 +1210,8 @@ export const PlayerBar = () => {
 
   const animatedCardStyle = useAnimatedStyle(() => {
     return {
-      paddingHorizontal: interpolate(collapseProgress.value, [0, 1], [10, 4]),
-      paddingVertical: interpolate(collapseProgress.value, [0, 1], [6, 4]),
+      paddingHorizontal: interpolate(collapseProgress.value, [0, 1], [12, 10]),
+      paddingVertical: interpolate(collapseProgress.value, [0, 1], [8, 6]),
     };
   });
 
@@ -1544,7 +1544,7 @@ export const PlayerBar = () => {
                 <View>
                   <SpinningCover
                     uri={resolvedArtwork}
-                    size={32}
+                    size={40}
                     isPlaying={isPlaying}
                     isDark={isDark}
                   />
@@ -1777,7 +1777,7 @@ export const PlayerBar = () => {
                 {({ pressed }) => (
                   <Ionicons
                     name="play-skip-back"
-                    size={18}
+                    size={20}
                     color={
                       controlsDisabled
                         ? isDark
@@ -1808,7 +1808,7 @@ export const PlayerBar = () => {
                   ) : (
                     <Ionicons
                       name={isPlaying ? "pause" : "play"}
-                      size={22}
+                      size={28}
                       color={pressed ? "#ef4444" : themeColorForeground}
                     />
                   )
@@ -1826,7 +1826,7 @@ export const PlayerBar = () => {
                 {({ pressed }) => (
                   <Ionicons
                     name="play-skip-forward"
-                    size={18}
+                    size={20}
                     color={
                       controlsDisabled
                         ? isDark
@@ -1850,7 +1850,7 @@ export const PlayerBar = () => {
                 {({ pressed }) => (
                   <Ionicons
                     name={isCurrentFavorited ? "heart" : "heart-outline"}
-                    size={18}
+                    size={20}
                     color={
                       isCurrentFavorited || pressed
                         ? "#ef4444"
@@ -1870,7 +1870,7 @@ export const PlayerBar = () => {
                 {({ pressed }) => (
                   <Ionicons
                     name="list"
-                    size={18}
+                    size={20}
                     color={pressed ? "#60a5fa" : themeColorForeground}
                   />
                 )}
