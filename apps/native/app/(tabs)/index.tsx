@@ -71,10 +71,10 @@ import {
   type AudioCacheProgress,
   audioCacheService,
 } from "@/utils/audio-cache";
-import { getSheetMargin, SHEET_MAX_WIDTH } from "@/utils/layout";
+import { getSheetMargin } from "@/utils/layout";
 import { resolveArtwork, resolveName } from "@/utils/resolvers";
 
-const appVersion = "1.0.3";
+const appVersion = "1.0.4";
 
 type SearchFilter = "songs" | "artists" | "albums" | "playlists";
 
