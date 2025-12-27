@@ -49,13 +49,13 @@ const V2_API_TARGETS = [
     requiresProxy: false,
     category: "auto-only",
   },
-  {
-    name: "katze",
-    baseUrl: "https://katze.qqdl.site",
-    weight: 15,
-    requiresProxy: false,
-    category: "auto-only",
-  },
+  // {
+  //   name: "katze",
+  //   baseUrl: "https://katze.qqdl.site",
+  //   weight: 15,
+  //   requiresProxy: false,
+  //   category: "auto-only",
+  // },
   {
     name: "maus",
     baseUrl: "https://maus.qqdl.site",

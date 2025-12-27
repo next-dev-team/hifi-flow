@@ -123,6 +123,7 @@ export const QueueSheet = forwardRef<QueueSheetRef, QueueSheetProps>(
       toggleFavorite,
       toggleTracksFavorites,
       removeFromQueue,
+      shuffleQueue,
     } = usePlayer();
 
     // Desktop: calculate margin to center the sheet
@@ -134,6 +135,39 @@ export const QueueSheet = forwardRef<QueueSheetRef, QueueSheetProps>(
     const [viewMode, setViewMode] = useState<"songs" | "artists">("songs");
     const [artistFilter, setArtistFilter] = useState<string | null>(null);
     const [showClearConfirm, setShowClearConfirm] = useState(false);
+    const [isShuffling, setIsShuffling] = useState(false);
+    const rotation = useRef(new Animated.Value(0)).current;
+
+    useEffect(() => {
+      if (isShuffling) {
+        const animation = Animated.loop(
+          Animated.timing(rotation, {
+            toValue: 1,
+            duration: 800,
+            useNativeDriver: true,
+          })
+        );
+        animation.start();
+        return () => animation.stop();
+      } else {
+        rotation.setValue(0);
+      }
+    }, [isShuffling, rotation]);
+
+    const rotate = rotation.interpolate({
+      inputRange: [0, 1],
+      outputRange: ["0deg", "360deg"],
+    });
+
+    const handleShuffle = useCallback(() => {
+      if (queue.length <= 1) return;
+      setIsShuffling(true);
+      // Small delay to show visual feedback
+      setTimeout(() => {
+        shuffleQueue();
+        setIsShuffling(false);
+      }, 500);
+    }, [shuffleQueue, queue.length]);
 
     // Filter queue based on search and view mode
     const filteredQueue = useMemo(() => {
@@ -549,339 +583,374 @@ export const QueueSheet = forwardRef<QueueSheetRef, QueueSheetProps>(
               backgroundColor: Platform.OS === "ios" ? undefined : "#0a0a0a",
             }}
           >
-          {/* Fixed Header - Always visible at top */}
-          <View
-            style={{
-              paddingHorizontal: 16,
-              paddingTop: 8,
-              paddingBottom: 12,
-              borderBottomWidth: 1,
-              borderBottomColor: "rgba(255,255,255,0.1)",
-              backgroundColor:
-                Platform.OS === "ios" ? "rgba(10,10,10,0.8)" : "#0a0a0a",
-            }}
-          >
-            {/* Title Row */}
+            {/* Fixed Header - Always visible at top */}
             <View
               style={{
-                flexDirection: "row",
-                alignItems: "center",
-                justifyContent: "space-between",
+                paddingHorizontal: 16,
+                paddingTop: 8,
+                paddingBottom: 12,
+                borderBottomWidth: 1,
+                borderBottomColor: "rgba(255,255,255,0.1)",
+                backgroundColor:
+                  Platform.OS === "ios" ? "rgba(10,10,10,0.8)" : "#0a0a0a",
               }}
             >
-              <Text
-                style={{
-                  color: "#fff",
-                  fontSize: 18,
-                  fontWeight: "bold",
-                }}
-              >
-                Queue ({queue.length})
-              </Text>
-              <View style={{ flexDirection: "row", alignItems: "center" }}>
-                <TouchableOpacity
-                  onPress={handleClearQueue}
-                  style={{
-                    padding: 8,
-                    marginRight: 4,
-                  }}
-                  hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-                >
-                  <Ionicons name="trash-outline" size={22} color="#fff" />
-                </TouchableOpacity>
-                <TouchableOpacity
-                  onPress={handleToggleAllFavorites}
-                  style={{
-                    padding: 8,
-                    marginRight: 4,
-                  }}
-                  hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-                >
-                  <Ionicons
-                    name={areAllFavorited ? "heart" : "heart-outline"}
-                    size={22}
-                    color={areAllFavorited ? "#ef4444" : "#fff"}
-                  />
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                  onPress={() => {
-                    close();
-                    // Slight delay to allow smooth transition
-                    setTimeout(() => {
-                      DeviceEventEmitter.emit("open-favorites-sheet");
-                    }, 200);
-                  }}
-                  style={{
-                    padding: 8,
-                    marginRight: 4,
-                  }}
-                  hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-                >
-                  <Ionicons name="library-outline" size={22} color="#fff" />
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                  onPress={close}
-                  style={{
-                    padding: 8,
-                    marginRight: -8,
-                  }}
-                  hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-                >
-                  <Ionicons name="close" size={24} color="#fff" />
-                </TouchableOpacity>
-              </View>
-            </View>
-
-            {/* Search and Filters */}
-            <View style={{ marginTop: 12 }}>
+              {/* Title Row */}
               <View
                 style={{
                   flexDirection: "row",
                   alignItems: "center",
-                  backgroundColor: "rgba(255,255,255,0.08)",
-                  borderRadius: 10,
-                  paddingHorizontal: 10,
-                  height: 36,
+                  justifyContent: "space-between",
                 }}
               >
-                <Ionicons
-                  name="search"
-                  size={16}
-                  color="rgba(255,255,255,0.4)"
-                />
-                <TextInput
-                  value={searchQuery}
-                  onChangeText={setSearchQuery}
-                  placeholder="Filter songs or artists..."
-                  placeholderTextColor="rgba(255,255,255,0.3)"
+                <Text
                   style={{
-                    flex: 1,
-                    marginLeft: 8,
                     color: "#fff",
-                    fontSize: 14,
-                    height: "100%",
+                    fontSize: 18,
+                    fontWeight: "bold",
                   }}
-                />
-                {searchQuery.length > 0 && (
-                  <TouchableOpacity onPress={() => setSearchQuery("")}>
+                >
+                  Queue ({queue.length})
+                </Text>
+                <View style={{ flexDirection: "row", alignItems: "center" }}>
+                  <TouchableOpacity
+                    onPress={handleShuffle}
+                    disabled={isShuffling || queue.length <= 1}
+                    style={{
+                      padding: 8,
+                      marginRight: 4,
+                      opacity: queue.length <= 1 ? 0.3 : 1,
+                    }}
+                    hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                    accessibilityLabel="Shuffle queue items"
+                    accessibilityRole="button"
+                  >
+                    <Animated.View style={{ transform: [{ rotate }] }}>
+                      <Ionicons
+                        name="shuffle"
+                        size={22}
+                        color={isShuffling ? "#60a5fa" : "#fff"}
+                      />
+                    </Animated.View>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    onPress={handleClearQueue}
+                    style={{
+                      padding: 8,
+                      marginRight: 4,
+                    }}
+                    hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                  >
+                    <Ionicons name="trash-outline" size={22} color="#fff" />
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    onPress={handleToggleAllFavorites}
+                    style={{
+                      padding: 8,
+                      marginRight: 4,
+                    }}
+                    hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                  >
                     <Ionicons
-                      name="close-circle"
-                      size={16}
-                      color="rgba(255,255,255,0.4)"
+                      name={areAllFavorited ? "heart" : "heart-outline"}
+                      size={22}
+                      color={areAllFavorited ? "#ef4444" : "#fff"}
                     />
                   </TouchableOpacity>
-                )}
+
+                  <TouchableOpacity
+                    onPress={() => {
+                      close();
+                      // Slight delay to allow smooth transition
+                      setTimeout(() => {
+                        DeviceEventEmitter.emit("open-favorites-sheet");
+                      }, 200);
+                    }}
+                    style={{
+                      padding: 8,
+                      marginRight: 4,
+                    }}
+                    hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                  >
+                    <Ionicons name="library-outline" size={22} color="#fff" />
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    onPress={close}
+                    style={{
+                      padding: 8,
+                      marginRight: -8,
+                    }}
+                    hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                  >
+                    <Ionicons name="close" size={24} color="#fff" />
+                  </TouchableOpacity>
+                </View>
               </View>
 
-              {/* Filter Chips */}
-              <ScrollView
-                horizontal
-                showsHorizontalScrollIndicator={false}
-                style={{ marginTop: 10 }}
-              >
-                {artistFilter ? (
-                  // Show active filter chip to clear it
-                  <TouchableOpacity
-                    onPress={() => setArtistFilter(null)}
-                    style={{
-                      flexDirection: "row",
-                      alignItems: "center",
-                      paddingHorizontal: 12,
-                      paddingVertical: 6,
-                      borderRadius: 14,
-                      backgroundColor: "#fff",
-                      marginRight: 8,
-                    }}
-                  >
-                    <Text
-                      style={{
-                        color: "#000",
-                        fontSize: 13,
-                        fontWeight: "600",
-                        marginRight: 4,
-                      }}
-                    >
-                      Artist: {artistFilter}
-                    </Text>
-                    <Ionicons name="close-circle" size={16} color="#000" />
-                  </TouchableOpacity>
-                ) : (
-                  // Show View Mode chips
-                  [
-                    { id: "songs", label: "Songs" },
-                    { id: "artists", label: "Artists" },
-                  ].map((chip) => {
-                    const isActive = viewMode === chip.id;
-                    return (
-                      <TouchableOpacity
-                        key={chip.id}
-                        onPress={() => setViewMode(chip.id as any)}
-                        style={{
-                          paddingHorizontal: 12,
-                          paddingVertical: 6,
-                          borderRadius: 14,
-                          backgroundColor: isActive
-                            ? "#fff"
-                            : "rgba(255,255,255,0.08)",
-                          marginRight: 8,
-                        }}
-                      >
-                        <Text
-                          style={{
-                            color: isActive ? "#000" : "rgba(255,255,255,0.6)",
-                            fontSize: 13,
-                            fontWeight: isActive ? "600" : "400",
-                          }}
-                        >
-                          {chip.label}
-                        </Text>
-                      </TouchableOpacity>
-                    );
-                  })
-                )}
-              </ScrollView>
-            </View>
-
-            {/* Status Row */}
-            {currentIndex >= 0 &&
-              !searchQuery &&
-              viewMode === "songs" &&
-              !artistFilter && (
-                <Text
+              {/* Search and Filters */}
+              <View style={{ marginTop: 12 }}>
+                <View
                   style={{
-                    color: "rgba(255,255,255,0.4)",
-                    fontSize: 12,
-                    marginTop: 10,
+                    flexDirection: "row",
+                    alignItems: "center",
+                    backgroundColor: "rgba(255,255,255,0.08)",
+                    borderRadius: 10,
+                    paddingHorizontal: 10,
+                    height: 36,
                   }}
                 >
-                  Now playing: {currentIndex + 1} of {queue.length}
-                </Text>
-              )}
-          </View>
+                  <Ionicons
+                    name="search"
+                    size={16}
+                    color="rgba(255,255,255,0.4)"
+                  />
+                  <TextInput
+                    value={searchQuery}
+                    onChangeText={setSearchQuery}
+                    placeholder="Filter songs or artists..."
+                    placeholderTextColor="rgba(255,255,255,0.3)"
+                    style={{
+                      flex: 1,
+                      marginLeft: 8,
+                      color: "#fff",
+                      fontSize: 14,
+                      height: "100%",
+                    }}
+                  />
+                  {searchQuery.length > 0 && (
+                    <TouchableOpacity onPress={() => setSearchQuery("")}>
+                      <Ionicons
+                        name="close-circle"
+                        size={16}
+                        color="rgba(255,255,255,0.4)"
+                      />
+                    </TouchableOpacity>
+                  )}
+                </View>
 
-          {/* Scrollable Track List */}
-          <BottomSheetFlatList
-            data={filteredQueue}
-            keyExtractor={(item: { id: string | number }, index: number) =>
-              `${item.id}-${index}`
-            }
-            renderItem={renderItem}
-            ListEmptyComponent={ListEmptyComponent}
-            contentContainerStyle={{
-              paddingBottom: insets.bottom + 20,
-            }}
-            showsVerticalScrollIndicator={false}
-            keyboardShouldPersistTaps="handled"
-          />
+                {/* Filter Chips */}
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  style={{ marginTop: 10 }}
+                >
+                  {artistFilter ? (
+                    // Show active filter chip to clear it
+                    <TouchableOpacity
+                      onPress={() => setArtistFilter(null)}
+                      style={{
+                        flexDirection: "row",
+                        alignItems: "center",
+                        paddingHorizontal: 12,
+                        paddingVertical: 6,
+                        borderRadius: 14,
+                        backgroundColor: "#fff",
+                        marginRight: 8,
+                      }}
+                    >
+                      <Text
+                        style={{
+                          color: "#000",
+                          fontSize: 13,
+                          fontWeight: "600",
+                          marginRight: 4,
+                        }}
+                      >
+                        Artist: {artistFilter}
+                      </Text>
+                      <Ionicons name="close-circle" size={16} color="#000" />
+                    </TouchableOpacity>
+                  ) : (
+                    // Show View Mode chips
+                    [
+                      { id: "songs", label: "Songs" },
+                      { id: "artists", label: "Artists" },
+                    ].map((chip) => {
+                      const isActive = viewMode === chip.id;
+                      return (
+                        <TouchableOpacity
+                          key={chip.id}
+                          onPress={() => setViewMode(chip.id as any)}
+                          style={{
+                            paddingHorizontal: 12,
+                            paddingVertical: 6,
+                            borderRadius: 14,
+                            backgroundColor: isActive
+                              ? "#fff"
+                              : "rgba(255,255,255,0.08)",
+                            marginRight: 8,
+                          }}
+                        >
+                          <Text
+                            style={{
+                              color: isActive
+                                ? "#000"
+                                : "rgba(255,255,255,0.6)",
+                              fontSize: 13,
+                              fontWeight: isActive ? "600" : "400",
+                            }}
+                          >
+                            {chip.label}
+                          </Text>
+                        </TouchableOpacity>
+                      );
+                    })
+                  )}
+                </ScrollView>
+              </View>
 
-          {/* Confirmation Overlay */}
-          {showClearConfirm && (
-            <View
-              style={{
-                position: "absolute",
-                top: 0,
-                left: 0,
-                right: 0,
-                bottom: 0,
-                backgroundColor: "rgba(0,0,0,0.6)",
-                alignItems: "center",
-                justifyContent: "center",
-                zIndex: 100,
+              {/* Status Row */}
+              {currentIndex >= 0 &&
+                !searchQuery &&
+                viewMode === "songs" &&
+                !artistFilter && (
+                  <Text
+                    style={{
+                      color: "rgba(255,255,255,0.4)",
+                      fontSize: 12,
+                      marginTop: 10,
+                    }}
+                  >
+                    Now playing: {currentIndex + 1} of {queue.length}
+                  </Text>
+                )}
+            </View>
+
+            {/* Scrollable Track List */}
+            <BottomSheetFlatList
+              data={filteredQueue}
+              keyExtractor={(item: { id: string | number }, index: number) =>
+                `${item.id}-${index}`
+              }
+              renderItem={renderItem}
+              ListEmptyComponent={ListEmptyComponent}
+              contentContainerStyle={{
+                paddingBottom: insets.bottom + 20,
               }}
-            >
+              showsVerticalScrollIndicator={false}
+              keyboardShouldPersistTaps="handled"
+            />
+
+            {/* Confirmation Overlay */}
+            {showClearConfirm && (
               <View
                 style={{
-                  backgroundColor: "#1c1c1e",
-                  padding: 24,
-                  borderRadius: 20,
-                  width: "80%",
-                  maxWidth: 320,
+                  position: "absolute",
+                  top: 0,
+                  left: 0,
+                  right: 0,
+                  bottom: 0,
+                  backgroundColor: "rgba(0,0,0,0.6)",
                   alignItems: "center",
-                  borderWidth: 1,
-                  borderColor: "rgba(255,255,255,0.1)",
+                  justifyContent: "center",
+                  zIndex: 100,
                 }}
               >
                 <View
                   style={{
-                    width: 48,
-                    height: 48,
-                    borderRadius: 24,
-                    backgroundColor: "rgba(239, 68, 68, 0.2)",
+                    backgroundColor: "#1c1c1e",
+                    padding: 24,
+                    borderRadius: 20,
+                    width: "80%",
+                    maxWidth: 320,
                     alignItems: "center",
-                    justifyContent: "center",
-                    marginBottom: 16,
+                    borderWidth: 1,
+                    borderColor: "rgba(255,255,255,0.1)",
                   }}
                 >
-                  <Ionicons name="trash" size={24} color="#ef4444" />
-                </View>
-
-                <Text
-                  style={{
-                    fontSize: 20,
-                    fontWeight: "bold",
-                    color: "#fff",
-                    marginBottom: 8,
-                  }}
-                >
-                  Clear Queue?
-                </Text>
-                <Text
-                  style={{
-                    color: "rgba(255,255,255,0.6)",
-                    textAlign: "center",
-                    marginBottom: 24,
-                    fontSize: 15,
-                    lineHeight: 22,
-                  }}
-                >
-                  This will remove all {queue.length} tracks. This action cannot
-                  be undone.
-                </Text>
-
-                <View
-                  style={{ flexDirection: "row", width: "100%", columnGap: 12 }}
-                >
-                  <TouchableOpacity
-                    onPress={() => setShowClearConfirm(false)}
+                  <View
                     style={{
-                      flex: 1,
-                      paddingVertical: 14,
-                      backgroundColor: "rgba(255,255,255,0.1)",
-                      borderRadius: 14,
+                      width: 48,
+                      height: 48,
+                      borderRadius: 24,
+                      backgroundColor: "rgba(239, 68, 68, 0.2)",
                       alignItems: "center",
+                      justifyContent: "center",
+                      marginBottom: 16,
                     }}
                   >
-                    <Text
-                      style={{ color: "#fff", fontWeight: "600", fontSize: 16 }}
-                    >
-                      Cancel
-                    </Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    onPress={() => {
-                      clearQueue();
-                      setShowClearConfirm(false);
-                    }}
+                    <Ionicons name="trash" size={24} color="#ef4444" />
+                  </View>
+
+                  <Text
                     style={{
-                      flex: 1,
-                      paddingVertical: 14,
-                      backgroundColor: "#ef4444",
-                      borderRadius: 14,
-                      alignItems: "center",
+                      fontSize: 20,
+                      fontWeight: "bold",
+                      color: "#fff",
+                      marginBottom: 8,
                     }}
                   >
-                    <Text
-                      style={{ color: "#fff", fontWeight: "600", fontSize: 16 }}
+                    Clear Queue?
+                  </Text>
+                  <Text
+                    style={{
+                      color: "rgba(255,255,255,0.6)",
+                      textAlign: "center",
+                      marginBottom: 24,
+                      fontSize: 15,
+                      lineHeight: 22,
+                    }}
+                  >
+                    This will remove all {queue.length} tracks. This action
+                    cannot be undone.
+                  </Text>
+
+                  <View
+                    style={{
+                      flexDirection: "row",
+                      width: "100%",
+                      columnGap: 12,
+                    }}
+                  >
+                    <TouchableOpacity
+                      onPress={() => setShowClearConfirm(false)}
+                      style={{
+                        flex: 1,
+                        paddingVertical: 14,
+                        backgroundColor: "rgba(255,255,255,0.1)",
+                        borderRadius: 14,
+                        alignItems: "center",
+                      }}
                     >
-                      Clear
-                    </Text>
-                  </TouchableOpacity>
+                      <Text
+                        style={{
+                          color: "#fff",
+                          fontWeight: "600",
+                          fontSize: 16,
+                        }}
+                      >
+                        Cancel
+                      </Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      onPress={() => {
+                        clearQueue();
+                        setShowClearConfirm(false);
+                      }}
+                      style={{
+                        flex: 1,
+                        paddingVertical: 14,
+                        backgroundColor: "#ef4444",
+                        borderRadius: 14,
+                        alignItems: "center",
+                      }}
+                    >
+                      <Text
+                        style={{
+                          color: "#fff",
+                          fontWeight: "600",
+                          fontSize: 16,
+                        }}
+                      >
+                        Clear
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
                 </View>
               </View>
-            </View>
-          )}
+            )}
           </BlurView>
         </BottomSheetView>
       </BottomSheetModal>

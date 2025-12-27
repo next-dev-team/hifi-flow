@@ -84,6 +84,7 @@ interface PlayerContextType {
   addToQueue: (track: Track) => boolean;
   addTracksToQueue: (tracks: Track[]) => number;
   removeFromQueue: (trackId: string) => void;
+  shuffleQueue: () => void;
   clearQueue: () => void;
   playNext: () => Promise<void>;
   playPrevious: () => Promise<void>;
@@ -276,7 +277,8 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
     const lastPos = lastCachePositionSecRef.current;
     const isNewTrack = lastUrl !== baseUrl;
     const isSeek = !isNewTrack && Math.abs(positionSec - lastPos) >= 8;
-    const isTick = isNewTrack || isSeek || Math.abs(positionSec - lastPos) >= 15;
+    const isTick =
+      isNewTrack || isSeek || Math.abs(positionSec - lastPos) >= 15;
     if (!isTick) return;
 
     lastCacheUrlRef.current = baseUrl;
@@ -2220,6 +2222,37 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
     });
   }, []);
 
+  const shuffleQueue = useCallback(() => {
+    setQueue((prev) => {
+      if (prev.length <= 1) return prev;
+
+      const newQueue = [...prev];
+      const currentTrackId = currentTrack ? String(currentTrack.id) : null;
+
+      // Fisher-Yates shuffle
+      for (let i = newQueue.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [newQueue[i], newQueue[j]] = [newQueue[j], newQueue[i]];
+      }
+
+      // Update index to match where the current track moved
+      if (currentTrackId) {
+        const newIndex = newQueue.findIndex(
+          (t) => String(t.id) === currentTrackId
+        );
+        if (newIndex !== -1) {
+          queueIndexRef.current = newIndex;
+          setPersistedQueueIndex(newIndex);
+        }
+      }
+
+      return newQueue;
+    });
+
+    shuffleHistoryRef.current = [];
+    showToast({ message: "Queue shuffled", type: "info" });
+  }, [currentTrack, setQueue, setPersistedQueueIndex, showToast]);
+
   const cycleRepeatMode = useCallback(() => {
     setRepeatMode((prev) => {
       const next = prev === "off" ? "all" : prev === "all" ? "one" : "off";
@@ -2463,6 +2496,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
     addToQueue,
     addTracksToQueue,
     removeFromQueue,
+    shuffleQueue,
     clearQueue,
     playNext,
     playPrevious,
