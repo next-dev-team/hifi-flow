@@ -53,6 +53,23 @@ class MediaSessionService {
   };
   private player: AudioPlayer | null = null;
 
+  private safeCall(
+    fn: ((...args: any[]) => unknown) | undefined,
+    ...args: any[]
+  ) {
+    try {
+      const result = fn?.(...args);
+      if (
+        result &&
+        typeof (result as { then?: unknown }).then === "function"
+      ) {
+        (result as Promise<unknown>).catch(() => undefined);
+      }
+    } catch {
+      return;
+    }
+  }
+
   /**
    * Set the AudioPlayer instance for native lock screen controls (Expo Audio)
    */
@@ -102,46 +119,52 @@ class MediaSessionService {
     const session = navigator.mediaSession;
 
     if (this.handlers.onPlay) {
-      session.setActionHandler("play", () => this.handlers.onPlay?.());
+      session.setActionHandler("play", () => this.safeCall(this.handlers.onPlay));
     }
 
     if (this.handlers.onPause) {
-      session.setActionHandler("pause", () => this.handlers.onPause?.());
+      session.setActionHandler("pause", () => this.safeCall(this.handlers.onPause));
     }
 
     if (this.handlers.onStop) {
-      session.setActionHandler("stop", () => this.handlers.onStop?.());
+      session.setActionHandler("stop", () => this.safeCall(this.handlers.onStop));
     }
 
     if (this.handlers.onSeekTo) {
       session.setActionHandler("seekto", (details) => {
         if (details.seekTime !== undefined) {
-          this.handlers.onSeekTo?.(details.seekTime * 1000);
+          this.safeCall(this.handlers.onSeekTo, details.seekTime * 1000);
         }
       });
     }
 
     if (this.handlers.onSeekForward) {
       session.setActionHandler("seekforward", (details) => {
-        this.handlers.onSeekForward?.((details.seekOffset ?? 10) * 1000);
+        this.safeCall(
+          this.handlers.onSeekForward,
+          (details.seekOffset ?? 10) * 1000
+        );
       });
     }
 
     if (this.handlers.onSeekBackward) {
       session.setActionHandler("seekbackward", (details) => {
-        this.handlers.onSeekBackward?.((details.seekOffset ?? 10) * 1000);
+        this.safeCall(
+          this.handlers.onSeekBackward,
+          (details.seekOffset ?? 10) * 1000
+        );
       });
     }
 
     if (this.handlers.onNextTrack) {
       session.setActionHandler("nexttrack", () =>
-        this.handlers.onNextTrack?.()
+        this.safeCall(this.handlers.onNextTrack)
       );
     }
 
     if (this.handlers.onPreviousTrack) {
       session.setActionHandler("previoustrack", () =>
-        this.handlers.onPreviousTrack?.()
+        this.safeCall(this.handlers.onPreviousTrack)
       );
     }
   }

@@ -1,399 +1,503 @@
-// Web implementation using IndexedDB
-// Based on the user's provided concept
-
 export interface AudioMetadata {
   id: string;
   title: string;
   artist: string;
   artwork?: string;
+  durationSec?: number;
 }
 
-class AudioChunkCache {
-  private dbName: string;
-  private storeName: string;
-  private db: IDBDatabase | null = null;
-  private initPromise: Promise<IDBDatabase>;
+export interface AudioCacheProgress {
+  url: string;
+  windowStartSec: number;
+  windowEndSec: number;
+  cachedChunks: number;
+  totalChunks: number;
+  cachedSecondsAhead: number;
+  updatedAt: number;
+}
 
-  constructor(dbName = "AudioCache", storeName = "chunks") {
-    this.dbName = dbName;
-    this.storeName = storeName;
-    this.initPromise = this.init();
+const CHUNK_DURATION_SEC = 5;
+const WINDOW_AHEAD_SEC = 60;
+const CACHE_VERSION = "v2";
+const META_CACHE_NAME = `hififlow-audio-meta-${CACHE_VERSION}`;
+const CHUNK_CACHE_NAME = `hififlow-audio-chunks-${CACHE_VERSION}`;
+
+const progressByUrl = new Map<string, AudioCacheProgress>();
+const urlListeners = new Set<(url: string) => void>();
+const progressListeners = new Set<(progress: AudioCacheProgress) => void>();
+const lastWindowRequestAt = new Map<string, number>();
+let swListenerReady = false;
+
+function getMetaKey(url: string) {
+  return new Request(`/__hififlow_audio_meta?u=${encodeURIComponent(url)}`);
+}
+
+function getChunkKey(url: string, chunkIndex: number) {
+  return new Request(
+    `/__hififlow_audio_chunk?u=${encodeURIComponent(url)}&i=${chunkIndex}`
+  );
+}
+
+function initServiceWorkerListeners() {
+  if (swListenerReady) return;
+  swListenerReady = true;
+  if (typeof navigator === "undefined" || !("serviceWorker" in navigator)) {
+    return;
   }
+  navigator.serviceWorker.addEventListener("message", (event) => {
+    const data = event.data as any;
+    if (!data || typeof data !== "object") return;
+    if (data.type === "AUDIO_CACHE_PROGRESS") {
+      const progress = data.progress as AudioCacheProgress;
+      if (!progress?.url) return;
+      progressByUrl.set(progress.url, progress);
+      progressListeners.forEach((l) => {
+        try {
+          l(progress);
+        } catch {}
+      });
+      urlListeners.forEach((l) => {
+        try {
+          l(progress.url);
+        } catch {}
+      });
+      return;
+    }
+    if (data.type === "AUDIO_CACHED_URL") {
+      const url = data.url as string;
+      if (!url) return;
+      urlListeners.forEach((l) => {
+        try {
+          l(url);
+        } catch {}
+      });
+    }
+  });
+}
 
-  async init(): Promise<IDBDatabase> {
-    if (this.db) return this.db;
-
-    return new Promise((resolve, reject) => {
-      const request = indexedDB.open(this.dbName, 1);
-
-      request.onerror = () => reject(request.error);
-      request.onsuccess = () => {
-        this.db = request.result;
-        resolve(this.db);
-      };
-
-      request.onupgradeneeded = (e) => {
-        const db = (e.target as IDBOpenDBRequest).result;
-        if (!db.objectStoreNames.contains(this.storeName)) {
-          db.createObjectStore(this.storeName);
-        }
-        // Store for tracking complete files
-        if (!db.objectStoreNames.contains("files")) {
-          db.createObjectStore("files");
-        }
-      };
-    });
+async function postToServiceWorker(message: any) {
+  if (typeof navigator === "undefined" || !("serviceWorker" in navigator)) {
+    return;
   }
+  try {
+    const controller = navigator.serviceWorker.controller;
+    if (controller) {
+      controller.postMessage(message);
+      return;
+    }
+    const ready = await navigator.serviceWorker.ready;
+    ready?.active?.postMessage(message);
+  } catch {}
+}
 
-  async saveChunk(key: string, data: ArrayBuffer) {
-    await this.initPromise;
-    return new Promise<void>((resolve, reject) => {
-      if (!this.db) return reject(new Error("DB not initialized"));
-      const tx = this.db.transaction([this.storeName], "readwrite");
-      const store = tx.objectStore(this.storeName);
-      const request = store.put(data, key);
-
-      request.onsuccess = () => resolve();
-      request.onerror = () => reject(request.error);
-    });
-  }
-
-  async getChunk(key: string): Promise<ArrayBuffer | undefined> {
-    await this.initPromise;
-    return new Promise((resolve, reject) => {
-      if (!this.db) return reject(new Error("DB not initialized"));
-      const tx = this.db.transaction([this.storeName], "readonly");
-      const store = tx.objectStore(this.storeName);
-      const request = store.get(key);
-
-      request.onsuccess = () => resolve(request.result);
-      request.onerror = () => reject(request.error);
-    });
-  }
-
-  async hasChunk(key: string): Promise<boolean> {
-    const chunk = await this.getChunk(key);
-    return chunk !== undefined;
-  }
-
-  // Helper to mark a file as fully cached
-  async markFileComplete(
-    url: string,
-    contentLength: number,
-    contentType: string,
-    metadata?: AudioMetadata
-  ) {
-    await this.initPromise;
-    return new Promise<void>((resolve, reject) => {
-      if (!this.db) return reject(new Error("DB not initialized"));
-      const tx = this.db.transaction(["files"], "readwrite");
-      const store = tx.objectStore("files");
-      const request = store.put(
-        {
-          url,
-          contentLength,
-          contentType,
-          metadata,
-          timestamp: Date.now(),
-        },
-        url
-      );
-      request.onsuccess = () => resolve();
-      request.onerror = () => reject(request.error);
-    });
-  }
-
-  async getFileInfo(
-    url: string
-  ): Promise<
-    | { contentLength: number; contentType: string; metadata?: AudioMetadata }
-    | undefined
-  > {
-    await this.initPromise;
-    return new Promise((resolve, reject) => {
-      if (!this.db) return reject(new Error("DB not initialized"));
-      const tx = this.db.transaction(["files"], "readonly");
-      const store = tx.objectStore("files");
-      const request = store.get(url);
-      request.onsuccess = () => resolve(request.result);
-      request.onerror = () => reject(request.error);
-    });
-  }
-
-  async getAllCachedFiles(): Promise<
-    { url: string; metadata?: AudioMetadata; timestamp: number }[]
-  > {
-    await this.initPromise;
-    return new Promise((resolve, reject) => {
-      if (!this.db) return reject(new Error("DB not initialized"));
-      const tx = this.db.transaction(["files"], "readonly");
-      const store = tx.objectStore("files");
-      const request = store.getAll();
-      request.onsuccess = () => resolve(request.result || []);
-      request.onerror = () => reject(request.error);
-    });
-  }
-  async clearAll() {
-    await this.initPromise;
-    return new Promise<void>((resolve, reject) => {
-      if (!this.db) return reject(new Error("DB not initialized"));
-      const tx = this.db.transaction([this.storeName, "files"], "readwrite");
-      
-      const chunksStore = tx.objectStore(this.storeName);
-      const filesStore = tx.objectStore("files");
-
-      chunksStore.clear();
-      filesStore.clear();
-
-      tx.oncomplete = () => resolve();
-      tx.onerror = () => reject(tx.error);
-    });
-  }
-
-  async deleteUrl(url: string) {
-    await this.initPromise;
-    return new Promise<void>((resolve, reject) => {
-      if (!this.db) return reject(new Error("DB not initialized"));
-
-      const tx = this.db.transaction([this.storeName, "files"], "readwrite");
-      const chunksStore = tx.objectStore(this.storeName);
-      const filesStore = tx.objectStore("files");
-
+async function upsertMeta(url: string, metadata?: AudioMetadata) {
+  if (typeof caches === "undefined") return;
+  try {
+    const cache = await caches.open(META_CACHE_NAME);
+    const key = getMetaKey(url);
+    const existing = await cache.match(key);
+    let prev: any = null;
+    if (existing) {
       try {
-        filesStore.delete(url);
+        prev = await existing.json();
       } catch {}
+    }
+    const next = {
+      url,
+      metadata: metadata
+        ? {
+            id: metadata.id,
+            title: metadata.title,
+            artist: metadata.artist,
+            artwork: metadata.artwork,
+            durationSec: metadata.durationSec,
+          }
+        : prev?.metadata,
+      timestamp: Date.now(),
+      cachedChunks:
+        typeof prev?.cachedChunks === "number" ? prev.cachedChunks : 0,
+      totalChunks: typeof prev?.totalChunks === "number" ? prev.totalChunks : 0,
+    };
+    await cache.put(
+      key,
+      new Response(JSON.stringify(next), {
+        headers: { "Content-Type": "application/json" },
+      })
+    );
+  } catch {}
+}
 
-      const prefix = `${url}_chunk_`;
-      const cursorRequest = chunksStore.openCursor();
-      cursorRequest.onsuccess = () => {
-        const cursor = cursorRequest.result;
-        if (!cursor) {
-          return;
-        }
+async function deleteChunksForUrl(url: string) {
+  if (typeof caches === "undefined") return;
+  const encoded = encodeURIComponent(url);
+  const cache = await caches.open(CHUNK_CACHE_NAME);
+  const keys = await cache.keys();
+  await Promise.all(
+    keys
+      .filter((k) => k.url.includes(`/__hififlow_audio_chunk?u=${encoded}`))
+      .map((k) => cache.delete(k))
+  );
+}
 
-        const key = cursor.key;
-        if (typeof key === "string" && key.startsWith(prefix)) {
-          try {
-            cursor.delete();
-          } catch {}
-        }
-        cursor.continue();
-      };
-      cursorRequest.onerror = () => {
-        reject(cursorRequest.error);
-      };
-
-      tx.oncomplete = () => resolve();
-      tx.onerror = () => reject(tx.error);
-    });
+async function readMeta(url: string): Promise<any | null> {
+  if (typeof caches === "undefined") return null;
+  try {
+    const cache = await caches.open(META_CACHE_NAME);
+    const resp = await cache.match(getMetaKey(url));
+    if (!resp) return null;
+    return await resp.json();
+  } catch {
+    return null;
   }
 }
 
-// Global cache instance
-const globalCache = new AudioChunkCache();
+async function hasChunk(url: string, chunkIndex: number): Promise<boolean> {
+  if (typeof caches === "undefined") return false;
+  try {
+    const cache = await caches.open(CHUNK_CACHE_NAME);
+    const match = await cache.match(getChunkKey(url, chunkIndex));
+    return Boolean(match);
+  } catch {
+    return false;
+  }
+}
+
+async function waitForChunks(
+  url: string,
+  chunkIndexes: number[],
+  options: { timeoutMs: number }
+): Promise<boolean> {
+  const timeoutMs = Math.max(0, options.timeoutMs);
+  const start = Date.now();
+
+  while (Date.now() - start < timeoutMs) {
+    const checks = await Promise.all(chunkIndexes.map((i) => hasChunk(url, i)));
+    if (checks.every(Boolean)) return true;
+    await new Promise((r) => setTimeout(r, 125));
+  }
+
+  const finalChecks = await Promise.all(
+    chunkIndexes.map((i) => hasChunk(url, i))
+  );
+  return finalChecks.every(Boolean);
+}
 
 export class ChunkedAudioLoader {
-  private url: string;
-  private chunkSize: number;
-  private cache: AudioChunkCache;
-  private totalSize: number = 0;
-  private contentType: string = "audio/mpeg"; // Default
-  private chunks: Map<number, ArrayBuffer> = new Map();
+  constructor(private url: string) {}
 
-  constructor(url: string, chunkSize = 256 * 1024) {
-    // 256KB chunks
-    this.url = url;
-    this.chunkSize = chunkSize;
-    this.cache = globalCache;
-  }
-
-  async getContentLength() {
-    if (this.totalSize > 0) return this.totalSize;
-
-    // Check cache first
-    const cachedInfo = await this.cache.getFileInfo(this.url);
-    if (cachedInfo) {
-      this.totalSize = cachedInfo.contentLength;
-      this.contentType = cachedInfo.contentType;
-      return this.totalSize;
-    }
-
-    try {
-      const response = await fetch(this.url, { method: "HEAD" });
-      this.totalSize = parseInt(response.headers.get("content-length") || "0");
-      this.contentType = response.headers.get("content-type") || "audio/mpeg";
-      return this.totalSize;
-    } catch (e) {
-      console.warn("[AudioLoader] Failed to get content length", e);
-      return 0;
-    }
-  }
-
-  async loadChunk(chunkIndex: number): Promise<ArrayBuffer> {
-    const cacheKey = `${this.url}_chunk_${chunkIndex}`;
-
-    // Check cache first
-    const cached = await this.cache.getChunk(cacheKey);
-    if (cached) {
-      this.chunks.set(chunkIndex, cached);
-      return cached;
-    }
-
-    if (this.totalSize === 0) await this.getContentLength();
-    if (this.totalSize === 0) throw new Error("Cannot determine file size");
-
-    // Download chunk
-    const start = chunkIndex * this.chunkSize;
-    const end = Math.min(start + this.chunkSize - 1, this.totalSize - 1);
-
-    const response = await fetch(this.url, {
-      headers: { Range: `bytes=${start}-${end}` },
+  async getAudioUrl(metadata?: AudioMetadata): Promise<string> {
+    initServiceWorkerListeners();
+    await upsertMeta(this.url, metadata);
+    const durationSec = metadata?.durationSec;
+    await postToServiceWorker({
+      type: "AUDIO_META",
+      url: this.url,
+      durationSec,
+      metadata: metadata
+        ? {
+            id: metadata.id,
+            title: metadata.title,
+            artist: metadata.artist,
+            artwork: metadata.artwork,
+          }
+        : undefined,
     });
-
-    const arrayBuffer = await response.arrayBuffer();
-
-    // Cache it
-    await this.cache.saveChunk(cacheKey, arrayBuffer);
-    this.chunks.set(chunkIndex, arrayBuffer);
-
-    return arrayBuffer;
-  }
-
-  /**
-   * Checks if the full audio is available in cache.
-   * If so, returns a Blob URL.
-   * If not, returns the original URL.
-   */
-  async getAudioUrl(): Promise<string> {
-    const cachedInfo = await this.cache.getFileInfo(this.url);
-    if (cachedInfo) {
-      // Verify we have all chunks (optimistic check or full check?)
-      // For speed, rely on 'files' store entry which implies completeness
-      // But we need to reconstruct the blob
-      try {
-        const blob = await this.reconstructBlob(
-          cachedInfo.contentLength,
-          cachedInfo.contentType
-        );
-        console.log(`[AudioLoader] Serving from cache: ${this.url}`);
-        return URL.createObjectURL(blob);
-      } catch (e) {
-        console.warn("[AudioLoader] Failed to reconstruct from cache", e);
-        // Fallback to network
-      }
-    }
+    await postToServiceWorker({
+      type: "AUDIO_CACHE_WINDOW",
+      url: this.url,
+      positionSec: 0,
+    });
     return this.url;
   }
 
-  private async reconstructBlob(
-    totalSize: number,
-    contentType: string
-  ): Promise<Blob> {
-    const chunkCount = Math.ceil(totalSize / this.chunkSize);
-    const buffers: ArrayBuffer[] = [];
-
-    for (let i = 0; i < chunkCount; i++) {
-      const cacheKey = `${this.url}_chunk_${i}`;
-      const chunk = await this.cache.getChunk(cacheKey);
-      if (!chunk) throw new Error(`Missing chunk ${i}`);
-      buffers.push(chunk);
-    }
-
-    return new Blob(buffers, { type: contentType });
-  }
-
-  /**
-   * Downloads the full audio and caches it.
-   * Should be called in background.
-   */
   async cacheFullAudio(metadata?: AudioMetadata): Promise<void> {
-    const cachedInfo = await this.cache.getFileInfo(this.url);
-    if (cachedInfo) return; // Already cached
-
-    await this.getContentLength();
-    if (this.totalSize === 0) return;
-
-    const chunkCount = Math.ceil(this.totalSize / this.chunkSize);
-    console.log(`[AudioLoader] Caching ${this.url} (${chunkCount} chunks)`);
-
-    // Sequential download to avoid flooding network
-    // Modified to allow limited concurrency for speed
-    const CONCURRENCY = 3;
-    for (let i = 0; i < chunkCount; i += CONCURRENCY) {
-      const batch = [];
-      for (let j = 0; j < CONCURRENCY && i + j < chunkCount; j++) {
-        batch.push(this.loadChunk(i + j));
-      }
-      await Promise.all(batch);
-    }
-
-    await this.cache.markFileComplete(
-      this.url,
-      this.totalSize,
-      this.contentType,
-      metadata
-    );
-    console.log(`[AudioLoader] Cached complete: ${this.url}`);
+    initServiceWorkerListeners();
+    await upsertMeta(this.url, metadata);
+    await postToServiceWorker({
+      type: "AUDIO_META",
+      url: this.url,
+      durationSec: metadata?.durationSec,
+      metadata: metadata
+        ? {
+            id: metadata.id,
+            title: metadata.title,
+            artist: metadata.artist,
+            artwork: metadata.artwork,
+          }
+        : undefined,
+    });
+    await postToServiceWorker({
+      type: "AUDIO_CACHE_FULL",
+      url: this.url,
+    });
   }
 }
 
 export const audioCacheService = {
-  // Simple listener implementation
-  _listeners: new Set<(url: string) => void>(),
+  _listeners: urlListeners,
 
   addListener(callback: (url: string) => void) {
-    this._listeners.add(callback);
-    return () => this._listeners.delete(callback);
+    initServiceWorkerListeners();
+    urlListeners.add(callback);
+    return () => urlListeners.delete(callback);
   },
 
-  notifyListeners(url: string) {
-    this._listeners.forEach((l) => {
-      l(url);
+  addProgressListener(callback: (progress: AudioCacheProgress) => void) {
+    initServiceWorkerListeners();
+    progressListeners.add(callback);
+    return () => progressListeners.delete(callback);
+  },
+
+  getProgress(url: string): AudioCacheProgress | null {
+    return progressByUrl.get(url) ?? null;
+  },
+
+  getStorageEstimate: async (): Promise<StorageEstimate | null> => {
+    try {
+      if (typeof navigator === "undefined" || !navigator.storage?.estimate) {
+        return null;
+      }
+      return await navigator.storage.estimate();
+    } catch {
+      return null;
+    }
+  },
+
+  cacheWindow: async (
+    url: string,
+    options?: { positionSec?: number; metadata?: AudioMetadata }
+  ) => {
+    initServiceWorkerListeners();
+    const now = Date.now();
+    const last = lastWindowRequestAt.get(url) ?? 0;
+    if (now - last < 750) return;
+    lastWindowRequestAt.set(url, now);
+
+    await upsertMeta(url, options?.metadata);
+    if (options?.metadata?.durationSec) {
+      await postToServiceWorker({
+        type: "AUDIO_META",
+        url,
+        durationSec: options.metadata.durationSec,
+        metadata: {
+          id: options.metadata.id,
+          title: options.metadata.title,
+          artist: options.metadata.artist,
+          artwork: options.metadata.artwork,
+        },
+      });
+    }
+    await postToServiceWorker({
+      type: "AUDIO_CACHE_WINDOW",
+      url,
+      positionSec: options?.positionSec ?? 0,
     });
+  },
+
+  ensureCachedSeconds: async (
+    url: string,
+    options?: {
+      positionSec?: number;
+      seconds?: number;
+      timeoutMs?: number;
+      metadata?: AudioMetadata;
+    }
+  ): Promise<boolean> => {
+    initServiceWorkerListeners();
+    const positionSec = options?.positionSec ?? 0;
+    const seconds = Math.max(0, options?.seconds ?? CHUNK_DURATION_SEC);
+    const timeoutMs = Math.max(0, options?.timeoutMs ?? 2500);
+
+    await upsertMeta(url, options?.metadata);
+    if (options?.metadata?.durationSec) {
+      await postToServiceWorker({
+        type: "AUDIO_META",
+        url,
+        durationSec: options.metadata.durationSec,
+        metadata: {
+          id: options.metadata.id,
+          title: options.metadata.title,
+          artist: options.metadata.artist,
+          artwork: options.metadata.artwork,
+        },
+      });
+    }
+
+    await postToServiceWorker({
+      type: "AUDIO_CACHE_WINDOW",
+      url,
+      positionSec,
+    });
+
+    const neededChunks = Math.max(1, Math.ceil(seconds / CHUNK_DURATION_SEC));
+    const startChunkIndex = Math.max(
+      0,
+      Math.floor(positionSec / CHUNK_DURATION_SEC)
+    );
+    const chunkIndexes = Array.from(
+      { length: neededChunks },
+      (_, idx) => startChunkIndex + idx
+    );
+    return waitForChunks(url, chunkIndexes, { timeoutMs });
+  },
+
+  isChunkCached: async (url: string, chunkIndex: number): Promise<boolean> => {
+    return hasChunk(url, chunkIndex);
+  },
+
+  getCachedMeta: async (
+    url: string
+  ): Promise<{
+    url: string;
+    metadata?: AudioMetadata;
+    timestamp: number;
+    cachedChunks?: number;
+    totalChunks?: number;
+  } | null> => {
+    const parsed = await readMeta(url);
+    if (!parsed || typeof parsed !== "object") return null;
+    if (
+      typeof (parsed as any).url !== "string" ||
+      typeof (parsed as any).timestamp !== "number"
+    ) {
+      return null;
+    }
+    return {
+      url: (parsed as any).url,
+      metadata: (parsed as any).metadata,
+      timestamp: (parsed as any).timestamp,
+      cachedChunks:
+        typeof (parsed as any).cachedChunks === "number"
+          ? (parsed as any).cachedChunks
+          : undefined,
+      totalChunks:
+        typeof (parsed as any).totalChunks === "number"
+          ? (parsed as any).totalChunks
+          : undefined,
+    };
+  },
+
+  findCachedUrlByTrackId: async (trackId: string): Promise<string | null> => {
+    if (typeof caches === "undefined") return null;
+    try {
+      const cache = await caches.open(META_CACHE_NAME);
+      const keys = await cache.keys();
+      for (const key of keys) {
+        const resp = await cache.match(key);
+        if (!resp) continue;
+        try {
+          const parsed = (await resp.json()) as any;
+          if (
+            parsed?.metadata?.id &&
+            String(parsed.metadata.id) === String(trackId)
+          ) {
+            if (typeof parsed?.url === "string") {
+              return parsed.url;
+            }
+          }
+        } catch {}
+      }
+      return null;
+    } catch {
+      return null;
+    }
   },
 
   resolveUrl: async (url: string, metadata?: AudioMetadata) => {
     const loader = new ChunkedAudioLoader(url);
-    const resolved = await loader.getAudioUrl();
-
-    // If not cached (returned original URL), trigger caching in background
-    if (resolved === url) {
-      // Fire and forget
-      loader
-        .cacheFullAudio(metadata)
-        .then(() => {
-          // Notify listeners that a new file is cached
-          audioCacheService.notifyListeners(url);
-        })
-        .catch((e) => console.warn("[AudioLoader] Background cache failed", e));
-    }
-
-    return resolved;
+    return loader.getAudioUrl(metadata);
   },
 
   cacheUrl: async (url: string, metadata?: AudioMetadata) => {
     const loader = new ChunkedAudioLoader(url);
     await loader.cacheFullAudio(metadata);
-    audioCacheService.notifyListeners(url);
+    urlListeners.forEach((l) => {
+      try {
+        l(url);
+      } catch {}
+    });
   },
 
   evictUrl: async (url: string) => {
-    await globalCache.deleteUrl(url);
-    audioCacheService.notifyListeners(url);
+    if (typeof caches === "undefined") return;
+    await deleteChunksForUrl(url);
+    const metaCache = await caches.open(META_CACHE_NAME);
+    await metaCache.delete(getMetaKey(url));
+    urlListeners.forEach((l) => {
+      try {
+        l(url);
+      } catch {}
+    });
   },
 
   isCached: async (url: string) => {
-    const info = await globalCache.getFileInfo(url);
-    return !!info;
+    if (typeof caches === "undefined") return false;
+    try {
+      const metaCache = await caches.open(META_CACHE_NAME);
+      const meta = await metaCache.match(getMetaKey(url));
+      if (!meta) return false;
+      const parsed = (await meta.json()) as any;
+      if (typeof parsed?.cachedChunks === "number") {
+        return parsed.cachedChunks > 0;
+      }
+      const chunkCache = await caches.open(CHUNK_CACHE_NAME);
+      const keys = await chunkCache.keys();
+      const encoded = encodeURIComponent(url);
+      return keys.some((k) =>
+        k.url.includes(`/__hififlow_audio_chunk?u=${encoded}`)
+      );
+    } catch {
+      return false;
+    }
   },
 
   getAllCachedTracks: async (): Promise<
     { url: string; metadata?: AudioMetadata; timestamp: number }[]
   > => {
-    return globalCache.getAllCachedFiles();
+    if (typeof caches === "undefined") return [];
+    try {
+      const cache = await caches.open(META_CACHE_NAME);
+      const keys = await cache.keys();
+      const results: {
+        url: string;
+        metadata?: AudioMetadata;
+        timestamp: number;
+      }[] = [];
+      for (const key of keys) {
+        const resp = await cache.match(key);
+        if (!resp) continue;
+        try {
+          const parsed = (await resp.json()) as any;
+          if (
+            typeof parsed?.url === "string" &&
+            typeof parsed?.timestamp === "number"
+          ) {
+            results.push({
+              url: parsed.url,
+              metadata: parsed.metadata,
+              timestamp: parsed.timestamp,
+            });
+          }
+        } catch {}
+      }
+      return results.sort((a, b) => b.timestamp - a.timestamp);
+    } catch {
+      return [];
+    }
   },
-  
+
   clearCache: async () => {
-    return globalCache.clearAll();
-  }
+    if (typeof caches === "undefined") return;
+    await Promise.all([
+      caches.delete(META_CACHE_NAME),
+      caches.delete(CHUNK_CACHE_NAME),
+    ]);
+  },
+
+  chunkDurationSec: CHUNK_DURATION_SEC,
+  windowAheadSec: WINDOW_AHEAD_SEC,
+  metaCacheName: META_CACHE_NAME,
+  chunkCacheName: CHUNK_CACHE_NAME,
+  getMetaKey,
+  getChunkKey,
 };

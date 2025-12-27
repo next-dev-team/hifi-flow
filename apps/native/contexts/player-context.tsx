@@ -21,6 +21,7 @@ import {
 } from "react";
 import { Platform } from "react-native";
 import { useToast } from "@/contexts/toast-context";
+import { useOfflineStatus } from "@/hooks/use-offline-status";
 import { usePersistentState } from "@/hooks/use-persistent-state";
 import { losslessAPI } from "@/utils/api";
 import { audioCacheService } from "@/utils/audio-cache";
@@ -172,6 +173,8 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
 
   const currentStreamUrlRef = useRef<string | null>(null);
   const currentBaseStreamUrlRef = useRef<string | null>(null);
+  const lastCachePositionSecRef = useRef<number>(0);
+  const lastCacheUrlRef = useRef<string | null>(null);
 
   // ==================== Queue State ====================
   const [queue, setQueue, isQueueLoaded] = usePersistentState<Track[]>(
@@ -211,6 +214,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
     useState<PreBufferStatus>("none");
 
   const { showToast } = useToast();
+  const isOffline = useOfflineStatus();
 
   // ==================== Refs for single-player control ====================
   // CRITICAL: Only ONE active player at any time
@@ -224,6 +228,8 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
     url: string;
     baseUrl: string;
   } | null>(null);
+
+  const cachedUrlByTrackIdRef = useRef<Map<string, string>>(new Map());
   // Stream URL cache
   const streamUrlCacheRef = useRef<
     Map<string, { url: string; timestamp: number }>
@@ -256,6 +262,36 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
   useEffect(() => {
     currentStreamUrlRef.current = currentStreamUrl;
   }, [currentStreamUrl]);
+
+  useEffect(() => {
+    if (Platform.OS !== "web") return;
+    if (!isPlaying) return;
+    if (!currentTrack) return;
+    const baseUrl = currentBaseStreamUrlRef.current ?? currentStreamUrl;
+    if (!baseUrl) return;
+    const positionSec = status?.currentTime ?? 0;
+
+    const lastUrl = lastCacheUrlRef.current;
+    const lastPos = lastCachePositionSecRef.current;
+    const isNewTrack = lastUrl !== baseUrl;
+    const isSeek = !isNewTrack && Math.abs(positionSec - lastPos) >= 8;
+    const isTick = isNewTrack || isSeek || Math.abs(positionSec - lastPos) >= 1;
+    if (!isTick) return;
+
+    lastCacheUrlRef.current = baseUrl;
+    lastCachePositionSecRef.current = positionSec;
+
+    void audioCacheService.cacheWindow(baseUrl, {
+      positionSec,
+      metadata: {
+        id: String(currentTrack.id),
+        title: currentTrack.title,
+        artist: currentTrack.artist,
+        artwork: currentTrack.artwork,
+        durationSec: currentTrack.duration,
+      },
+    });
+  }, [isPlaying, currentTrack, currentStreamUrl, status?.currentTime]);
 
   // ==================== Audio Mode Configuration ====================
   useEffect(() => {
@@ -677,6 +713,24 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
           quality === "HI_RES_LOSSLESS" ? "LOSSLESS" : quality;
         const cacheKey = `${trackIdStr}:${effectiveQuality}`;
 
+        const trackMetadata = {
+          id: String(track.id),
+          title: track.title,
+          artist: track.artist,
+          artwork: track.artwork,
+          durationSec: track.duration,
+        };
+
+        const savedPosSec = savedPositions[trackIdStr];
+        const startPositionSec =
+          typeof savedPosSec === "number" && Number.isFinite(savedPosSec)
+            ? Math.max(0, savedPosSec)
+            : 0;
+
+        const chunkDurationSec = audioCacheService.chunkDurationSec ?? 5;
+
+        const offlineWeb = Platform.OS === "web" && isOffline;
+
         for (let attempt = 1; attempt <= 3; attempt += 1) {
           if (
             allowPreBuffered &&
@@ -740,6 +794,8 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
               }
               await clearWebCachesForUrl(baseUrl || url);
               streamUrlCacheRef.current.delete(cacheKey);
+            } else if (!offlineWeb && Platform.OS === "web") {
+              await clearWebCachesForUrl(baseUrl || url);
             }
 
             allowPreBuffered = false;
@@ -748,20 +804,56 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
           destroyAllPlayers();
 
           let baseStreamUrl: string | null = null;
-          if (attempt === 1) {
-            baseStreamUrl = await getStreamUrlForTrack(track, effectiveQuality);
-          } else if (Number.isFinite(trackId)) {
-            try {
-              baseStreamUrl = await losslessAPI.getStreamUrl(
-                trackId,
+
+          if (offlineWeb) {
+            baseStreamUrl =
+              cachedUrlByTrackIdRef.current.get(trackIdStr) ?? null;
+            if (!baseStreamUrl) {
+              const fromLibrary =
+                recentlyPlayed.find((t) => String(t.id) === trackIdStr)
+                  ?.streamUrl ||
+                favorites.find((t) => String(t.id) === trackIdStr)?.streamUrl;
+              baseStreamUrl = fromLibrary || null;
+            }
+            if (!baseStreamUrl) {
+              baseStreamUrl = await audioCacheService.findCachedUrlByTrackId(
+                trackIdStr
+              );
+            }
+            if (!baseStreamUrl) {
+              return false;
+            }
+
+            const startChunkIndex = Math.max(
+              0,
+              Math.floor(startPositionSec / chunkDurationSec)
+            );
+            const hasStartChunk = await audioCacheService.isChunkCached(
+              baseStreamUrl,
+              startChunkIndex
+            );
+            if (!hasStartChunk) {
+              return false;
+            }
+          } else {
+            if (attempt === 1) {
+              baseStreamUrl = await getStreamUrlForTrack(
+                track,
                 effectiveQuality
               );
-              streamUrlCacheRef.current.set(cacheKey, {
-                url: baseStreamUrl,
-                timestamp: Date.now(),
-              });
-            } catch {
-              baseStreamUrl = null;
+            } else if (Number.isFinite(trackId)) {
+              try {
+                baseStreamUrl = await losslessAPI.getStreamUrl(
+                  trackId,
+                  effectiveQuality
+                );
+                streamUrlCacheRef.current.set(cacheKey, {
+                  url: baseStreamUrl,
+                  timestamp: Date.now(),
+                });
+              } catch {
+                baseStreamUrl = null;
+              }
             }
           }
           if (!baseStreamUrl) {
@@ -769,15 +861,24 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
             return false;
           }
 
+          if (!offlineWeb && Platform.OS === "web") {
+            try {
+              await audioCacheService.ensureCachedSeconds(baseStreamUrl, {
+                positionSec: startPositionSec,
+                seconds: 5,
+                timeoutMs: 2500,
+                metadata: trackMetadata,
+              });
+            } catch {}
+          }
+
           let streamUrl = baseStreamUrl;
           if (attempt === 1) {
             try {
-              streamUrl = await audioCacheService.resolveUrl(baseStreamUrl, {
-                id: String(track.id),
-                title: track.title,
-                artist: track.artist,
-                artwork: track.artwork,
-              });
+              streamUrl = await audioCacheService.resolveUrl(
+                baseStreamUrl,
+                trackMetadata
+              );
             } catch (e) {
               console.warn(
                 "[Player] Cache resolution failed, using original URL:",
@@ -855,6 +956,9 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
             }
             await clearWebCachesForUrl(baseStreamUrl);
             streamUrlCacheRef.current.delete(cacheKey);
+          } else if (!offlineWeb && Platform.OS === "web" && attempt === 1) {
+            await clearWebCachesForUrl(baseStreamUrl);
+            streamUrlCacheRef.current.delete(cacheKey);
           }
 
           if (attempt < 3) {
@@ -885,6 +989,9 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
       waitForPlaybackStart,
       isNotSupportedPlaybackError,
       clearWebCachesForUrl,
+      recentlyPlayed,
+      favorites,
+      isOffline,
     ]
   );
 
@@ -986,7 +1093,25 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
         title: nextTrack.title,
         artist: nextTrack.artist,
         artwork: nextTrack.artwork,
+        durationSec: nextTrack.duration,
       });
+
+      if (Platform.OS === "web") {
+        try {
+          await audioCacheService.ensureCachedSeconds(baseStreamUrl, {
+            positionSec: 0,
+            seconds: 5,
+            timeoutMs: 2500,
+            metadata: {
+              id: String(nextTrack.id),
+              title: nextTrack.title,
+              artist: nextTrack.artist,
+              artwork: nextTrack.artwork,
+              durationSec: nextTrack.duration,
+            },
+          });
+        } catch {}
+      }
 
       // Clean up ANY existing pre-buffered player (including from race conditions)
       if (preBufferedPlayerRef.current) {
@@ -1418,70 +1543,84 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
       return;
     }
 
-    if (activePlayerRef.current) {
-      if (currentTrack) {
-        setLoadingTrackId(String(currentTrack.id));
-      }
-
-      let playError: unknown = null;
-      try {
-        const playResult = (activePlayerRef.current as any).play?.();
-        if (playResult && typeof playResult.then === "function") {
-          await playResult.catch((e: unknown) => {
-            playError = e;
-          });
+    try {
+      if (activePlayerRef.current) {
+        if (currentTrack) {
+          setLoadingTrackId(String(currentTrack.id));
         }
-      } catch (e) {
-        playError = e;
-      }
 
-      const startResult = playError
-        ? {
-            ok: false as const,
-            reason: isNotSupportedPlaybackError(playError)
-              ? ("not_supported" as const)
-              : ("error" as const),
+        let playError: unknown = null;
+        try {
+          const playResult = (activePlayerRef.current as any).play?.();
+          if (playResult && typeof playResult.then === "function") {
+            await playResult.catch((e: unknown) => {
+              playError = e;
+            });
           }
-        : await waitForPlaybackStart(activePlayerRef.current, 15000);
+        } catch (e) {
+          playError = e;
+        }
 
-      if (!startResult.ok && currentTrack) {
-        if (startResult.reason === "not_supported") {
-          const effectiveQuality =
-            quality === "HI_RES_LOSSLESS" ? "LOSSLESS" : quality;
-          const cacheKey = `${String(currentTrack.id)}:${effectiveQuality}`;
-          streamUrlCacheRef.current.delete(cacheKey);
+        const startResult = playError
+          ? {
+              ok: false as const,
+              reason: isNotSupportedPlaybackError(playError)
+                ? ("not_supported" as const)
+                : ("error" as const),
+            }
+          : await waitForPlaybackStart(activePlayerRef.current, 15000);
 
-          const urlToClear = currentStreamUrl;
-          if (urlToClear) {
-            if (urlToClear.startsWith("blob:")) {
-              try {
-                URL.revokeObjectURL(urlToClear);
-              } catch {}
-            } else {
-              await clearWebCachesForUrl(urlToClear);
+        if (startResult.ok) {
+          consecutiveFailuresRef.current = 0;
+          return;
+        }
+
+        if (currentTrack) {
+          if (startResult.reason === "not_supported") {
+            const effectiveQuality =
+              quality === "HI_RES_LOSSLESS" ? "LOSSLESS" : quality;
+            const cacheKey = `${String(currentTrack.id)}:${effectiveQuality}`;
+            streamUrlCacheRef.current.delete(cacheKey);
+
+            const urlToClear = currentStreamUrl;
+            if (urlToClear) {
+              if (urlToClear.startsWith("blob:")) {
+                try {
+                  URL.revokeObjectURL(urlToClear);
+                } catch {}
+              } else {
+                try {
+                  await clearWebCachesForUrl(urlToClear);
+                } catch {}
+              }
             }
           }
-        }
 
-        const success = await playSoundInternal(currentTrack, false);
-        if (!success) {
-          markTrackBroken(String(currentTrack.id));
-          consecutiveFailuresRef.current++;
-          if (consecutiveFailuresRef.current >= MAX_CONSECUTIVE_FAILURES) {
+          const success = await playSoundInternal(currentTrack, false);
+          if (!success) {
+            markTrackBroken(String(currentTrack.id));
+            consecutiveFailuresRef.current++;
+            if (consecutiveFailuresRef.current >= MAX_CONSECUTIVE_FAILURES) {
+              showToast({
+                message: "Too many playback errors, stopping.",
+                type: "error",
+              });
+              consecutiveFailuresRef.current = 0;
+              return;
+            }
             showToast({
-              message: "Too many playback errors, stopping.",
-              type: "error",
+              message: "Playback failed, skipping...",
+              type: "info",
             });
-            consecutiveFailuresRef.current = 0;
-            return;
+            await new Promise((r) => setTimeout(r, 300));
+            await playNextRef.current();
           }
-          showToast({ message: "Playback failed, skipping...", type: "info" });
-          await new Promise((r) => setTimeout(r, 300));
-          await playNextRef.current();
         }
+      } else if (currentTrack) {
+        await playSoundInternal(currentTrack, false);
       }
-    } else if (currentTrack) {
-      await playSoundInternal(currentTrack, false);
+    } finally {
+      setLoadingTrackId(null);
     }
   }, [
     currentTrack,
@@ -1669,10 +1808,10 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
 
   useEffect(() => {
     mediaSessionService.setHandlers({
-      onPlay: () => activePlayerRef.current?.play(),
-      onPause: () => activePlayerRef.current?.pause(),
+      onPlay: () => void resumeTrack(),
+      onPause: () => void pauseTrack(),
       onStop: () => {
-        activePlayerRef.current?.pause();
+        void pauseTrack();
         activePlayerRef.current?.seekTo(0);
       },
       onNextTrack: () => void playNextRef.current(),
@@ -1694,7 +1833,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
         }
       },
     });
-  }, [playPrevious]);
+  }, [pauseTrack, playPrevious, resumeTrack]);
 
   // Update media session track metadata
   useEffect(() => {
@@ -1772,25 +1911,35 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
   }, []);
 
   useEffect(() => {
-    // Load cached tracks
     audioCacheService.getAllCachedTracks().then((tracks) => {
       const ids = new Set(tracks.map((t) => String(t.metadata?.id || t.url)));
-      // Also add raw URLs as keys
+      const byId = new Map<string, string>();
       tracks.forEach((t) => {
         ids.add(t.url);
+        const id = t.metadata?.id ? String(t.metadata.id) : null;
+        if (id) {
+          byId.set(id, t.url);
+        }
       });
+      cachedUrlByTrackIdRef.current = byId;
       setCachedTrackIds(ids);
     });
 
-    // Listen for new cached files
     const unsubscribe = audioCacheService.addListener((url) => {
       setCachedTrackIds((prev) => {
         const next = new Set(prev);
         next.add(url);
-        // We might want to add ID too if we could fetch metadata here,
-        // but for now URL is sufficient for basic matching if TrackItem checks url.
         return next;
       });
+
+      if (Platform.OS === "web") {
+        audioCacheService.getCachedMeta(url).then((meta) => {
+          const id = meta?.metadata?.id ? String(meta.metadata.id) : null;
+          if (id && meta?.url) {
+            cachedUrlByTrackIdRef.current.set(id, String(meta.url));
+          }
+        });
+      }
     });
 
     return () => {

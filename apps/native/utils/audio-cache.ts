@@ -1,12 +1,19 @@
-// Native implementation - No-op for IndexedDB caching
-// As IndexedDB is not available on native, we simply pass through the URL.
-// Native caching would require expo-file-system.
-
 export interface AudioMetadata {
   id: string;
   title: string;
   artist: string;
   artwork?: string;
+  durationSec?: number;
+}
+
+export interface AudioCacheProgress {
+  url: string;
+  windowStartSec: number;
+  windowEndSec: number;
+  cachedChunks: number;
+  totalChunks: number;
+  cachedSecondsAhead: number;
+  updatedAt: number;
 }
 
 export class AudioChunkCache {
@@ -45,6 +52,52 @@ export const audioCacheService = {
   addListener: (callback: (url: string) => void) => {
     return () => {};
   },
+  addProgressListener: (callback: (progress: AudioCacheProgress) => void) => {
+    return () => {};
+  },
+  getProgress: (_url: string): AudioCacheProgress | null => {
+    return null;
+  },
+  getStorageEstimate: async (): Promise<StorageEstimate | null> => {
+    return null;
+  },
+  cacheWindow: async (
+    _url: string,
+    _options?: { positionSec?: number; metadata?: AudioMetadata }
+  ) => {
+    return;
+  },
+  ensureCachedSeconds: async (
+    _url: string,
+    _options?: {
+      positionSec?: number;
+      seconds?: number;
+      timeoutMs?: number;
+      metadata?: AudioMetadata;
+    }
+  ): Promise<boolean> => {
+    return false;
+  },
+  isChunkCached: async (
+    _url: string,
+    _chunkIndex: number
+  ): Promise<boolean> => {
+    return false;
+  },
+  getCachedMeta: async (
+    _url: string
+  ): Promise<{
+    url: string;
+    metadata?: AudioMetadata;
+    timestamp: number;
+    cachedChunks?: number;
+    totalChunks?: number;
+  } | null> => {
+    return null;
+  },
+  findCachedUrlByTrackId: async (_trackId: string): Promise<string | null> => {
+    return null;
+  },
   resolveUrl: async (url: string, metadata?: AudioMetadata) => url,
   cacheUrl: async (url: string, metadata?: AudioMetadata) => {
     /* no-op */
@@ -63,4 +116,7 @@ export const audioCacheService = {
   clearCache: async () => {
     // no-op
   },
+
+  chunkDurationSec: 5,
+  windowAheadSec: 60,
 };
