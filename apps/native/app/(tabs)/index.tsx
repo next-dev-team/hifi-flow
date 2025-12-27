@@ -1,5 +1,6 @@
 /** biome-ignore-all lint/style/noNonNullAssertion: <explanation> */
 import { Ionicons } from "@expo/vector-icons";
+import { router } from "expo-router";
 import {
   BottomSheetBackdrop,
   type BottomSheetBackdropProps,
@@ -927,7 +928,13 @@ export default function Home() {
         <View className="flex-row items-center justify-between mb-2">
           <TouchableOpacity
             activeOpacity={0.8}
-            onPress={() => favoritesSheetRef.current?.present()}
+            onPress={() => {
+              if (Platform.OS === "web") {
+                window.location.reload();
+              } else {
+                router.replace("/");
+              }
+            }}
           >
             <StyledText className="text-xl font-bold text-foreground font-italic">
               HiFi Flow{" "}
