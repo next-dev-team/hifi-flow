@@ -71,12 +71,7 @@ export default function Layout() {
             });
         };
 
-        if (document.readyState === "complete") {
-          registerServiceWorker();
-          return;
-        }
-
-        window.addEventListener("load", registerServiceWorker, { once: true });
+        registerServiceWorker();
       }
     }
   }, []);

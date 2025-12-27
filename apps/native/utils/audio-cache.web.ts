@@ -16,7 +16,7 @@ export interface AudioCacheProgress {
   updatedAt: number;
 }
 
-const CHUNK_DURATION_SEC = 5;
+const CHUNK_DURATION_SEC = 40;
 const WINDOW_AHEAD_SEC = 60;
 const CACHE_VERSION = "v2";
 const META_CACHE_NAME = `hififlow-audio-meta-${CACHE_VERSION}`;
@@ -218,6 +218,20 @@ export class ChunkedAudioLoader {
       url: this.url,
       positionSec: 0,
     });
+
+    if (
+      typeof navigator !== "undefined" &&
+      "serviceWorker" in navigator &&
+      !navigator.serviceWorker.controller
+    ) {
+      try {
+        await navigator.serviceWorker.ready;
+      } catch {}
+      for (let i = 0; i < 10; i += 1) {
+        if (navigator.serviceWorker.controller) break;
+        await new Promise((r) => setTimeout(r, 50));
+      }
+    }
     if (canUseAudioStreamProxy()) {
       return buildStreamProxyUrl(this.url);
     }

@@ -1,58 +1,75 @@
 import { Tabs } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { useThemeColor } from "heroui-native";
+import { Platform } from "react-native";
 
 export default function TabLayout() {
-	const themeColorForeground = useThemeColor("foreground");
-	const themeColorBackground = useThemeColor("background");
+  const themeColorForeground = useThemeColor("foreground");
+  const themeColorBackground = useThemeColor("background");
 
-	return (
-		<Tabs
-			screenOptions={{
-				headerShown: false,
-				headerStyle: {
-					backgroundColor: themeColorBackground,
-				},
-				headerTintColor: themeColorForeground,
-				headerTitleStyle: {
-					color: themeColorForeground,
-					fontWeight: "600",
-				},
-				tabBarStyle: {
-					backgroundColor: themeColorBackground,
-				},
-				tabBarActiveTintColor: "#ef4444",
-				tabBarInactiveTintColor: themeColorForeground + "80",
-			}}
-		>
-			<Tabs.Screen
-				name="index"
-				options={{
-					title: "Home",
-					tabBarIcon: ({ color, size }: { color: string; size: number }) => (
-						<Ionicons name="home" size={size} color={color} />
-					),
-				}}
-			/>
-			<Tabs.Screen
-				name="explore"
-				options={{
-					title: "Explore",
-					tabBarIcon: ({ color, size }: { color: string; size: number }) => (
-						<Ionicons name="compass" size={size} color={color} />
-					),
-				}}
-			/>
-			<Tabs.Screen
-				name="library"
-				options={{
-					title: "Library",
-					tabBarIcon: ({ color, size }: { color: string; size: number }) => (
-						<Ionicons name="library" size={size} color={color} />
-					),
-				}}
-			/>
-		</Tabs>
-	);
+  return (
+    <Tabs
+      screenOptions={{
+        headerShown: false,
+        headerStyle: {
+          backgroundColor: themeColorBackground,
+        },
+        headerTintColor: themeColorForeground,
+        headerTitleStyle: {
+          color: themeColorForeground,
+          fontWeight: "600",
+        },
+        tabBarStyle: {
+          backgroundColor: themeColorBackground,
+          height: Platform.OS === "web" ? 86 : 84,
+          paddingTop: 8,
+          paddingBottom: 10,
+        },
+        tabBarLabelStyle: {
+          fontSize: 12,
+          marginTop: 2,
+          paddingBottom: 0,
+        },
+        tabBarActiveTintColor: "#ef4444",
+        tabBarInactiveTintColor: themeColorForeground + "80",
+      }}
+    >
+      <Tabs.Screen
+        name="index"
+        options={{
+          title: "Home",
+          tabBarIcon: ({ color, size }: { color: string; size: number }) => (
+            <Ionicons name="home" size={size} color={color} />
+          ),
+        }}
+      />
+      <Tabs.Screen
+        name="explore"
+        options={{
+          title: "Explore",
+          tabBarIcon: ({ color, size }: { color: string; size: number }) => (
+            <Ionicons name="compass" size={size} color={color} />
+          ),
+        }}
+      />
+      <Tabs.Screen
+        name="podcast"
+        options={{
+          title: "Podcast",
+          tabBarIcon: ({ color, size }: { color: string; size: number }) => (
+            <Ionicons name="mic" size={size} color={color} />
+          ),
+        }}
+      />
+      <Tabs.Screen
+        name="library"
+        options={{
+          title: "Library",
+          tabBarIcon: ({ color, size }: { color: string; size: number }) => (
+            <Ionicons name="library" size={size} color={color} />
+          ),
+        }}
+      />
+    </Tabs>
+  );
 }
-

@@ -130,6 +130,9 @@ if (workbox) {
   const MAX_META_ENTRIES = 100;
 
   const jobByUrl = new Map();
+  const metaInFlight = new Map();
+  const metaProbeCooldownUntilByUrl = new Map();
+  const META_PROBE_COOLDOWN_MS = 60_000;
 
   const buildMetaRequest = (url) => {
     return new Request(`${AUDIO_META_PATH}?u=${encodeURIComponent(url)}`);
@@ -198,69 +201,137 @@ if (workbox) {
   };
 
   const ensureMetaDetails = async (url) => {
-    const existing = (await loadMeta(url)) || { url, timestamp: Date.now() };
-    if (typeof existing.timestamp !== "number") {
-      existing.timestamp = Date.now();
+    const existingInFlight = metaInFlight.get(url);
+    if (existingInFlight) {
+      return await existingInFlight;
     }
 
-    let totalBytes =
-      typeof existing.totalBytes === "number" ? existing.totalBytes : 0;
-    let contentType =
-      typeof existing.contentType === "string" ? existing.contentType : "";
-    if (!totalBytes || !contentType) {
-      try {
-        const resp = await fetch(url, { headers: { Range: "bytes=0-0" } });
-        contentType =
-          resp.headers.get("content-type") || contentType || "audio/mpeg";
-        if (resp.status === 206) {
+    const job = (async () => {
+      const existing = (await loadMeta(url)) || { url, timestamp: Date.now() };
+      if (typeof existing.timestamp !== "number") {
+        existing.timestamp = Date.now();
+      }
+
+      let totalBytes =
+        typeof existing.totalBytes === "number" ? existing.totalBytes : 0;
+      let contentType =
+        typeof existing.contentType === "string" ? existing.contentType : "";
+      let supportsRange =
+        typeof existing.supportsRange === "boolean"
+          ? existing.supportsRange
+          : undefined;
+
+      const cooldownUntil = metaProbeCooldownUntilByUrl.get(url) ?? 0;
+      if ((!totalBytes || !contentType) && Date.now() >= cooldownUntil) {
+        try {
+          const resp = await fetch(url, { headers: { Range: "bytes=0-0" } });
+          const nextContentType = resp.headers.get("content-type") || "";
+          if (nextContentType) {
+            contentType = nextContentType;
+          }
+          if (supportsRange === undefined) {
+            const acceptRanges = (
+              resp.headers.get("accept-ranges") || ""
+            ).toLowerCase();
+            supportsRange =
+              resp.status === 206 ||
+              Boolean(resp.headers.get("content-range")) ||
+              acceptRanges === "bytes";
+          }
           const contentRange = resp.headers.get("content-range") || "";
           const m = contentRange.match(/\/(\d+)$/);
           if (m) {
-            totalBytes = parseInt(m[1], 10);
+            const parsed = parseInt(m[1], 10);
+            if (Number.isFinite(parsed) && parsed > 0) {
+              totalBytes = parsed;
+            }
           }
-        }
-        if (!totalBytes) {
-          const len = resp.headers.get("content-length");
-          if (len) {
-            totalBytes = parseInt(len, 10);
+          if (!totalBytes) {
+            const len = resp.headers.get("content-length");
+            if (len) {
+              const parsed = parseInt(len, 10);
+              if (Number.isFinite(parsed) && parsed > 0) {
+                totalBytes = parsed;
+              }
+            }
           }
+        } catch {}
+
+        if (!totalBytes || !contentType) {
+          metaProbeCooldownUntilByUrl.set(
+            url,
+            Date.now() + META_PROBE_COOLDOWN_MS
+          );
         }
-      } catch {}
-    }
-
-    const durationSec =
-      typeof existing.metadata?.durationSec === "number"
-        ? existing.metadata.durationSec
-        : typeof existing.durationSec === "number"
-        ? existing.durationSec
-        : 0;
-
-    let chunkByteSize =
-      typeof existing.chunkByteSize === "number" ? existing.chunkByteSize : 0;
-    if (!chunkByteSize) {
-      if (totalBytes > 0 && durationSec > 0) {
-        const bytesPerSecond = totalBytes / durationSec;
-        chunkByteSize = Math.floor(bytesPerSecond * CHUNK_DURATION_SEC);
-      } else {
-        chunkByteSize = DEFAULT_CHUNK_BYTES;
       }
-      chunkByteSize = Math.max(MIN_CHUNK_BYTES, chunkByteSize);
+
+      const durationSec =
+        typeof existing.metadata?.durationSec === "number"
+          ? existing.metadata.durationSec
+          : typeof existing.durationSec === "number"
+          ? existing.durationSec
+          : 0;
+
+      let chunkByteSize =
+        typeof existing.chunkByteSize === "number" ? existing.chunkByteSize : 0;
+      if (!chunkByteSize) {
+        if (totalBytes > 0 && durationSec > 0) {
+          const bytesPerSecond = totalBytes / durationSec;
+          chunkByteSize = Math.floor(bytesPerSecond * CHUNK_DURATION_SEC);
+        } else {
+          chunkByteSize = DEFAULT_CHUNK_BYTES;
+        }
+        chunkByteSize = Math.max(MIN_CHUNK_BYTES, chunkByteSize);
+      }
+
+      const totalChunks =
+        totalBytes > 0 ? Math.ceil(totalBytes / chunkByteSize) : 0;
+
+      const next = {
+        ...existing,
+        totalBytes,
+        contentType: contentType || "audio/mpeg",
+        chunkByteSize,
+        totalChunks,
+        supportsRange: supportsRange ?? false,
+        timestamp: Date.now(),
+      };
+
+      await saveMeta(url, next);
+      return next;
+    })();
+
+    metaInFlight.set(url, job);
+    try {
+      return await job;
+    } finally {
+      metaInFlight.delete(url);
+    }
+  };
+
+  const cacheWholeFileAsChunkZero = async (url, cache, options) => {
+    const key = buildChunkRequest(url, 0);
+    const existing = await cache.match(key);
+    if (existing) {
+      return { cached: false, size: 0 };
     }
 
-    const totalChunks =
-      totalBytes > 0 ? Math.ceil(totalBytes / chunkByteSize) : 0;
-
-    const next = {
-      ...existing,
-      totalBytes,
-      contentType: contentType || "audio/mpeg",
-      chunkByteSize,
-      totalChunks,
-      timestamp: Date.now(),
-    };
-
-    await saveMeta(url, next);
-    return next;
+    const resp = await fetch(url, { signal: options?.signal });
+    if (!resp || resp.status >= 400) {
+      return { cached: false, size: 0 };
+    }
+    const buffer = await resp.arrayBuffer();
+    const headers = new Headers(resp.headers);
+    headers.set("content-length", String(buffer.byteLength));
+    headers.set("x-hififlow-cached-at", String(Date.now()));
+    await cache.put(
+      key,
+      new Response(buffer, {
+        status: resp.status,
+        headers,
+      })
+    );
+    return { cached: true, size: buffer.byteLength };
   };
 
   const countCachedChunks = async (url) => {
@@ -312,7 +383,14 @@ if (workbox) {
   };
 
   const cacheWindowForUrl = async (url, positionSec) => {
+    const requestedStartChunkIndex = Math.max(
+      0,
+      Math.floor((positionSec || 0) / CHUNK_DURATION_SEC)
+    );
     const prevJob = jobByUrl.get(url);
+    if (prevJob?.startChunkIndex === requestedStartChunkIndex && prevJob?.job) {
+      return;
+    }
     if (prevJob?.abortController) {
       try {
         prevJob.abortController.abort();
@@ -322,7 +400,7 @@ if (workbox) {
     const abortController = new AbortController();
     const job = (async () => {
       const meta = await ensureMetaDetails(url);
-      if (!meta?.totalBytes || !meta.chunkByteSize) return;
+      if (!meta?.chunkByteSize) return;
 
       await enforceMetaLimit();
 
@@ -336,16 +414,25 @@ if (workbox) {
 
       const cache = await caches.open(AUDIO_CHUNK_CACHE);
       let cachedInWindow = 0;
+      let updatedMeta = meta;
 
       for (let offset = 0; offset < totalChunksInWindow; offset += 1) {
         if (abortController.signal.aborted) return;
         const chunkIndex = startChunkIndex + offset;
-        const startByte = chunkIndex * meta.chunkByteSize;
-        if (startByte > meta.totalBytes - 1) break;
-        const endByte = Math.min(
-          startByte + meta.chunkByteSize - 1,
-          meta.totalBytes - 1
-        );
+        const startByte = chunkIndex * updatedMeta.chunkByteSize;
+        if (
+          updatedMeta.totalBytes &&
+          startByte > Math.max(0, updatedMeta.totalBytes - 1)
+        ) {
+          break;
+        }
+        const endByte =
+          updatedMeta.totalBytes && updatedMeta.totalBytes > 0
+            ? Math.min(
+                startByte + updatedMeta.chunkByteSize - 1,
+                updatedMeta.totalBytes - 1
+              )
+            : startByte + updatedMeta.chunkByteSize - 1;
         const key = buildChunkRequest(url, chunkIndex);
         const existing = await cache.match(key);
         if (existing) {
@@ -358,8 +445,52 @@ if (workbox) {
             headers: { Range: `bytes=${startByte}-${endByte}` },
             signal: abortController.signal,
           });
+          if (resp && resp.status === 416) {
+            break;
+          }
           if (!(resp && (resp.status === 206 || resp.status === 200))) {
             continue;
+          }
+          if (
+            resp.status === 200 &&
+            !(resp.headers.get("content-range") || "")
+          ) {
+            const whole = await cacheWholeFileAsChunkZero(url, cache, {
+              signal: abortController.signal,
+            });
+            const cachedChunks = await countCachedChunks(url);
+            if (whole.cached) {
+              cachedInWindow = Math.max(cachedInWindow, 1);
+            }
+            updatedMeta = {
+              ...updatedMeta,
+              totalBytes: whole.size > 0 ? whole.size : updatedMeta.totalBytes,
+              chunkByteSize:
+                whole.size > 0 ? whole.size : updatedMeta.chunkByteSize,
+              totalChunks: whole.size > 0 ? 1 : updatedMeta.totalChunks,
+              cachedChunks,
+              supportsRange: false,
+              timestamp: Date.now(),
+            };
+            await saveMeta(url, updatedMeta);
+            if (whole.cached) {
+              await postToClients({ type: "AUDIO_CACHED_URL", url });
+              await postToClients({
+                type: "AUDIO_CACHE_PROGRESS",
+                progress: {
+                  url,
+                  windowStartSec: startChunkIndex * CHUNK_DURATION_SEC,
+                  windowEndSec:
+                    startChunkIndex * CHUNK_DURATION_SEC +
+                    totalChunksInWindow * CHUNK_DURATION_SEC,
+                  cachedChunks: cachedInWindow,
+                  totalChunks: totalChunksInWindow,
+                  cachedSecondsAhead: cachedInWindow * CHUNK_DURATION_SEC,
+                  updatedAt: Date.now(),
+                },
+              });
+            }
+            break;
           }
           const buffer = await resp.arrayBuffer();
           const headers = new Headers(resp.headers);
@@ -375,8 +506,17 @@ if (workbox) {
           cachedInWindow += 1;
 
           const cachedChunks = await countCachedChunks(url);
-          const updatedMeta = {
-            ...meta,
+          const contentRange = resp.headers.get("content-range") || "";
+          const m = contentRange.match(/\/(\d+)$/);
+          const totalFromRange = m ? parseInt(m[1], 10) : 0;
+          updatedMeta = {
+            ...updatedMeta,
+            totalBytes:
+              !updatedMeta.totalBytes &&
+              Number.isFinite(totalFromRange) &&
+              totalFromRange > 0
+                ? totalFromRange
+                : updatedMeta.totalBytes,
             cachedChunks,
             timestamp: Date.now(),
           };
@@ -401,8 +541,19 @@ if (workbox) {
       }
     })();
 
-    jobByUrl.set(url, { abortController, job });
-    await job;
+    jobByUrl.set(url, {
+      abortController,
+      job,
+      startChunkIndex: requestedStartChunkIndex,
+    });
+    try {
+      await job;
+    } finally {
+      const current = jobByUrl.get(url);
+      if (current?.abortController === abortController) {
+        jobByUrl.delete(url);
+      }
+    }
   };
 
   const cacheFullForUrl = async (url) => {
@@ -448,9 +599,17 @@ if (workbox) {
 
   const tryServeRangeFromChunks = async (url, start, end) => {
     const meta = await ensureMetaDetails(url);
-    if (!meta?.totalBytes || !meta.chunkByteSize) return null;
+    if (!meta?.chunkByteSize) return null;
+    const impliedEnd =
+      end === null
+        ? meta.totalBytes && meta.totalBytes > 0
+          ? meta.totalBytes - 1
+          : start + meta.chunkByteSize - 1
+        : end;
     const rangeEnd =
-      end === null ? meta.totalBytes - 1 : Math.min(end, meta.totalBytes - 1);
+      meta.totalBytes && meta.totalBytes > 0
+        ? Math.min(impliedEnd, meta.totalBytes - 1)
+        : Math.max(impliedEnd, start);
     const rangeStart = Math.min(start, rangeEnd);
 
     const firstChunk = Math.floor(rangeStart / meta.chunkByteSize);
@@ -486,7 +645,9 @@ if (workbox) {
     headers.set("Accept-Ranges", "bytes");
     headers.set(
       "Content-Range",
-      `bytes ${rangeStart}-${rangeEnd}/${meta.totalBytes}`
+      `bytes ${rangeStart}-${rangeEnd}/${
+        meta.totalBytes && meta.totalBytes > 0 ? meta.totalBytes : "*"
+      }`
     );
     headers.set("Content-Length", String(joined.byteLength));
     return new Response(joined, { status: 206, headers });
@@ -571,6 +732,90 @@ if (workbox) {
               parsed.end
             );
             if (cached) return cached;
+          } catch {}
+
+          try {
+            const meta = await ensureMetaDetails(sourceUrl);
+            if (meta?.chunkByteSize) {
+              const inferredEnd =
+                parsed.end === null
+                  ? parsed.start + meta.chunkByteSize - 1
+                  : parsed.end;
+              const rangeEnd = Math.max(inferredEnd, parsed.start);
+              const firstChunk = Math.floor(parsed.start / meta.chunkByteSize);
+              const lastChunk = Math.floor(rangeEnd / meta.chunkByteSize);
+              const cache = await caches.open(AUDIO_CHUNK_CACHE);
+
+              for (
+                let chunkIndex = firstChunk;
+                chunkIndex <= lastChunk;
+                chunkIndex += 1
+              ) {
+                const key = buildChunkRequest(sourceUrl, chunkIndex);
+                const existing = await cache.match(key);
+                if (existing) continue;
+
+                const startByte = chunkIndex * meta.chunkByteSize;
+                const endByte =
+                  meta.totalBytes && meta.totalBytes > 0
+                    ? Math.min(
+                        startByte + meta.chunkByteSize - 1,
+                        meta.totalBytes - 1
+                      )
+                    : startByte + meta.chunkByteSize - 1;
+                const resp = await fetch(sourceUrl, {
+                  headers: { Range: `bytes=${startByte}-${endByte}` },
+                });
+                if (resp && resp.status === 416) break;
+                if (!(resp && (resp.status === 206 || resp.status === 200))) {
+                  continue;
+                }
+                if (
+                  resp.status === 200 &&
+                  !(resp.headers.get("content-range") || "")
+                ) {
+                  const whole = await cacheWholeFileAsChunkZero(
+                    sourceUrl,
+                    cache
+                  );
+                  if (whole.cached) {
+                    try {
+                      const cachedChunks = await countCachedChunks(sourceUrl);
+                      await saveMeta(sourceUrl, {
+                        ...meta,
+                        totalBytes:
+                          whole.size > 0 ? whole.size : meta.totalBytes,
+                        chunkByteSize:
+                          whole.size > 0 ? whole.size : meta.chunkByteSize,
+                        totalChunks: whole.size > 0 ? 1 : meta.totalChunks,
+                        cachedChunks,
+                        supportsRange: false,
+                        timestamp: Date.now(),
+                      });
+                    } catch {}
+                  }
+                  break;
+                }
+                const buffer = await resp.arrayBuffer();
+                const headers = new Headers(resp.headers);
+                headers.set("content-length", String(buffer.byteLength));
+                headers.set("x-hififlow-cached-at", String(Date.now()));
+                await cache.put(
+                  key,
+                  new Response(buffer, {
+                    status: 206,
+                    headers,
+                  })
+                );
+              }
+
+              const cachedAfter = await tryServeRangeFromChunks(
+                sourceUrl,
+                parsed.start,
+                parsed.end
+              );
+              if (cachedAfter) return cachedAfter;
+            }
           } catch {}
         }
       }

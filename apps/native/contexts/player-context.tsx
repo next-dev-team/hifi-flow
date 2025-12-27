@@ -276,7 +276,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
     const lastPos = lastCachePositionSecRef.current;
     const isNewTrack = lastUrl !== baseUrl;
     const isSeek = !isNewTrack && Math.abs(positionSec - lastPos) >= 8;
-    const isTick = isNewTrack || isSeek || Math.abs(positionSec - lastPos) >= 1;
+    const isTick = isNewTrack || isSeek || Math.abs(positionSec - lastPos) >= 15;
     if (!isTick) return;
 
     lastCacheUrlRef.current = baseUrl;
