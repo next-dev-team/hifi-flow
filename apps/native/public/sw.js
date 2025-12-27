@@ -124,9 +124,9 @@ if (workbox) {
   const AUDIO_CHUNK_PATH = "/__hififlow_audio_chunk";
   const AUDIO_STREAM_PATH = "/__hififlow_audio_stream";
   const CHUNK_DURATION_SEC = 40;
-  const WINDOW_AHEAD_SEC = 60;
-  const MIN_CHUNK_BYTES = 16384;
-  const DEFAULT_CHUNK_BYTES = 262144;
+  const WINDOW_AHEAD_SEC = 60; // keep the 60-second look-ahead
+  const MIN_CHUNK_BYTES = 524_288; // 0.5 MB – big enough so ~4 min audio lands in 2–3 chunks
+  const DEFAULT_CHUNK_BYTES = 1_048_576; // 1 MB – preferred chunk size
   const MAX_META_ENTRIES = 100;
 
   const jobByUrl = new Map();
