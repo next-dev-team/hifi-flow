@@ -490,22 +490,28 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
     }
   }, []);
 
-  const canLoadWebProxyUrl = useCallback(async (proxyUrl: string) => {
-    if (Platform.OS !== "web") return true;
-    try {
-      const contentType = await getWebContentType(proxyUrl);
-      if (!contentType) return true;
-      if (contentType.startsWith("audio/") || contentType.startsWith("video/")) {
-        return canPlayWebContentType(contentType);
+  const canLoadWebProxyUrl = useCallback(
+    async (proxyUrl: string) => {
+      if (Platform.OS !== "web") return true;
+      try {
+        const contentType = await getWebContentType(proxyUrl);
+        if (!contentType) return true;
+        if (
+          contentType.startsWith("audio/") ||
+          contentType.startsWith("video/")
+        ) {
+          return canPlayWebContentType(contentType);
+        }
+        if (contentType.startsWith("application/octet-stream")) {
+          return true;
+        }
+        return false;
+      } catch {
+        return false;
       }
-      if (contentType.startsWith("application/octet-stream")) {
-        return true;
-      }
-      return false;
-    } catch {
-      return false;
-    }
-  }, [getWebContentType, canPlayWebContentType]);
+    },
+    [getWebContentType, canPlayWebContentType]
+  );
 
   useEffect(() => {
     if (Platform.OS !== "web") return;
@@ -1113,14 +1119,19 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
               Platform.OS === "web" &&
               (quality === "LOSSLESS" || quality === "HI_RES_LOSSLESS") &&
               attemptQuality === preferredQuality &&
-              (attemptQualities.includes("HIGH") || attemptQualities.includes("LOW"))
+              (attemptQualities.includes("HIGH") ||
+                attemptQualities.includes("LOW"))
             ) {
               showToast({
                 message: "Stream format not supported, trying lower quality…",
                 type: "error",
               });
             }
-          } else if (!offlineWeb && Platform.OS === "web" && attemptIndex === 0) {
+          } else if (
+            !offlineWeb &&
+            Platform.OS === "web" &&
+            attemptIndex === 0
+          ) {
             await clearWebCachesForUrl(baseStreamUrl);
             streamUrlCacheRef.current.delete(cacheKey);
           }
