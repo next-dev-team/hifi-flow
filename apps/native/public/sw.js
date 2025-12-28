@@ -123,6 +123,15 @@ if (workbox) {
   const AUDIO_META_PATH = "/__hififlow_audio_meta";
   const AUDIO_STREAM_PATH = "/__hififlow_audio_stream";
 
+  const CORS_PROXIES = [
+    "https://corsproxy.io/?",
+    "https://api.allorigins.win/raw?url=",
+    "https://proxy.cors.sh/",
+    "https://api.codetabs.com/v1/proxy?quest=",
+    "https://thingproxy.freeboard.io/fetch/",
+    "https://cors-anywhere.herokuapp.com/",
+  ];
+
   const metaInFlight = new Map();
   const cacheFullInFlight = new Map();
   const metaProbeCooldownUntilByUrl = new Map();
@@ -212,34 +221,56 @@ if (workbox) {
       const cooldownUntil = metaProbeCooldownUntilByUrl.get(url) ?? 0;
       if ((!totalBytes || !contentType) && Date.now() >= cooldownUntil) {
         try {
-          const resp = await fetch(url, { headers: { Range: "bytes=0-0" } });
-          const nextContentType = resp.headers.get("content-type") || "";
-          if (nextContentType) {
-            contentType = nextContentType;
-          }
-          if (supportsRange === undefined) {
-            const acceptRanges = (
-              resp.headers.get("accept-ranges") || ""
-            ).toLowerCase();
-            supportsRange =
-              resp.status === 206 ||
-              Boolean(resp.headers.get("content-range")) ||
-              acceptRanges === "bytes";
-          }
-          const contentRange = resp.headers.get("content-range") || "";
-          const m = contentRange.match(/\/(\d+)$/);
-          if (m) {
-            const parsed = parseInt(m[1], 10);
-            if (Number.isFinite(parsed) && parsed > 0) {
-              totalBytes = parsed;
+          let resp;
+          try {
+            resp = await fetch(url, { headers: { Range: "bytes=0-0" } });
+            if (!resp.ok && resp.status !== 206)
+              throw new Error("Fetch failed");
+          } catch (e) {
+            console.warn(
+              `[SW] Meta probe failed for ${url}, trying proxies...`,
+              e
+            );
+            for (const proxy of CORS_PROXIES) {
+              try {
+                const proxiedUrl = proxy + encodeURIComponent(url);
+                resp = await fetch(proxiedUrl, {
+                  headers: { Range: "bytes=0-0" },
+                });
+                if (resp.ok || resp.status === 206) break;
+              } catch {}
             }
           }
-          if (!totalBytes) {
-            const len = resp.headers.get("content-length");
-            if (len) {
-              const parsed = parseInt(len, 10);
+
+          if (resp && (resp.ok || resp.status === 206)) {
+            const nextContentType = resp.headers.get("content-type") || "";
+            if (nextContentType) {
+              contentType = nextContentType;
+            }
+            if (supportsRange === undefined) {
+              const acceptRanges = (
+                resp.headers.get("accept-ranges") || ""
+              ).toLowerCase();
+              supportsRange =
+                resp.status === 206 ||
+                Boolean(resp.headers.get("content-range")) ||
+                acceptRanges === "bytes";
+            }
+            const contentRange = resp.headers.get("content-range") || "";
+            const m = contentRange.match(/\/(\d+)$/);
+            if (m) {
+              const parsed = parseInt(m[1], 10);
               if (Number.isFinite(parsed) && parsed > 0) {
                 totalBytes = parsed;
+              }
+            }
+            if (!totalBytes) {
+              const len = resp.headers.get("content-length");
+              if (len) {
+                const parsed = parseInt(len, 10);
+                if (Number.isFinite(parsed) && parsed > 0) {
+                  totalBytes = parsed;
+                }
               }
             }
           }
@@ -339,8 +370,25 @@ if (workbox) {
           },
         });
 
-        const resp = await fetch(url, { cache: "no-store" });
-        if (!resp || resp.status >= 400) return false;
+        let resp;
+        try {
+          resp = await fetch(url, { cache: "no-store" });
+          if (!resp.ok) throw new Error(`Fetch failed: ${resp.status}`);
+        } catch (e) {
+          console.warn(
+            `[SW] Cache full fetch failed for ${url}, trying proxies...`,
+            e
+          );
+          for (const proxy of CORS_PROXIES) {
+            try {
+              const proxiedUrl = proxy + encodeURIComponent(url);
+              resp = await fetch(proxiedUrl);
+              if (resp.ok) break;
+            } catch {}
+          }
+        }
+
+        if (!resp || !resp.ok) return false;
 
         await fullCache.put(url, resp.clone());
         await upsertMeta(url, {
@@ -494,8 +542,51 @@ if (workbox) {
             meta = await ensureMetaDetails(sourceUrl);
           } catch {}
 
-          const resp = await fetch(sourceUrl, { headers });
-          const nextHeaders = new Headers(resp.headers);
+          let resp;
+          try {
+            resp = await fetch(sourceUrl, { headers });
+            if (!resp.ok && resp.status !== 206) {
+              throw new Error(`Direct fetch failed with status ${resp.status}`);
+            }
+          } catch (e) {
+            console.warn(
+              `[SW] Direct fetch failed for ${sourceUrl}, trying proxies...`,
+              e
+            );
+            for (const proxy of CORS_PROXIES) {
+              try {
+                const proxiedUrl = proxy + encodeURIComponent(sourceUrl);
+                resp = await fetch(proxiedUrl, { headers });
+                if (resp.ok || resp.status === 206) {
+                  console.log(`[SW] Proxy success: ${proxy}`);
+                  break;
+                }
+              } catch (proxyError) {
+                console.warn(`[SW] Proxy failed: ${proxy}`, proxyError);
+              }
+            }
+          }
+
+          if (!resp) {
+            throw new Error("All fetch attempts failed");
+          }
+
+          // Create a new response with cleaned headers to avoid CORS issues with the browser
+          const nextHeaders = new Headers();
+
+          // Copy essential headers
+          const essentialHeaders = [
+            "content-type",
+            "content-length",
+            "content-range",
+            "accept-ranges",
+            "cache-control",
+          ];
+
+          essentialHeaders.forEach((h) => {
+            const val = resp.headers.get(h);
+            if (val) nextHeaders.set(h, val);
+          });
           const respContentType = (
             nextHeaders.get("content-type") || ""
           ).toLowerCase();
