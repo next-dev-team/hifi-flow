@@ -2,6 +2,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { useMemo, useState } from "react";
 import {
   ActivityIndicator,
+  Alert,
   FlatList,
   Image,
   Pressable,
@@ -14,13 +15,18 @@ import { withUniwind } from "uniwind";
 import { usePodcastWeAnd } from "@/hooks/use-podcast-weand";
 import { usePlayer } from "@/contexts/player-context";
 import { TimerStatus } from "@/components/timer-status";
+import { usePodcastAuth } from "@/hooks/use-auth";
 
 const StyledSafeAreaView = withUniwind(SafeAreaView);
 const StyledView = withUniwind(View);
 const StyledText = withUniwind(Text);
 const StyledTextInput = withUniwind(TextInput);
+const StyledPressable = withUniwind(Pressable);
 
 export default function PodcastScreen() {
+  const { isUnlocked, isLoaded, unlock } = usePodcastAuth();
+  const [passwordInput, setPasswordInput] = useState("");
+
   const {
     playQueue,
     pauseTrack,
@@ -68,6 +74,57 @@ export default function PodcastScreen() {
 
     void playQueue(data, index, { queueType: "podcast", replaceQueue: true });
   };
+
+  if (!isLoaded) {
+    return (
+      <StyledSafeAreaView className="flex-1 bg-background items-center justify-center">
+        <ActivityIndicator size="large" color="#ef4444" />
+      </StyledSafeAreaView>
+    );
+  }
+
+  if (!isUnlocked) {
+    return (
+      <StyledSafeAreaView className="flex-1 bg-background" edges={["top"]}>
+        <StyledView className="px-4 py-4">
+          <StyledText className="text-3xl font-bold text-foreground mb-2">
+            Podcast
+          </StyledText>
+          <StyledText className="text-foreground opacity-60">
+            Authentication Required
+          </StyledText>
+        </StyledView>
+
+        <StyledView className="flex-1 items-center justify-center px-8">
+          <StyledView className="w-full bg-black/5 dark:bg-white/5 p-6 rounded-2xl border border-black/10 dark:border-white/10">
+            <StyledText className="text-xl font-semibold text-foreground mb-6 text-center">
+              Enter Password
+            </StyledText>
+            <StyledTextInput
+              className="w-full h-12 bg-black/5 dark:bg-white/5 rounded-xl px-4 text-foreground mb-4 border border-black/5 dark:border-white/5"
+              placeholder="••••••••"
+              placeholderTextColor="#888"
+              secureTextEntry
+              value={passwordInput}
+              onChangeText={setPasswordInput}
+              autoFocus
+            />
+            <StyledPressable
+              onPress={() => {
+                if (!unlock(passwordInput)) {
+                  Alert.alert("Error", "Incorrect password");
+                  setPasswordInput("");
+                }
+              }}
+              className="w-full bg-foreground h-12 rounded-xl items-center justify-center active:opacity-80"
+            >
+              <Text className="text-background font-bold text-lg">Unlock</Text>
+            </StyledPressable>
+          </StyledView>
+        </StyledView>
+      </StyledSafeAreaView>
+    );
+  }
 
   return (
     <StyledSafeAreaView className="flex-1 bg-background" edges={["top"]}>
