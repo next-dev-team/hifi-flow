@@ -111,6 +111,7 @@ export const TrackItem: React.FC<TrackItemProps> = ({
     isPlaying,
     pauseTrack,
     resumeTrack,
+    addToQueue,
     queue,
     nextTrackBufferStatus,
     cachedTrackIds,
@@ -121,6 +122,7 @@ export const TrackItem: React.FC<TrackItemProps> = ({
   const isPlayerLoading = loadingTrackId === String(track.id);
   const isLoading = propLoading || isPlayerLoading;
   const isActive = currentTrack?.id === String(track.id);
+  const isInQueue = queue.some((t) => String(t.id) === String(track.id));
 
   // Determine if cached using internal check if prop not provided
   const isTrackCached =
@@ -177,6 +179,11 @@ export const TrackItem: React.FC<TrackItemProps> = ({
   const handleRemovePress = (e: any) => {
     e.stopPropagation();
     onRemove?.();
+  };
+
+  const handleAddToQueuePress = (e: any) => {
+    e.stopPropagation();
+    addToQueue(track);
   };
 
   return (
@@ -266,6 +273,17 @@ export const TrackItem: React.FC<TrackItemProps> = ({
             <Ionicons name="trash-outline" size={20} color="#ff3b30" />
           </TouchableOpacity>
         )}
+        <TouchableOpacity
+          className="pl-2 pr-1 h-10 items-center justify-center"
+          onPress={handleAddToQueuePress}
+          disabled={isLoading}
+        >
+          <Ionicons
+            name="add-circle-outline"
+            size={20}
+            color={isInQueue ? "#22c55e" : "#888"}
+          />
+        </TouchableOpacity>
         <TouchableOpacity
           className="pl-1 pr-2 h-10 items-center justify-center"
           onPress={handleIconPress}
