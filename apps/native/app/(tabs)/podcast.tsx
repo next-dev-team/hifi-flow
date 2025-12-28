@@ -127,6 +127,19 @@ export default function PodcastScreen() {
             if (!hasNextPage || isFetchingNextPage) return;
             void fetchNextPage();
           }}
+          ListEmptyComponent={() => (
+            <StyledView className="flex-1 items-center justify-center py-20 min-h-[400px]">
+              <Ionicons
+                name="mic-off-outline"
+                size={48}
+                color="#888"
+                style={{ opacity: 0.5 }}
+              />
+              <StyledText className="text-foreground opacity-50 mt-4 text-lg">
+                No podcasts found
+              </StyledText>
+            </StyledView>
+          )}
           ListFooterComponent={() => (
             <View className="py-6">
               {searchQuery.trim() !== "" ? (

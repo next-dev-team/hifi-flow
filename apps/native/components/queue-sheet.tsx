@@ -586,6 +586,7 @@ export const QueueSheet = forwardRef<QueueSheetRef, QueueSheetProps>(
             alignItems: "center",
             justifyContent: "center",
             paddingVertical: 80,
+            minHeight: 400,
           }}
         >
           <Ionicons
@@ -779,15 +780,17 @@ export const QueueSheet = forwardRef<QueueSheetRef, QueueSheetProps>(
                 style={{
                   flexDirection: "row",
                   alignItems: "center",
-                  gap: 12,
-                  marginTop: 10,
+                  justifyContent: "flex-end",
+                  gap: 8,
+                  marginTop: 8,
+                  marginBottom: 2,
                 }}
               >
                 <Text
                   style={{
                     color: themeColorForeground,
-                    opacity: 0.5,
-                    fontSize: 12,
+                    opacity: 0.6,
+                    fontSize: 13,
                     fontWeight: "500",
                   }}
                 >
@@ -797,12 +800,14 @@ export const QueueSheet = forwardRef<QueueSheetRef, QueueSheetProps>(
                   value={includePodcast}
                   onValueChange={setIncludePodcast}
                   trackColor={{
-                    false: isDark
-                      ? "rgba(255,255,255,0.15)"
-                      : "rgba(0,0,0,0.15)",
+                    false: isDark ? "rgba(255,255,255,0.1)" : "rgba(0,0,0,0.1)",
                     true: "#ef4444",
                   }}
-                  thumbColor={Platform.OS === "android" ? "#fff" : undefined}
+                  thumbColor={Platform.OS === "ios" ? undefined : "#fff"}
+                  ios_backgroundColor={
+                    isDark ? "rgba(255,255,255,0.1)" : "rgba(0,0,0,0.1)"
+                  }
+                  style={{ transform: [{ scaleX: 0.8 }, { scaleY: 0.8 }] }}
                 />
               </View>
 
