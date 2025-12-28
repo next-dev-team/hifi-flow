@@ -152,6 +152,26 @@ if (workbox) {
     return { start, end };
   };
 
+  const isPodcastId = (id) => {
+    return typeof id === "string" && id.startsWith("podcast:");
+  };
+
+  const isPodcastMeta = (meta) => {
+    return isPodcastId(meta?.metadata?.id);
+  };
+
+  const isLikelyPodcastUrl = (rawUrl) => {
+    if (typeof rawUrl !== "string" || !rawUrl) return false;
+    try {
+      const u = new URL(rawUrl);
+      return (
+        u.hostname.endsWith("weread.asia") && u.pathname.includes("/Audio/")
+      );
+    } catch {
+      return false;
+    }
+  };
+
   const decodeStreamParam = (urlObj) => {
     try {
       const param = urlObj?.searchParams?.get("u");
@@ -209,6 +229,8 @@ if (workbox) {
         existing.timestamp = Date.now();
       }
 
+      const isPodcast = isPodcastId(existing?.metadata?.id);
+
       let totalBytes =
         typeof existing.totalBytes === "number" ? existing.totalBytes : 0;
       let contentType =
@@ -222,27 +244,45 @@ if (workbox) {
       if ((!totalBytes || !contentType) && Date.now() >= cooldownUntil) {
         try {
           let resp;
-          try {
-            resp = await fetch(url, { headers: { Range: "bytes=0-0" } });
-            if (!resp.ok && resp.status !== 206)
-              throw new Error("Fetch failed");
-          } catch (e) {
-            console.warn(
-              `[SW] Meta probe failed for ${url}, trying proxies...`,
-              e
-            );
-            for (const proxy of CORS_PROXIES) {
+          if (isPodcast) {
+            try {
+              resp = await fetch(url, { method: "HEAD" });
+            } catch {
+              resp = undefined;
+            }
+            if (!resp || (!resp.ok && resp.type !== "opaque")) {
               try {
-                const proxiedUrl = proxy + encodeURIComponent(url);
-                resp = await fetch(proxiedUrl, {
-                  headers: { Range: "bytes=0-0" },
-                });
-                if (resp.ok || resp.status === 206) break;
-              } catch {}
+                resp = await fetch(url, { cache: "no-store" });
+              } catch {
+                resp = undefined;
+              }
+            }
+          } else {
+            try {
+              resp = await fetch(url, { headers: { Range: "bytes=0-0" } });
+              if (!resp.ok && resp.status !== 206)
+                throw new Error("Fetch failed");
+            } catch (e) {
+              console.warn(
+                `[SW] Meta probe failed for ${url}, trying proxies...`,
+                e
+              );
+              for (const proxy of CORS_PROXIES) {
+                try {
+                  const proxiedUrl = proxy + encodeURIComponent(url);
+                  resp = await fetch(proxiedUrl, {
+                    headers: { Range: "bytes=0-0" },
+                  });
+                  if (resp.ok || resp.status === 206) break;
+                } catch {}
+              }
             }
           }
 
-          if (resp && (resp.ok || resp.status === 206)) {
+          if (
+            resp &&
+            (resp.ok || resp.status === 206 || resp.type === "opaque")
+          ) {
             const nextContentType = resp.headers.get("content-type") || "";
             if (nextContentType) {
               contentType = nextContentType;
@@ -273,6 +313,10 @@ if (workbox) {
                 }
               }
             }
+
+            try {
+              resp.body?.cancel();
+            } catch {}
           }
         } catch {}
 
@@ -513,12 +557,22 @@ if (workbox) {
       );
     },
     async ({ event, request, url }) => {
-      const rangeHeader = request.headers.get("range");
       const sourceUrl =
         url.pathname === AUDIO_STREAM_PATH ? decodeStreamParam(url) : url.href;
       if (!sourceUrl) {
         return new Response("", { status: 400 });
       }
+
+      const isProxyStream = url.pathname === AUDIO_STREAM_PATH;
+      let meta = null;
+      if (isProxyStream) {
+        try {
+          meta = await ensureMetaDetails(sourceUrl);
+        } catch {}
+      }
+      const isPodcast = isPodcastMeta(meta) || isLikelyPodcastUrl(sourceUrl);
+
+      const rangeHeader = isPodcast ? null : request.headers.get("range");
       if (rangeHeader) {
         const parsed = parseRangeHeader(rangeHeader);
         if (parsed) {
@@ -534,35 +588,56 @@ if (workbox) {
       }
 
       try {
-        if (url.pathname === AUDIO_STREAM_PATH) {
+        if (isProxyStream) {
           const headers = new Headers();
           if (rangeHeader) headers.set("Range", rangeHeader);
-          let meta = null;
-          try {
-            meta = await ensureMetaDetails(sourceUrl);
-          } catch {}
 
           let resp;
           try {
-            resp = await fetch(sourceUrl, { headers });
-            if (!resp.ok && resp.status !== 206) {
-              throw new Error(`Direct fetch failed with status ${resp.status}`);
+            if (isPodcast) {
+              for (const proxy of CORS_PROXIES) {
+                try {
+                  const proxiedUrl = proxy + encodeURIComponent(sourceUrl);
+                  resp = await fetch(proxiedUrl, { cache: "no-store" });
+                  if (resp.ok) break;
+                } catch {}
+              }
+            }
+
+            if (!resp || !resp.ok) {
+              resp = await fetch(sourceUrl, {
+                headers: isPodcast ? undefined : headers,
+                cache: "no-store",
+              });
+            }
+
+            if (
+              !resp ||
+              (!resp.ok &&
+                resp.status !== 206 &&
+                !(isPodcast && resp.type === "opaque"))
+            ) {
+              throw new Error(
+                `Direct fetch failed with status ${resp?.status}`
+              );
             }
           } catch (e) {
-            console.warn(
-              `[SW] Direct fetch failed for ${sourceUrl}, trying proxies...`,
-              e
-            );
-            for (const proxy of CORS_PROXIES) {
-              try {
-                const proxiedUrl = proxy + encodeURIComponent(sourceUrl);
-                resp = await fetch(proxiedUrl, { headers });
-                if (resp.ok || resp.status === 206) {
-                  console.log(`[SW] Proxy success: ${proxy}`);
-                  break;
+            if (!isPodcast) {
+              console.warn(
+                `[SW] Direct fetch failed for ${sourceUrl}, trying proxies...`,
+                e
+              );
+              for (const proxy of CORS_PROXIES) {
+                try {
+                  const proxiedUrl = proxy + encodeURIComponent(sourceUrl);
+                  resp = await fetch(proxiedUrl, { headers });
+                  if (resp.ok || resp.status === 206) {
+                    console.log(`[SW] Proxy success: ${proxy}`);
+                    break;
+                  }
+                } catch (proxyError) {
+                  console.warn(`[SW] Proxy failed: ${proxy}`, proxyError);
                 }
-              } catch (proxyError) {
-                console.warn(`[SW] Proxy failed: ${proxy}`, proxyError);
               }
             }
           }
@@ -604,7 +679,7 @@ if (workbox) {
             nextHeaders.set("Content-Type", metaContentType);
           }
 
-          if (!nextHeaders.get("Accept-Ranges")) {
+          if (!isPodcast && !nextHeaders.get("Accept-Ranges")) {
             nextHeaders.set("Accept-Ranges", "bytes");
           }
 
