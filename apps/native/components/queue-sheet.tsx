@@ -23,6 +23,7 @@ import {
   Image,
   Platform,
   ScrollView,
+  Switch,
   Text,
   TextInput,
   TouchableOpacity,
@@ -46,6 +47,10 @@ interface QueueSheetProps {
 }
 
 export const OPEN_QUEUE_SHEET_EVENT = "open-queue-sheet";
+
+function isPodcastTrackId(id: unknown): boolean {
+  return String(id ?? "").startsWith("podcast:");
+}
 
 /**
  * Pulsing buffer status indicator
@@ -139,6 +144,7 @@ export const QueueSheet = forwardRef<QueueSheetRef, QueueSheetProps>(
     const snapPoints = useMemo(() => ["85%"], []);
 
     const [searchQuery, setSearchQuery] = useState("");
+    const [includePodcast, setIncludePodcast] = useState(true);
     const [viewMode, setViewMode] = useState<"songs" | "artists">("songs");
     const [artistFilter, setArtistFilter] = useState<string | null>(null);
     const [showClearConfirm, setShowClearConfirm] = useState(false);
@@ -176,19 +182,26 @@ export const QueueSheet = forwardRef<QueueSheetRef, QueueSheetProps>(
       }, 500);
     }, [shuffleQueue, queue.length]);
 
+    const queueForView = useMemo(() => {
+      if (includePodcast) return queue;
+      return queue.filter((t) => !isPodcastTrackId(t.id));
+    }, [includePodcast, queue]);
+
     // Filter queue based on search and view mode
     const filteredQueue = useMemo(() => {
       const lowerQuery = searchQuery.toLowerCase();
 
       if (viewMode === "artists") {
         // Get unique artists
-        const artists = Array.from(new Set(queue.map((t) => t.artist))).sort();
+        const artists = Array.from(
+          new Set(queueForView.map((t) => t.artist))
+        ).sort();
         if (!searchQuery) return artists;
         return artists.filter((a) => a.toLowerCase().includes(lowerQuery));
       }
 
       // Songs mode
-      return queue.filter((track) => {
+      return queueForView.filter((track) => {
         // 1. apply artist filter if active
         if (artistFilter && track.artist !== artistFilter) return false;
 
@@ -199,7 +212,7 @@ export const QueueSheet = forwardRef<QueueSheetRef, QueueSheetProps>(
         const matchesArtist = track.artist.toLowerCase().includes(lowerQuery);
         return matchesTitle || matchesArtist;
       });
-    }, [queue, searchQuery, viewMode, artistFilter]);
+    }, [queueForView, searchQuery, viewMode, artistFilter]);
 
     // Check if track is favorited
     const isFavorited = useCallback(
@@ -244,15 +257,14 @@ export const QueueSheet = forwardRef<QueueSheetRef, QueueSheetProps>(
     );
 
     const handleTrackPress = useCallback(
-      (index: number) => {
-        if (queue[index]) {
-          // Play from this position in queue
-          void playQueue([queue[index]], 0).catch((e) => {
+      (track: (typeof queue)[number] | null | undefined) => {
+        if (track) {
+          void playQueue([track], 0).catch((e) => {
             console.warn("[QueueSheet] playQueue failed", e);
           });
         }
       },
-      [queue, playQueue]
+      [playQueue]
     );
 
     const handleClearQueue = () => {
@@ -281,9 +293,13 @@ export const QueueSheet = forwardRef<QueueSheetRef, QueueSheetProps>(
     const renderArtistItem = useCallback(
       (artistName: string) => {
         // Find artwork from first track of this artist
-        const representativeTrack = queue.find((t) => t.artist === artistName);
+        const representativeTrack = queueForView.find(
+          (t) => t.artist === artistName
+        );
         const artwork = resolveArtwork(representativeTrack, "160");
-        const count = queue.filter((t) => t.artist === artistName).length;
+        const count = queueForView.filter(
+          (t) => t.artist === artistName
+        ).length;
 
         return (
           <TouchableOpacity
@@ -355,7 +371,7 @@ export const QueueSheet = forwardRef<QueueSheetRef, QueueSheetProps>(
           </TouchableOpacity>
         );
       },
-      [queue]
+      [isDark, queueForView, themeColorForeground]
     );
 
     const renderItem = useCallback(
@@ -366,7 +382,11 @@ export const QueueSheet = forwardRef<QueueSheetRef, QueueSheetProps>(
         }
 
         const isActive = String(item.id) === String(currentTrack?.id);
-        const isNextTrack = index === nextIndex && queue.length > 1;
+        const nextTrackId = nextIndex >= 0 ? queue[nextIndex]?.id : null;
+        const isNextTrack =
+          nextTrackId !== null &&
+          String(item.id) === String(nextTrackId) &&
+          queue.length > 1;
         const artwork = resolveArtwork(item, "160");
         const favorited = isFavorited(item.id);
 
@@ -385,7 +405,7 @@ export const QueueSheet = forwardRef<QueueSheetRef, QueueSheetProps>(
             }}
           >
             <TouchableOpacity
-              onPress={() => handleTrackPress(index)}
+              onPress={() => handleTrackPress(item)}
               style={{ flexDirection: "row", alignItems: "center", flex: 1 }}
             >
               <View style={{ position: "relative" }}>
@@ -549,6 +569,7 @@ export const QueueSheet = forwardRef<QueueSheetRef, QueueSheetProps>(
         handleTrackPress,
         nextIndex,
         nextTrackBufferStatus,
+        queue,
         queue.length,
         isFavorited,
         toggleFavorite,
@@ -754,6 +775,37 @@ export const QueueSheet = forwardRef<QueueSheetRef, QueueSheetProps>(
                 </View>
               </View>
 
+              <View
+                style={{
+                  flexDirection: "row",
+                  alignItems: "center",
+                  gap: 12,
+                  marginTop: 10,
+                }}
+              >
+                <Text
+                  style={{
+                    color: themeColorForeground,
+                    opacity: 0.5,
+                    fontSize: 12,
+                    fontWeight: "500",
+                  }}
+                >
+                  Include podcast
+                </Text>
+                <Switch
+                  value={includePodcast}
+                  onValueChange={setIncludePodcast}
+                  trackColor={{
+                    false: isDark
+                      ? "rgba(255,255,255,0.15)"
+                      : "rgba(0,0,0,0.15)",
+                    true: "#ef4444",
+                  }}
+                  thumbColor={Platform.OS === "android" ? "#fff" : undefined}
+                />
+              </View>
+
               {/* Search and Filters */}
               <View style={{ marginTop: 12 }}>
                 <View
@@ -900,8 +952,10 @@ export const QueueSheet = forwardRef<QueueSheetRef, QueueSheetProps>(
             {/* Scrollable Track List */}
             <BottomSheetFlatList
               data={filteredQueue}
-              keyExtractor={(item: { id: string | number }, index: number) =>
-                `${item.id}-${index}`
+              keyExtractor={(item: unknown, index: number) =>
+                typeof item === "string"
+                  ? `artist-${item}-${index}`
+                  : `${(item as { id: string | number }).id}-${index}`
               }
               renderItem={renderItem}
               ListEmptyComponent={ListEmptyComponent}

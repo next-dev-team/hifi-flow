@@ -1,11 +1,12 @@
 import { Ionicons } from "@expo/vector-icons";
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import {
   ActivityIndicator,
   FlatList,
   Image,
   Pressable,
   Text,
+  TextInput,
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -17,6 +18,7 @@ import { TimerStatus } from "@/components/timer-status";
 const StyledSafeAreaView = withUniwind(SafeAreaView);
 const StyledView = withUniwind(View);
 const StyledText = withUniwind(Text);
+const StyledTextInput = withUniwind(TextInput);
 
 export default function PodcastScreen() {
   const {
@@ -27,6 +29,7 @@ export default function PodcastScreen() {
     isPlaying,
     loadingTrackId,
   } = usePlayer();
+  const [searchQuery, setSearchQuery] = useState("");
   const {
     episodes,
     total,
@@ -35,7 +38,16 @@ export default function PodcastScreen() {
     hasNextPage,
     fetchNextPage,
   } = usePodcastWeAnd({ limit: 20 });
-  const data = useMemo(() => episodes, [episodes]);
+
+  const data = useMemo(() => {
+    if (!searchQuery.trim()) return episodes;
+    const query = searchQuery.toLowerCase();
+    return episodes.filter(
+      (item) =>
+        item.title.toLowerCase().includes(query) ||
+        item.artist.toLowerCase().includes(query)
+    );
+  }, [episodes, searchQuery]);
 
   const handlePlay = (index: number) => {
     const track = data[index];
@@ -75,6 +87,23 @@ export default function PodcastScreen() {
         <View className="px-3 py-2 rounded-lg border bg-foreground border-foreground shadow-sm">
           <Text className="text-background font-semibold">WeAnd</Text>
         </View>
+        <View className="flex-1 flex-row items-center px-3 bg-black/5 dark:bg-white/5 rounded-lg border border-black/10 dark:border-white/10">
+          <Ionicons
+            name="search"
+            size={16}
+            color="#888"
+            style={{ marginRight: 8 }}
+          />
+          <StyledTextInput
+            className="flex-1 h-10 text-foreground text-[14px]"
+            placeholder="Search episodes..."
+            placeholderTextColor="#888"
+            value={searchQuery}
+            onChangeText={setSearchQuery}
+            autoCorrect={false}
+            clearButtonMode="while-editing"
+          />
+        </View>
       </View>
 
       {isLoading ? (
@@ -100,7 +129,11 @@ export default function PodcastScreen() {
           }}
           ListFooterComponent={() => (
             <View className="py-6">
-              {hasNextPage ? (
+              {searchQuery.trim() !== "" ? (
+                <Text className="text-foreground opacity-50 text-center">
+                  Showing {data.length} results for "{searchQuery}"
+                </Text>
+              ) : hasNextPage ? (
                 <Pressable
                   className="px-4 py-3 rounded-xl bg-black/5 dark:bg-white/5 border border-black/10 dark:border-white/10 flex-row items-center justify-center"
                   onPress={() => {
@@ -126,8 +159,7 @@ export default function PodcastScreen() {
           renderItem={({ item, index }) => {
             const isActive = String(currentTrack?.id) === String(item.id);
             const isBusy = loadingTrackId === String(item.id);
-            const icon =
-              isActive && isPlaying ? "pause" : ("play" as const);
+            const icon = isActive && isPlaying ? "pause" : ("play" as const);
 
             return (
               <Pressable

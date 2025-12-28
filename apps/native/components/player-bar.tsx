@@ -1793,8 +1793,8 @@ export const PlayerBar = () => {
                 </StyledView>
 
                 {/* Right side: Controls and Up Next */}
-                <StyledView className="justify-between items-start py-0.5">
-                  <StyledView className="flex-row items-center justify-start">
+                <StyledView className="flex-1 justify-between items-end py-0.5">
+                  <StyledView className="flex-row items-center justify-end">
                     <StyledPressable
                       onPress={(e) => {
                         e.stopPropagation();
@@ -1895,7 +1895,7 @@ export const PlayerBar = () => {
                   </StyledView>
 
                   {nextTrack && (
-                    <StyledView className="flex-row items-center justify-start gap-1">
+                    <StyledView className="flex-row items-center justify-end gap-1">
                       <StyledText
                         className="text-[11px] opacity-60 font-bold select-none"
                         style={{ color: themeColorForeground }}
