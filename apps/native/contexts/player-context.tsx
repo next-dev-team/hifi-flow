@@ -30,6 +30,11 @@ import type { AudioQuality as ApiAudioQuality } from "@/utils/types";
 
 type AudioQuality = ApiAudioQuality;
 type RepeatMode = "off" | "all" | "one";
+type QueueType = "music" | "podcast";
+
+function isPodcastTrackId(id: unknown): boolean {
+  return String(id ?? "").startsWith("podcast:");
+}
 
 interface Track {
   id: string | number;
@@ -54,6 +59,7 @@ export type PreBufferStatus = "none" | "buffering" | "ready" | "failed";
 
 interface PlayerContextType {
   currentTrack: Track | null;
+  activeQueueType: "music" | "podcast";
   isPlaying: boolean;
   isLoading: boolean;
   queue: Track[];
@@ -74,9 +80,17 @@ interface PlayerContextType {
   cancelSleepTimer: () => void;
   playTrack: (
     track: Track,
-    options?: { skipRecentlyPlayed?: boolean }
+    options?: {
+      skipRecentlyPlayed?: boolean;
+      queueType?: QueueType;
+      replaceQueue?: boolean;
+    }
   ) => Promise<void>;
-  playQueue: (tracks: Track[], startIndex?: number) => Promise<void>;
+  playQueue: (
+    tracks: Track[],
+    startIndex?: number,
+    options?: { queueType?: QueueType; replaceQueue?: boolean }
+  ) => Promise<void>;
   pauseTrack: () => Promise<void>;
   resumeTrack: () => Promise<void>;
   seekToMillis: (positionMillis: number) => Promise<void>;
@@ -115,8 +129,11 @@ const SHUFFLE_STORAGE_KEY = "hififlow:shuffle:v1";
 const REPEAT_STORAGE_KEY = "hififlow:repeat:v1";
 const VOLUME_STORAGE_KEY = "hififlow:volume:v1";
 const SLEEP_TIMER_KEY = "hififlow:sleeptimer:v1";
-const QUEUE_STORAGE_KEY = "hififlow:queue:v1";
-const QUEUE_INDEX_KEY = "hififlow:queue_index:v1";
+const MUSIC_QUEUE_STORAGE_KEY = "hififlow:queue:v1";
+const MUSIC_QUEUE_INDEX_KEY = "hififlow:queue_index:v1";
+const PODCAST_QUEUE_STORAGE_KEY = "hififlow:podcast_queue:v1";
+const PODCAST_QUEUE_INDEX_KEY = "hififlow:podcast_queue_index:v1";
+const ACTIVE_QUEUE_TYPE_KEY = "hififlow:active_queue_type:v1";
 const PLAYBACK_POSITIONS_KEY = "hififlow:positions:v1";
 
 // Maximum number of items in queue (keep newest)
@@ -177,13 +194,63 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
   const currentBaseStreamUrlRef = useRef<string | null>(null);
 
   // ==================== Queue State ====================
-  const [queue, setQueue, isQueueLoaded] = usePersistentState<Track[]>(
-    QUEUE_STORAGE_KEY,
-    []
+  const [activeQueueType, setActiveQueueType, isQueueTypeLoaded] =
+    usePersistentState<QueueType>(ACTIVE_QUEUE_TYPE_KEY, "music");
+
+  const [musicQueue, setMusicQueue, isMusicQueueLoaded] = usePersistentState<
+    Track[]
+  >(MUSIC_QUEUE_STORAGE_KEY, []);
+  const [musicQueueIndex, setMusicQueueIndex, isMusicIndexLoaded] =
+    usePersistentState<number>(MUSIC_QUEUE_INDEX_KEY, -1);
+  const musicQueueIndexRef = useRef<number>(-1);
+
+  const [podcastQueue, setPodcastQueue, isPodcastQueueLoaded] =
+    usePersistentState<Track[]>(PODCAST_QUEUE_STORAGE_KEY, []);
+  const [podcastQueueIndex, setPodcastQueueIndex, isPodcastIndexLoaded] =
+    usePersistentState<number>(PODCAST_QUEUE_INDEX_KEY, -1);
+  const podcastQueueIndexRef = useRef<number>(-1);
+
+  const queue = activeQueueType === "podcast" ? podcastQueue : musicQueue;
+  const persistedQueueIndex =
+    activeQueueType === "podcast" ? podcastQueueIndex : musicQueueIndex;
+  const queueIndexRef =
+    activeQueueType === "podcast" ? podcastQueueIndexRef : musicQueueIndexRef;
+
+  const isQueueLoaded =
+    isQueueTypeLoaded &&
+    isMusicQueueLoaded &&
+    isPodcastQueueLoaded &&
+    isMusicIndexLoaded &&
+    isPodcastIndexLoaded;
+
+  const setQueueForType = useCallback(
+    (type: QueueType, value: Track[] | ((prev: Track[]) => Track[])) => {
+      if (type === "podcast") {
+        setPodcastQueue(value);
+        return;
+      }
+      setMusicQueue(value);
+    },
+    [setMusicQueue, setPodcastQueue]
   );
-  const [persistedQueueIndex, setPersistedQueueIndex, isIndexLoaded] =
-    usePersistentState<number>(QUEUE_INDEX_KEY, -1);
-  const queueIndexRef = useRef<number>(-1);
+
+  const setPersistedQueueIndexForType = useCallback(
+    (type: QueueType, value: number) => {
+      if (type === "podcast") {
+        setPodcastQueueIndex(value);
+        return;
+      }
+      setMusicQueueIndex(value);
+    },
+    [setMusicQueueIndex, setPodcastQueueIndex]
+  );
+
+  const setPersistedQueueIndex = useCallback(
+    (value: number) => {
+      setPersistedQueueIndexForType(activeQueueType, value);
+    },
+    [activeQueueType, setPersistedQueueIndexForType]
+  );
 
   const [savedPositions, setSavedPositions] = usePersistentState<
     Record<string, number>
@@ -332,7 +399,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
 
   // ==================== Session Restoration ====================
   useEffect(() => {
-    if (isQueueLoaded && isIndexLoaded && !currentTrack && queue.length > 0) {
+    if (isQueueLoaded && !currentTrack && queue.length > 0) {
       let indexToRestore = persistedQueueIndex;
       if (indexToRestore < 0 || indexToRestore >= queue.length) {
         indexToRestore = 0;
@@ -344,7 +411,17 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
         queueIndexRef.current = indexToRestore;
       }
     }
-  }, [isQueueLoaded, isIndexLoaded, queue, currentTrack, persistedQueueIndex]);
+  }, [isQueueLoaded, queue, currentTrack, persistedQueueIndex, queueIndexRef]);
+
+  useEffect(() => {
+    if (!currentTrack) return;
+    const desiredQueueType: QueueType = isPodcastTrackId(currentTrack.id)
+      ? "podcast"
+      : "music";
+    if (activeQueueType !== desiredQueueType) {
+      setActiveQueueType(desiredQueueType);
+    }
+  }, [currentTrack, activeQueueType, setActiveQueueType]);
 
   // Sync index to storage
   useEffect(() => {
@@ -1492,35 +1569,54 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
   // ==================== Public API ====================
 
   const playTrack = useCallback(
-    async (track: Track, options?: { skipRecentlyPlayed?: boolean }) => {
+    async (
+      track: Track,
+      options?: {
+        skipRecentlyPlayed?: boolean;
+        queueType?: QueueType;
+        replaceQueue?: boolean;
+      }
+    ) => {
       const skipRecentlyPlayed = options?.skipRecentlyPlayed ?? false;
+      const queueType: QueueType =
+        options?.queueType ??
+        (isPodcastTrackId(track.id) ? "podcast" : "music");
+      const replaceQueue = options?.replaceQueue ?? false;
 
       if (playLockRef.current) {
         return;
       }
 
+      setActiveQueueType(queueType);
       setLoadingTrackId(String(track.id));
 
+      const targetQueueIndexRef =
+        queueType === "podcast" ? podcastQueueIndexRef : musicQueueIndexRef;
+
       // Add track to queue (append, don't replace)
-      setQueue((prev) => {
+      setQueueForType(queueType, (prev) => {
+        if (replaceQueue) {
+          targetQueueIndexRef.current = 0;
+          return [track];
+        }
         // Check if track already exists in queue
         const existingIndex = prev.findIndex(
           (t) => String(t.id) === String(track.id)
         );
         if (existingIndex !== -1) {
           // Track exists, just update index
-          queueIndexRef.current = existingIndex;
+          targetQueueIndexRef.current = existingIndex;
           return prev;
         }
         // Append new track
-        queueIndexRef.current = prev.length;
+        targetQueueIndexRef.current = prev.length;
         const newQueue = [...prev, track];
         // Limit to MAX_QUEUE_SIZE (keep newest)
         if (newQueue.length > MAX_QUEUE_SIZE) {
           const trimAmount = newQueue.length - MAX_QUEUE_SIZE;
-          queueIndexRef.current = Math.max(
+          targetQueueIndexRef.current = Math.max(
             0,
-            queueIndexRef.current - trimAmount
+            targetQueueIndexRef.current - trimAmount
           );
           return newQueue.slice(trimAmount);
         }
@@ -1530,7 +1626,13 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
       setCurrentTrack(track);
       setAudioAnalysis(null);
 
-      const success = await playSoundInternal(track, false, skipRecentlyPlayed);
+      const effectiveSkipRecentlyPlayed =
+        skipRecentlyPlayed || queueType === "podcast";
+      const success = await playSoundInternal(
+        track,
+        false,
+        effectiveSkipRecentlyPlayed
+      );
       if (!success) {
         markTrackBroken(String(track.id));
         consecutiveFailuresRef.current++;
@@ -1547,17 +1649,47 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
         await playNextRef.current();
       }
     },
-    [playSoundInternal, setQueue, showToast, markTrackBroken]
+    [
+      playSoundInternal,
+      setQueueForType,
+      showToast,
+      markTrackBroken,
+      setActiveQueueType,
+    ]
   );
 
   const playQueue = useCallback(
-    async (tracks: Track[], startIndex = 0) => {
+    async (
+      tracks: Track[],
+      startIndex = 0,
+      options?: { queueType?: QueueType; replaceQueue?: boolean }
+    ) => {
       if (playLockRef.current) {
         return;
       }
 
+      const seedTrack = tracks[startIndex] ?? tracks[0];
+      const queueType: QueueType =
+        options?.queueType ??
+        (seedTrack && isPodcastTrackId(seedTrack.id) ? "podcast" : "music");
+      const replaceQueue = options?.replaceQueue ?? false;
+
+      setActiveQueueType(queueType);
+
+      const targetQueueIndexRef =
+        queueType === "podcast" ? podcastQueueIndexRef : musicQueueIndexRef;
+
       // Append tracks to queue (don't replace)
-      setQueue((prev) => {
+      setQueueForType(queueType, (prev) => {
+        if (replaceQueue) {
+          const newQueue = tracks.slice(0, MAX_QUEUE_SIZE);
+          const boundedStartIndex = Math.max(
+            0,
+            Math.min(startIndex, Math.max(0, newQueue.length - 1))
+          );
+          targetQueueIndexRef.current = boundedStartIndex;
+          return newQueue;
+        }
         // Filter out duplicates (tracks already in queue)
         const existingIds = new Set(prev.map((t) => String(t.id)));
         const newTracks = tracks.filter((t) => !existingIds.has(String(t.id)));
@@ -1573,7 +1705,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
 
         if (existingTargetIndex !== -1) {
           // Track exists, just update index to play from there
-          queueIndexRef.current = existingTargetIndex;
+          targetQueueIndexRef.current = existingTargetIndex;
           return [...prev, ...newTracks];
         }
 
@@ -1589,7 +1721,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
         const newTargetIndex = newQueue.findIndex(
           (t) => String(t.id) === String(targetTrack.id)
         );
-        queueIndexRef.current =
+        targetQueueIndexRef.current =
           newTargetIndex !== -1
             ? newTargetIndex
             : Math.max(0, newQueue.length - 1);
@@ -1603,7 +1735,11 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
         setLoadingTrackId(String(startTrack.id));
         setCurrentTrack(startTrack);
         setAudioAnalysis(null);
-        const success = await playSoundInternal(startTrack, false);
+        const success = await playSoundInternal(
+          startTrack,
+          false,
+          queueType === "podcast"
+        );
         if (!success) {
           markTrackBroken(String(startTrack.id));
           consecutiveFailuresRef.current++;
@@ -1621,7 +1757,13 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
         }
       }
     },
-    [playSoundInternal, setQueue, showToast, markTrackBroken]
+    [
+      playSoundInternal,
+      setQueueForType,
+      showToast,
+      markTrackBroken,
+      setActiveQueueType,
+    ]
   );
 
   const pauseTrack = useCallback(async () => {
@@ -1769,7 +1911,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
   const addToQueue = useCallback(
     (track: Track): boolean => {
       let added = false;
-      setQueue((prev) => {
+      setQueueForType(activeQueueType, (prev) => {
         // Check if track already exists
         const exists = prev.some((t) => String(t.id) === String(track.id));
         if (exists) {
@@ -1791,13 +1933,13 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
       }
       return added;
     },
-    [showToast, setQueue]
+    [showToast, setQueueForType, activeQueueType]
   );
 
   const addTracksToQueue = useCallback(
     (tracks: Track[]): number => {
       let addedCount = 0;
-      setQueue((prev) => {
+      setQueueForType(activeQueueType, (prev) => {
         const existingIds = new Set(prev.map((t) => String(t.id)));
         const newTracks = tracks.filter((t) => !existingIds.has(String(t.id)));
         addedCount = newTracks.length;
@@ -1821,13 +1963,13 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
       }
       return addedCount;
     },
-    [showToast, setQueue]
+    [showToast, setQueueForType, activeQueueType]
   );
 
   const clearQueue = useCallback(() => {
     // Stop playback and clear everything
     destroyAllPlayers();
-    setQueue([]);
+    setQueueForType(activeQueueType, []);
     setPersistedQueueIndex(-1);
     setCurrentTrack(null);
     setCurrentStreamUrl(null);
@@ -1835,11 +1977,18 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
     queueIndexRef.current = -1;
     shuffleHistoryRef.current = [];
     showToast({ message: "Queue cleared", type: "success" });
-  }, [destroyAllPlayers, setPersistedQueueIndex, showToast, setQueue]);
+  }, [
+    destroyAllPlayers,
+    setPersistedQueueIndex,
+    showToast,
+    setQueueForType,
+    activeQueueType,
+    queueIndexRef,
+  ]);
 
   const removeFromQueue = useCallback(
     (trackId: string) => {
-      setQueue((prev) => {
+      setQueueForType(activeQueueType, (prev) => {
         const index = prev.findIndex((t) => String(t.id) === String(trackId));
         if (index === -1) return prev;
 
@@ -1859,7 +2008,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
       });
       showToast({ message: "Removed from queue", type: "info" });
     },
-    [showToast, setQueue]
+    [showToast, setQueueForType, activeQueueType]
   );
 
   const unloadSound = useCallback(async () => {
@@ -2141,7 +2290,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
   }, []);
 
   const shuffleQueue = useCallback(() => {
-    setQueue((prev) => {
+    setQueueForType(activeQueueType, (prev) => {
       if (prev.length <= 1) return prev;
 
       const newQueue = [...prev];
@@ -2169,7 +2318,13 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
 
     shuffleHistoryRef.current = [];
     showToast({ message: "Queue shuffled", type: "info" });
-  }, [currentTrack, setQueue, setPersistedQueueIndex, showToast]);
+  }, [
+    activeQueueType,
+    currentTrack,
+    setPersistedQueueIndex,
+    setQueueForType,
+    showToast,
+  ]);
 
   const cycleRepeatMode = useCallback(() => {
     setRepeatMode((prev) => {
@@ -2509,6 +2664,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
   // ==================== Context Value ====================
   const value: PlayerContextType = {
     currentTrack,
+    activeQueueType,
     isPlaying,
     isLoading,
     queue,

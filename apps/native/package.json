@@ -15,6 +15,7 @@
     "prod:web": "WATCHMAN_DISABLE=1 EXPO_NO_WATCHMAN=1 expo export --platform web && node -e \"const fs = require('node:fs'); const path = 'dist/index.html'; if (!fs.existsSync(path)) process.exit(0); let html = fs.readFileSync(path, 'utf8'); if (!html.includes('rel=\\\"manifest\\\"')) { html = html.replace('</head>', '  <link rel=\\\"manifest\\\" href=\\\"/manifest.webmanifest\\\" />\\n  <meta name=\\\"mobile-web-app-capable\\\" content=\\\"yes\\\" />\\n  <meta name=\\\"apple-mobile-web-app-capable\\\" content=\\\"yes\\\" />\\n</head>'); fs.writeFileSync(path, html); }\""
   },
   "dependencies": {
+    "axios": "^1.7.9",
     "@expo/metro-runtime": "~6.1.2",
     "@expo/vector-icons": "^15.0.3",
     "@gorhom/bottom-sheet": "^5.2.6",
