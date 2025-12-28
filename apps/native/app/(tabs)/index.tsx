@@ -75,7 +75,7 @@ import {
 import { getSheetMargin } from "@/utils/layout";
 import { resolveArtwork, resolveName } from "@/utils/resolvers";
 
-const appVersion = "1.0.5";
+const appVersion = "1.0.6";
 
 type SearchFilter = "songs" | "artists" | "albums" | "playlists";
 

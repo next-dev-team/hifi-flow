@@ -43,7 +43,14 @@ import Animated, {
 } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useThemeColor } from "heroui-native";
+import { withUniwind } from "uniwind";
 import { useAppTheme } from "@/contexts/app-theme-context";
+
+const StyledView = withUniwind(View);
+const StyledText = withUniwind(Text);
+const StyledTouchableOpacity = withUniwind(TouchableOpacity);
+const StyledPressable = withUniwind(Pressable);
+const StyledIonicons = withUniwind(Ionicons);
 import { Circle, Svg } from "react-native-svg";
 import {
   OPEN_QUEUE_SHEET_EVENT,
@@ -306,7 +313,11 @@ const SpectrumBar = ({
           height,
           width: barWidth,
           borderRadius: 999,
-          backgroundColor: active ? color : "rgba(255,255,255,0.4)",
+          backgroundColor: active
+            ? color
+            : isDark
+            ? "rgba(255,255,255,0.4)"
+            : "rgba(0,0,0,0.4)",
           opacity: active ? 0.95 : 0.3,
         };
       }
@@ -318,7 +329,11 @@ const SpectrumBar = ({
         top: "50%",
         width: barWidth,
         borderRadius: 999,
-        backgroundColor: active ? color : "rgba(255,255,255,0.4)",
+        backgroundColor: active
+          ? color
+          : isDark
+          ? "rgba(255,255,255,0.4)"
+          : "rgba(0,0,0,0.4)",
         transform: [
           { translateX: -barWidth / 2 },
           { translateY: -height / 2 },
@@ -754,18 +769,16 @@ const SeekBar = ({
             height: 8,
             borderRadius: 999,
             overflow: "hidden",
-            backgroundColor: isDark
-              ? "rgba(255,255,255,0.18)"
-              : "rgba(0,0,0,0.18)",
+            backgroundColor: themeColorForeground,
+            opacity: 0.18,
           }}
         >
           <View
             style={{
               height: "100%",
               width: `${visualRatio * 100}%`,
-              backgroundColor: isDark
-                ? "rgba(255,255,255,0.9)"
-                : "rgba(0,0,0,0.9)",
+              backgroundColor: themeColorForeground,
+              opacity: 0.9,
             }}
           />
         </View>
@@ -880,9 +893,8 @@ const VolumeSlider = ({
           height: "100%",
           borderRadius: 999,
           overflow: "hidden",
-          backgroundColor: isDark
-            ? "rgba(255,255,255,0.18)"
-            : "rgba(0,0,0,0.18)",
+          backgroundColor: themeColorForeground,
+          opacity: 0.18,
           justifyContent: "flex-end",
         }}
       >
@@ -890,9 +902,8 @@ const VolumeSlider = ({
           style={{
             width: "100%",
             height: `${visualRatio * 100}%`,
-            backgroundColor: isDark
-              ? "rgba(255,255,255,0.9)"
-              : "rgba(0,0,0,0.9)",
+            backgroundColor: themeColorForeground,
+            opacity: 0.9,
           }}
         />
       </View>
@@ -1302,7 +1313,7 @@ export const PlayerBar = () => {
               />
               <BlurView
                 intensity={Platform.OS === "ios" ? 50 : 100}
-                tint="dark"
+                tint={isDark ? "dark" : "light"}
                 style={{
                   position: "absolute",
                   top: 0,
@@ -1313,7 +1324,7 @@ export const PlayerBar = () => {
               />
               {Platform.OS === "web" && typeof document !== "undefined" ? (
                 (require("react-dom") as any).createPortal(
-                  <View
+                  <StyledView
                     pointerEvents="none"
                     style={{
                       position: "fixed",
@@ -1321,14 +1332,16 @@ export const PlayerBar = () => {
                       left: 0,
                       right: 0,
                       bottom: 0,
-                      backgroundColor: "rgba(0,0,0,0.3)",
                       zIndex: 2147483647,
+                      backgroundColor: isDark
+                        ? "rgba(0,0,0,0.3)"
+                        : "rgba(255,255,255,0.3)",
                     }}
                   />,
                   document.body
                 )
               ) : (
-                <View
+                <StyledView
                   pointerEvents="none"
                   style={{
                     position: "absolute",
@@ -1336,7 +1349,9 @@ export const PlayerBar = () => {
                     left: 0,
                     right: 0,
                     bottom: 0,
-                    backgroundColor: "rgba(0,0,0,0.3)",
+                    backgroundColor: isDark
+                      ? "rgba(0,0,0,0.3)"
+                      : "rgba(255,255,255,0.3)",
                   }}
                 />
               )}
@@ -1344,7 +1359,7 @@ export const PlayerBar = () => {
           ) : null}
         </Animated.View>
       )),
-    [resolvedArtwork]
+    [resolvedArtwork, isDark, themeColorBackground]
   );
 
   useEffect(() => {
@@ -1696,7 +1711,7 @@ export const PlayerBar = () => {
                           <Ionicons
                             name="chevron-back"
                             size={12}
-                            color={isDark ? "#fff" : "#000"}
+                            color={themeColorForeground}
                           />
                         </Animated.View>
                       )}
@@ -1744,29 +1759,31 @@ export const PlayerBar = () => {
               style={animatedContentStyle}
               pointerEvents={isCollapsed ? "none" : "auto"}
             >
-              <View className="flex-1 mr-2 items-start justify-center">
-                <Text
-                  className="text-foreground font-bold text-[13px] text-left select-none"
+              <StyledView className="flex-1 mr-2 items-start justify-center">
+                <StyledText
+                  className="font-bold text-[13px] text-left select-none"
+                  style={{ color: themeColorForeground }}
                   numberOfLines={1}
                   selectable={false}
                 >
                   {currentTrack.title}
-                </Text>
-                <View className="flex-row items-center gap-1 max-w-full">
+                </StyledText>
+                <StyledView className="flex-row items-center gap-1 max-w-full">
                   {isCached && (
-                    <Ionicons name="flash" size={10} color="#4ade80" />
+                    <StyledIonicons name="flash" size={10} color="#4ade80" />
                   )}
-                  <Text
-                    className="text-foreground opacity-70 text-[11px] text-left select-none shrink"
+                  <StyledText
+                    className="opacity-70 text-[11px] text-left select-none shrink"
+                    style={{ color: themeColorForeground }}
                     numberOfLines={1}
                     selectable={false}
                   >
                     {currentTrack.artist}
-                  </Text>
-                </View>
-              </View>
+                  </StyledText>
+                </StyledView>
+              </StyledView>
 
-              <Pressable
+              <StyledPressable
                 onPress={(e) => {
                   e.stopPropagation();
                   playPrevious();
@@ -1775,23 +1792,16 @@ export const PlayerBar = () => {
                 disabled={controlsDisabled}
               >
                 {({ pressed }) => (
-                  <Ionicons
+                  <StyledIonicons
                     name="play-skip-back"
                     size={20}
-                    color={
-                      controlsDisabled
-                        ? isDark
-                          ? "rgba(255,255,255,0.35)"
-                          : "rgba(0,0,0,0.35)"
-                        : pressed
-                        ? "#ef4444"
-                        : themeColorForeground
-                    }
+                    color={pressed ? "#ef4444" : themeColorForeground}
+                    style={{ opacity: controlsDisabled ? 0.35 : 1 }}
                   />
                 )}
-              </Pressable>
+              </StyledPressable>
 
-              <Pressable
+              <StyledPressable
                 onPress={(e) => {
                   e.stopPropagation();
                   (isPlaying ? pauseTrack : resumeTrack)();
@@ -1806,16 +1816,17 @@ export const PlayerBar = () => {
                       color={themeColorForeground}
                     />
                   ) : (
-                    <Ionicons
+                    <StyledIonicons
                       name={isPlaying ? "pause" : "play"}
                       size={28}
                       color={pressed ? "#ef4444" : themeColorForeground}
+                      style={{ marginLeft: isPlaying ? 0 : 2 }}
                     />
                   )
                 }
-              </Pressable>
+              </StyledPressable>
 
-              <Pressable
+              <StyledPressable
                 onPress={(e) => {
                   e.stopPropagation();
                   playNext();
@@ -1824,23 +1835,16 @@ export const PlayerBar = () => {
                 disabled={controlsDisabled}
               >
                 {({ pressed }) => (
-                  <Ionicons
+                  <StyledIonicons
                     name="play-skip-forward"
                     size={20}
-                    color={
-                      controlsDisabled
-                        ? isDark
-                          ? "rgba(255,255,255,0.35)"
-                          : "rgba(0,0,0,0.35)"
-                        : pressed
-                        ? "#ef4444"
-                        : themeColorForeground
-                    }
+                    color={pressed ? "#ef4444" : themeColorForeground}
+                    style={{ opacity: controlsDisabled ? 0.35 : 1 }}
                   />
                 )}
-              </Pressable>
+              </StyledPressable>
 
-              <Pressable
+              <StyledPressable
                 onPress={(e) => {
                   e.stopPropagation();
                   void toggleCurrentFavorite(resolvedArtwork);
@@ -1848,7 +1852,7 @@ export const PlayerBar = () => {
                 className="p-2"
               >
                 {({ pressed }) => (
-                  <Ionicons
+                  <StyledIonicons
                     name={isCurrentFavorited ? "heart" : "heart-outline"}
                     size={20}
                     color={
@@ -1858,9 +1862,9 @@ export const PlayerBar = () => {
                     }
                   />
                 )}
-              </Pressable>
+              </StyledPressable>
 
-              <Pressable
+              <StyledPressable
                 onPress={(e) => {
                   e.stopPropagation();
                   handleOpenQueue();
@@ -1868,13 +1872,13 @@ export const PlayerBar = () => {
                 className="p-2 mr-1"
               >
                 {({ pressed }) => (
-                  <Ionicons
+                  <StyledIonicons
                     name="list"
                     size={20}
                     color={pressed ? "#60a5fa" : themeColorForeground}
                   />
                 )}
-              </Pressable>
+              </StyledPressable>
             </Animated.View>
           </Animated.View>
         </Pressable>
@@ -1894,7 +1898,8 @@ export const PlayerBar = () => {
         onChange={(index) => setIsSheetOpen(index >= 0)}
         onDismiss={() => setIsSheetOpen(false)}
         handleIndicatorStyle={{
-          backgroundColor: isDark ? "rgba(255,255,255,0.3)" : "rgba(0,0,0,0.3)",
+          backgroundColor: themeColorForeground,
+          opacity: 0.3,
           width: 40,
         }}
       >
@@ -1920,23 +1925,23 @@ export const PlayerBar = () => {
                 style={{ paddingTop: insets.top + 12 }}
               >
                 <View className="w-full px-5 flex-row items-center justify-between">
-                  <Pressable onPress={handleCloseFullPlayer}>
+                  <StyledPressable onPress={handleCloseFullPlayer}>
                     {({ pressed }) => (
-                      <Ionicons
+                      <StyledIonicons
                         name="chevron-down"
                         size={28}
                         color={pressed ? "#ef4444" : themeColorForeground}
                       />
                     )}
-                  </Pressable>
-                  <Pressable
+                  </StyledPressable>
+                  <StyledPressable
                     className="w-7 items-center justify-center"
                     onPress={() =>
                       setShowSpectrumSelector(!showSpectrumSelector)
                     }
                   >
                     {({ pressed }) => (
-                      <Ionicons
+                      <StyledIonicons
                         name={
                           spectrumVariant === "wave"
                             ? "water-outline"
@@ -1962,13 +1967,13 @@ export const PlayerBar = () => {
                         }
                       />
                     )}
-                  </Pressable>
-                  <Pressable
+                  </StyledPressable>
+                  <StyledPressable
                     className="w-7 items-end"
                     onPress={() => void toggleCurrentFavorite(resolvedArtwork)}
                   >
                     {({ pressed }) => (
-                      <Ionicons
+                      <StyledIonicons
                         name={isCurrentFavorited ? "heart" : "heart-outline"}
                         size={22}
                         color={
@@ -1978,31 +1983,27 @@ export const PlayerBar = () => {
                         }
                       />
                     )}
-                  </Pressable>
-                  <Pressable
+                  </StyledPressable>
+                  <StyledPressable
                     className="w-7 items-end ml-4"
                     onPress={handleOpenQueue}
                   >
                     {({ pressed }) => (
-                      <Ionicons
+                      <StyledIonicons
                         name="list"
                         size={22}
                         color={pressed ? "#60a5fa" : themeColorForeground}
                       />
                     )}
-                  </Pressable>
+                  </StyledPressable>
                 </View>
 
                 {showSpectrumSelector && (
-                  <View className="absolute top-16 left-0 right-0 z-50 items-center">
+                  <StyledView className="absolute top-16 left-0 right-0 z-50 items-center">
                     <BlurView
                       intensity={80}
                       tint={isDark ? "dark" : "light"}
-                      className={`flex-row items-center ${
-                        isDark ? "bg-black/40" : "bg-white/40"
-                      } px-4 py-3 rounded-2xl border ${
-                        isDark ? "border-white/10" : "border-black/10"
-                      }`}
+                      className="flex-row items-center px-4 py-3 rounded-2xl border border-foreground/10"
                     >
                       {[
                         { id: "wave", icon: "water-outline", label: "Wave" },
@@ -2034,7 +2035,7 @@ export const PlayerBar = () => {
                         },
                         { id: "trap", icon: "disc-outline", label: "Trap" },
                       ].map((v) => (
-                        <TouchableOpacity
+                        <StyledTouchableOpacity
                           key={v.id}
                           onPress={() => {
                             setSpectrumVariant(v.id as any);
@@ -2043,60 +2044,66 @@ export const PlayerBar = () => {
                           className={`mx-2 items-center justify-center w-10 h-10 rounded-full ${
                             spectrumVariant === v.id
                               ? "bg-primary"
-                              : isDark
-                              ? "bg-white/10"
-                              : "bg-black/10"
+                              : "bg-foreground/10"
                           }`}
                         >
-                          <Ionicons
+                          <StyledIonicons
                             name={v.icon as any}
                             size={18}
                             color={
                               spectrumVariant === v.id
                                 ? "#fff"
-                                : isDark
-                                ? "rgba(255,255,255,0.7)"
-                                : "rgba(0,0,0,0.7)"
+                                : themeColorForeground
                             }
+                            style={{
+                              opacity: spectrumVariant === v.id ? 1 : 0.7,
+                            }}
                           />
-                        </TouchableOpacity>
+                        </StyledTouchableOpacity>
                       ))}
                     </BlurView>
-                  </View>
+                  </StyledView>
                 )}
 
-                <View className="items-center px-8 mb-4">
-                  <Text
-                    className="text-xs text-foreground opacity-70 mb-2 select-none"
+                <StyledView className="items-center px-8 mb-4">
+                  <StyledText
+                    className="text-xs opacity-70 mb-2 select-none"
+                    style={{ color: themeColorForeground }}
                     selectable={false}
                   >
                     Now Playing
-                  </Text>
-                  <Text
-                    className="text-2xl font-bold text-foreground mb-1 select-none"
+                  </StyledText>
+                  <StyledText
+                    className="text-2xl font-bold mb-1 select-none"
+                    style={{ color: themeColorForeground }}
                     numberOfLines={1}
                     selectable={false}
                   >
                     {currentTrack.title}
-                  </Text>
-                  <View className="flex-row items-center justify-center gap-2 max-w-full">
+                  </StyledText>
+                  <StyledView className="flex-row items-center justify-center gap-2 max-w-full">
                     {isCached && (
-                      <View className="bg-green-500/20 px-2 py-0.5 rounded-full border border-green-500/50 flex-row items-center gap-1 shrink-0">
-                        <Ionicons name="flash" size={10} color="#4ade80" />
-                        <Text className="text-[9px] text-green-400 font-bold uppercase">
+                      <StyledView className="bg-green-500/20 px-2 py-0.5 rounded-full border border-green-500/50 flex-row items-center gap-1 shrink-0">
+                        <StyledIonicons
+                          name="flash"
+                          size={10}
+                          color="#4ade80"
+                        />
+                        <StyledText className="text-[9px] text-green-400 font-bold uppercase">
                           Fast
-                        </Text>
-                      </View>
+                        </StyledText>
+                      </StyledView>
                     )}
-                    <Text
-                      className="text-foreground opacity-70 select-none shrink"
+                    <StyledText
+                      className="opacity-70 select-none shrink"
+                      style={{ color: themeColorForeground }}
                       numberOfLines={1}
                       selectable={false}
                     >
                       {currentTrack.artist}
-                    </Text>
-                  </View>
-                </View>
+                    </StyledText>
+                  </StyledView>
+                </StyledView>
 
                 <View className="items-center">
                   <Pressable
@@ -2138,27 +2145,31 @@ export const PlayerBar = () => {
                         isDark={isDark}
                       />
                     ) : (
-                      <View
+                      <StyledView
                         style={{
                           width: 214,
                           height: 214,
                           borderRadius: 107,
-                          backgroundColor: isDark
-                            ? "rgba(255,255,255,0.06)"
-                            : "rgba(0,0,0,0.06)",
                           alignItems: "center",
                           justifyContent: "center",
                         }}
+                        className="bg-foreground/10"
                       >
-                        <Text className="text-6xl">🎵</Text>
-                      </View>
+                        <StyledText
+                          className="text-6xl"
+                          style={{ color: themeColorForeground }}
+                        >
+                          🎵
+                        </StyledText>
+                      </StyledView>
                     )}
                   </Pressable>
 
-                  <View className="w-full px-10 mt-4">
-                    <View className="flex-row justify-between mb-1">
-                      <Text
-                        className="text-[11px] text-foreground opacity-60 select-none"
+                  <StyledView className="w-full px-10 mt-4">
+                    <StyledView className="flex-row justify-between mb-1">
+                      <StyledText
+                        className="text-[11px] opacity-60 select-none"
+                        style={{ color: themeColorForeground }}
                         selectable={false}
                       >
                         {formatMillis(
@@ -2166,16 +2177,17 @@ export const PlayerBar = () => {
                             ? scrubMillis ?? positionMillis
                             : positionMillis
                         )}
-                      </Text>
-                      <Text
-                        className="text-[11px] text-foreground opacity-60 select-none"
+                      </StyledText>
+                      <StyledText
+                        className="text-[11px] opacity-60 select-none"
+                        style={{ color: themeColorForeground }}
                         selectable={false}
                       >
                         {durationMillis > 0
                           ? formatMillis(durationMillis)
                           : "--:--"}
-                      </Text>
-                    </View>
+                      </StyledText>
+                    </StyledView>
                     <SeekBar
                       positionMillis={positionMillis}
                       durationMillis={durationMillis}
@@ -2192,13 +2204,13 @@ export const PlayerBar = () => {
                       isDark={isDark}
                     />
 
-                    <View className="flex-row items-center justify-between mt-2 px-2">
-                      <Pressable
+                    <StyledView className="flex-row items-center justify-between mt-2 px-2">
+                      <StyledPressable
                         className="w-10 h-10 rounded-full items-center justify-center"
                         onPress={toggleShuffle}
                       >
                         {({ pressed }) => (
-                          <Ionicons
+                          <StyledIonicons
                             name="shuffle"
                             size={22}
                             color={
@@ -2206,40 +2218,47 @@ export const PlayerBar = () => {
                                 ? "#ef4444"
                                 : shuffleEnabled
                                 ? themeColorForeground
-                                : isDark
-                                ? "rgba(255,255,255,0.45)"
-                                : "rgba(0,0,0,0.45)"
+                                : themeColorForeground
                             }
+                            style={{
+                              opacity: shuffleEnabled ? 1 : 0.45,
+                            }}
                           />
                         )}
-                      </Pressable>
+                      </StyledPressable>
 
-                      <View className="flex-row items-center gap-3">
-                        <TouchableOpacity
-                          className={`px-3 py-2 rounded-full ${
-                            isDark ? "bg-white/10" : "bg-black/10"
-                          }`}
+                      <StyledView className="flex-row items-center gap-3">
+                        <StyledTouchableOpacity
+                          className="px-3 py-2 rounded-full bg-foreground/10"
                           onPress={() => seekByMillis(-10_000)}
                         >
-                          <Text className="text-xs text-foreground">-10s</Text>
-                        </TouchableOpacity>
-                        <TouchableOpacity
-                          className={`px-3 py-2 rounded-full ${
-                            isDark ? "bg-white/10" : "bg-black/10"
-                          }`}
+                          <StyledText
+                            className="text-xs"
+                            style={{ color: themeColorForeground }}
+                          >
+                            -10s
+                          </StyledText>
+                        </StyledTouchableOpacity>
+                        <StyledTouchableOpacity
+                          className="px-3 py-2 rounded-full bg-foreground/10"
                           onPress={() => seekByMillis(10_000)}
                         >
-                          <Text className="text-xs text-foreground">+10s</Text>
-                        </TouchableOpacity>
-                      </View>
+                          <StyledText
+                            className="text-xs"
+                            style={{ color: themeColorForeground }}
+                          >
+                            +10s
+                          </StyledText>
+                        </StyledTouchableOpacity>
+                      </StyledView>
 
-                      <Pressable
+                      <StyledPressable
                         className="w-10 h-10 rounded-full items-center justify-center"
                         onPress={cycleRepeatMode}
                       >
                         {({ pressed }) => (
                           <>
-                            <Ionicons
+                            <StyledIonicons
                               name={
                                 repeatMode === "one"
                                   ? "repeat"
@@ -2253,39 +2272,33 @@ export const PlayerBar = () => {
                                   ? "#ef4444"
                                   : repeatMode !== "off"
                                   ? themeColorForeground
-                                  : isDark
-                                  ? "rgba(255,255,255,0.45)"
-                                  : "rgba(0,0,0,0.45)"
+                                  : themeColorForeground
                               }
+                              style={{
+                                opacity: repeatMode !== "off" ? 1 : 0.45,
+                              }}
                             />
                             {repeatMode === "one" && (
-                              <View
-                                className={`absolute bottom-1 right-1 ${
-                                  isDark ? "bg-white" : "bg-black"
-                                } rounded-full w-3 h-3 items-center justify-center`}
-                              >
-                                <Text
+                              <StyledView className="absolute bottom-1 right-1 bg-foreground rounded-full w-3 h-3 items-center justify-center">
+                                <StyledText
                                   className="text-background font-bold"
                                   style={{ fontSize: 7 }}
                                 >
                                   1
-                                </Text>
-                              </View>
+                                </StyledText>
+                              </StyledView>
                             )}
                           </>
                         )}
-                      </Pressable>
+                      </StyledPressable>
 
-                      <View className="relative">
+                      <StyledView className="relative">
                         {showVolume && (
-                          <View
+                          <StyledView
                             style={{
                               position: "absolute",
                               bottom: 50,
                               right: 0,
-                              backgroundColor: isDark
-                                ? "rgba(30,30,30,0.95)"
-                                : "rgba(240,240,240,0.95)",
                               borderRadius: 20,
                               paddingVertical: 12,
                               paddingHorizontal: 4,
@@ -2294,6 +2307,7 @@ export const PlayerBar = () => {
                               shadowRadius: 10,
                               elevation: 5,
                               zIndex: 100,
+                              backgroundColor: themeColorBackground,
                             }}
                           >
                             <VolumeSlider
@@ -2301,13 +2315,13 @@ export const PlayerBar = () => {
                               onVolumeChange={setVolume}
                               isDark={isDark}
                             />
-                          </View>
+                          </StyledView>
                         )}
-                        <TouchableOpacity
+                        <StyledTouchableOpacity
                           onPress={() => setShowVolume(!showVolume)}
                           className="w-10 h-10 rounded-full items-center justify-center"
                         >
-                          <Ionicons
+                          <StyledIonicons
                             name={
                               volume === 0
                                 ? "volume-mute"
@@ -2316,71 +2330,69 @@ export const PlayerBar = () => {
                                 : "volume-high"
                             }
                             size={22}
-                            color={
-                              showVolume
-                                ? themeColorForeground
-                                : isDark
-                                ? "rgba(255,255,255,0.45)"
-                                : "rgba(0,0,0,0.45)"
-                            }
+                            color={themeColorForeground}
+                            style={{
+                              opacity: showVolume ? 1 : 0.45,
+                            }}
                           />
-                        </TouchableOpacity>
-                      </View>
-                    </View>
-                  </View>
+                        </StyledTouchableOpacity>
+                      </StyledView>
+                    </StyledView>
+                  </StyledView>
                 </View>
 
-                <View className="w-full flex-row items-center justify-center px-6 mt-6">
-                  <View className="flex-row items-center justify-center flex-1">
-                    <TouchableOpacity
+                <StyledView className="w-full flex-row items-center justify-center px-6 mt-6">
+                  <StyledView className="flex-row items-center justify-center flex-1">
+                    <StyledTouchableOpacity
                       onPress={playPrevious}
                       className="p-4"
                       disabled={controlsDisabled}
                       style={{ opacity: controlsDisabled ? 0.35 : 1 }}
                     >
-                      <Ionicons
+                      <StyledIonicons
                         name="play-skip-back"
                         size={38}
                         color={themeColorForeground}
                       />
-                    </TouchableOpacity>
+                    </StyledTouchableOpacity>
 
-                    <TouchableOpacity
+                    <StyledTouchableOpacity
                       onPress={isPlaying ? pauseTrack : resumeTrack}
-                      className={`w-20 h-20 rounded-full ${
-                        isDark ? "bg-white" : "bg-black"
-                      } items-center justify-center shadow-lg`}
+                      className="w-20 h-20 rounded-full items-center justify-center shadow-lg"
+                      style={{ backgroundColor: themeColorForeground }}
                       disabled={isLoading || isTrackLoading}
                     >
                       {isLoading || isTrackLoading ? (
                         <ActivityIndicator
                           size="large"
-                          color={isDark ? "#000" : "#fff"}
+                          color={themeColorBackground}
                         />
                       ) : (
-                        <Ionicons
+                        <StyledIonicons
                           name={isPlaying ? "pause" : "play"}
                           size={42}
-                          style={{ marginLeft: isPlaying ? 0 : 4 }}
-                          color={isDark ? "#000" : "#fff"}
+                          style={{
+                            marginLeft: isPlaying ? 0 : 4,
+                            color: themeColorBackground,
+                          }}
                         />
                       )}
-                    </TouchableOpacity>
+                    </StyledTouchableOpacity>
 
-                    <TouchableOpacity
+                    <StyledTouchableOpacity
                       onPress={playNext}
                       className="p-4"
                       disabled={controlsDisabled}
                       style={{ opacity: controlsDisabled ? 0.35 : 1 }}
                     >
-                      <Ionicons
+                      <StyledIonicons
                         name="play-skip-forward"
                         size={38}
                         color={themeColorForeground}
                       />
-                    </TouchableOpacity>
-                  </View>
-                </View>
+                    </StyledTouchableOpacity>
+                  </StyledView>
+                </StyledView>
 
                 <View className="h-6" />
               </View>
