@@ -1764,15 +1764,9 @@ export const PlayerBar = () => {
               style={animatedContentStyle}
               pointerEvents={isCollapsed ? "none" : "auto"}
             >
-              <StyledView
-                className="flex-1 flex-row items-center pr-1.5"
-                style={{ paddingLeft: 2 }}
-              >
+              <StyledView className="flex-1 flex-row items-center pr-1.5 gap-1">
                 {/* Left side: Track Info (closer to cover) */}
-                <StyledView
-                  className="justify-center gap-0.5 max-w-[50%]"
-                  style={{ marginRight: 4 }}
-                >
+                <StyledView className="justify-between max-w-[50%] py-1">
                   <StyledText
                     className="font-bold text-[13px] text-left select-none"
                     style={{ color: themeColorForeground }}
@@ -1798,29 +1792,15 @@ export const PlayerBar = () => {
                   </StyledView>
                 </StyledView>
 
-                {/* Vertical Divider */}
-                <View
-                  style={{
-                    width: 1,
-                    height: "50%",
-                    backgroundColor: themeColorForeground,
-                    opacity: 0.1,
-                    marginHorizontal: 0.5,
-                  }}
-                />
-
                 {/* Right side: Controls and Up Next */}
-                <StyledView
-                  className="flex-1 justify-center items-end gap-1"
-                  style={{ marginLeft: 4 }}
-                >
-                  <StyledView className="flex-row items-center justify-end">
+                <StyledView className="justify-between items-start py-0.5">
+                  <StyledView className="flex-row items-center justify-start">
                     <StyledPressable
                       onPress={(e) => {
                         e.stopPropagation();
                         playPrevious();
                       }}
-                      className="px-1"
+                      style={{ paddingHorizontal: 2 }}
                       disabled={controlsDisabled}
                     >
                       {({ pressed }) => (
@@ -1838,7 +1818,7 @@ export const PlayerBar = () => {
                         e.stopPropagation();
                         (isPlaying ? pauseTrack : resumeTrack)();
                       }}
-                      className="px-1"
+                      style={{ paddingHorizontal: 2 }}
                       disabled={isLoading || isTrackLoading}
                     >
                       {({ pressed }) =>
@@ -1864,7 +1844,7 @@ export const PlayerBar = () => {
                         e.stopPropagation();
                         playNext();
                       }}
-                      className="px-1"
+                      style={{ paddingHorizontal: 2 }}
                       disabled={controlsDisabled}
                     >
                       {({ pressed }) => (
@@ -1882,7 +1862,7 @@ export const PlayerBar = () => {
                         e.stopPropagation();
                         void toggleCurrentFavorite(resolvedArtwork);
                       }}
-                      className="px-1"
+                      style={{ paddingHorizontal: 2 }}
                     >
                       {({ pressed }) => (
                         <StyledIonicons
@@ -1902,7 +1882,7 @@ export const PlayerBar = () => {
                         e.stopPropagation();
                         handleOpenQueue();
                       }}
-                      className="px-1"
+                      style={{ paddingHorizontal: 2 }}
                     >
                       {({ pressed }) => (
                         <StyledIonicons
@@ -1915,7 +1895,7 @@ export const PlayerBar = () => {
                   </StyledView>
 
                   {nextTrack && (
-                    <StyledView className="flex-row items-center justify-end gap-1">
+                    <StyledView className="flex-row items-center justify-start gap-1">
                       <StyledText
                         className="text-[11px] opacity-60 font-bold select-none"
                         style={{ color: themeColorForeground }}
