@@ -1,3 +1,3 @@
 export const verifyPodcastPassword = (password: string): boolean => {
-  return password === "1234" || "admin";
+  return password === "1234" || password === "admin";
 };
