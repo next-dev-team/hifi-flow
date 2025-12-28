@@ -1216,7 +1216,7 @@ export const PlayerBar = () => {
         },
       ],
       marginLeft: interpolate(collapseProgress.value, [0, 1], [30, 0]),
-      marginRight: interpolate(collapseProgress.value, [0, 1], [16, 0]),
+      marginRight: interpolate(collapseProgress.value, [0, 1], [8, 0]),
     };
   });
 
@@ -1764,8 +1764,9 @@ export const PlayerBar = () => {
               style={animatedContentStyle}
               pointerEvents={isCollapsed ? "none" : "auto"}
             >
-              <StyledView className="flex-1 flex-row items-center">
-                <StyledView className="flex-1 mr-2 items-start justify-center">
+              <StyledView className="flex-1 flex-row items-center pl-1 pr-3">
+                {/* Left side: Track Info (closer to cover) */}
+                <StyledView className="justify-center gap-0.5 mr-4">
                   <StyledText
                     className="font-bold text-[13px] text-left select-none"
                     style={{ color: themeColorForeground }}
@@ -1774,7 +1775,7 @@ export const PlayerBar = () => {
                   >
                     {currentTrack.title}
                   </StyledText>
-                  <StyledView className="flex-row items-center gap-1 max-w-full">
+                  <StyledView className="flex-row items-center gap-1">
                     {isCached && (
                       <StyledIonicons name="flash" size={10} color="#4ade80" />
                     )}
@@ -1789,20 +1790,32 @@ export const PlayerBar = () => {
                   </StyledView>
                 </StyledView>
 
-                <StyledView className="items-center">
-                  <StyledView className="flex-row items-center">
+                {/* Vertical Divider */}
+                <View
+                  style={{
+                    width: 1,
+                    height: "60%",
+                    backgroundColor: themeColorForeground,
+                    opacity: 0.1,
+                    marginHorizontal: 4,
+                  }}
+                />
+
+                {/* Right side: Controls and Up Next */}
+                <StyledView className="flex-1 justify-center ml-3 gap-0.5">
+                  <StyledView className="flex-row items-center justify-start">
                     <StyledPressable
                       onPress={(e) => {
                         e.stopPropagation();
                         playPrevious();
                       }}
-                      className="p-2"
+                      className="px-1.5"
                       disabled={controlsDisabled}
                     >
                       {({ pressed }) => (
                         <StyledIonicons
                           name="play-skip-back"
-                          size={20}
+                          size={18}
                           color={pressed ? "#ef4444" : themeColorForeground}
                           style={{ opacity: controlsDisabled ? 0.35 : 1 }}
                         />
@@ -1814,7 +1827,7 @@ export const PlayerBar = () => {
                         e.stopPropagation();
                         (isPlaying ? pauseTrack : resumeTrack)();
                       }}
-                      className="p-2"
+                      className="px-1.5"
                       disabled={isLoading || isTrackLoading}
                     >
                       {({ pressed }) =>
@@ -1826,7 +1839,7 @@ export const PlayerBar = () => {
                         ) : (
                           <StyledIonicons
                             name={isPlaying ? "pause" : "play"}
-                            size={28}
+                            size={24}
                             color={pressed ? "#ef4444" : themeColorForeground}
                             style={{ marginLeft: isPlaying ? 0 : 2 }}
                           />
@@ -1839,13 +1852,13 @@ export const PlayerBar = () => {
                         e.stopPropagation();
                         playNext();
                       }}
-                      className="p-2"
+                      className="px-1.5"
                       disabled={controlsDisabled}
                     >
                       {({ pressed }) => (
                         <StyledIonicons
                           name="play-skip-forward"
-                          size={20}
+                          size={18}
                           color={pressed ? "#ef4444" : themeColorForeground}
                           style={{ opacity: controlsDisabled ? 0.35 : 1 }}
                         />
@@ -1857,12 +1870,12 @@ export const PlayerBar = () => {
                         e.stopPropagation();
                         void toggleCurrentFavorite(resolvedArtwork);
                       }}
-                      className="p-2"
+                      className="px-1.5"
                     >
                       {({ pressed }) => (
                         <StyledIonicons
                           name={isCurrentFavorited ? "heart" : "heart-outline"}
-                          size={20}
+                          size={18}
                           color={
                             isCurrentFavorited || pressed
                               ? "#ef4444"
@@ -1877,12 +1890,12 @@ export const PlayerBar = () => {
                         e.stopPropagation();
                         handleOpenQueue();
                       }}
-                      className="p-2 mr-1"
+                      className="px-1.5"
                     >
                       {({ pressed }) => (
                         <StyledIonicons
                           name="list"
-                          size={20}
+                          size={18}
                           color={pressed ? "#60a5fa" : themeColorForeground}
                         />
                       )}
@@ -1890,14 +1903,20 @@ export const PlayerBar = () => {
                   </StyledView>
 
                   {nextTrack && (
-                    <StyledView className="-mt-1 mb-0.5">
+                    <StyledView className="flex-row items-center gap-1">
                       <StyledText
-                        className="text-[8px] opacity-60 uppercase tracking-[0.8px] font-bold max-w-[160px]"
+                        className="text-[11px] opacity-60 font-bold select-none"
+                        style={{ color: themeColorForeground }}
+                      >
+                        Up Next:
+                      </StyledText>
+                      <StyledText
+                        className="text-[11px] opacity-40 select-none max-w-[120px]"
                         style={{ color: themeColorForeground }}
                         numberOfLines={1}
                         ellipsizeMode="tail"
                       >
-                        Up Next Track: {nextTrack.title}
+                        {nextTrack.title}
                       </StyledText>
                     </StyledView>
                   )}
