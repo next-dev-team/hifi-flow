@@ -1764,13 +1764,20 @@ export const PlayerBar = () => {
               style={animatedContentStyle}
               pointerEvents={isCollapsed ? "none" : "auto"}
             >
-              <StyledView className="flex-1 flex-row items-center pl-1 pr-3">
+              <StyledView
+                className="flex-1 flex-row items-center pr-1.5"
+                style={{ paddingLeft: 2 }}
+              >
                 {/* Left side: Track Info (closer to cover) */}
-                <StyledView className="justify-center gap-0.5 mr-4">
+                <StyledView
+                  className="justify-center gap-0.5 max-w-[50%]"
+                  style={{ marginRight: 4 }}
+                >
                   <StyledText
                     className="font-bold text-[13px] text-left select-none"
                     style={{ color: themeColorForeground }}
                     numberOfLines={1}
+                    ellipsizeMode="tail"
                     selectable={false}
                   >
                     {currentTrack.title}
@@ -1783,6 +1790,7 @@ export const PlayerBar = () => {
                       className="opacity-70 text-[11px] text-left select-none shrink"
                       style={{ color: themeColorForeground }}
                       numberOfLines={1}
+                      ellipsizeMode="tail"
                       selectable={false}
                     >
                       {currentTrack.artist}
@@ -1794,28 +1802,31 @@ export const PlayerBar = () => {
                 <View
                   style={{
                     width: 1,
-                    height: "60%",
+                    height: "50%",
                     backgroundColor: themeColorForeground,
                     opacity: 0.1,
-                    marginHorizontal: 4,
+                    marginHorizontal: 0.5,
                   }}
                 />
 
                 {/* Right side: Controls and Up Next */}
-                <StyledView className="flex-1 justify-center ml-3 gap-0.5">
-                  <StyledView className="flex-row items-center justify-start">
+                <StyledView
+                  className="flex-1 justify-center items-end gap-1"
+                  style={{ marginLeft: 4 }}
+                >
+                  <StyledView className="flex-row items-center justify-end">
                     <StyledPressable
                       onPress={(e) => {
                         e.stopPropagation();
                         playPrevious();
                       }}
-                      className="px-1.5"
+                      className="px-1"
                       disabled={controlsDisabled}
                     >
                       {({ pressed }) => (
                         <StyledIonicons
                           name="play-skip-back"
-                          size={18}
+                          size={20}
                           color={pressed ? "#ef4444" : themeColorForeground}
                           style={{ opacity: controlsDisabled ? 0.35 : 1 }}
                         />
@@ -1827,7 +1838,7 @@ export const PlayerBar = () => {
                         e.stopPropagation();
                         (isPlaying ? pauseTrack : resumeTrack)();
                       }}
-                      className="px-1.5"
+                      className="px-1"
                       disabled={isLoading || isTrackLoading}
                     >
                       {({ pressed }) =>
@@ -1835,11 +1846,12 @@ export const PlayerBar = () => {
                           <ActivityIndicator
                             size="small"
                             color={themeColorForeground}
+                            style={{ width: 28, height: 28 }}
                           />
                         ) : (
                           <StyledIonicons
                             name={isPlaying ? "pause" : "play"}
-                            size={24}
+                            size={28}
                             color={pressed ? "#ef4444" : themeColorForeground}
                             style={{ marginLeft: isPlaying ? 0 : 2 }}
                           />
@@ -1852,13 +1864,13 @@ export const PlayerBar = () => {
                         e.stopPropagation();
                         playNext();
                       }}
-                      className="px-1.5"
+                      className="px-1"
                       disabled={controlsDisabled}
                     >
                       {({ pressed }) => (
                         <StyledIonicons
                           name="play-skip-forward"
-                          size={18}
+                          size={20}
                           color={pressed ? "#ef4444" : themeColorForeground}
                           style={{ opacity: controlsDisabled ? 0.35 : 1 }}
                         />
@@ -1870,12 +1882,12 @@ export const PlayerBar = () => {
                         e.stopPropagation();
                         void toggleCurrentFavorite(resolvedArtwork);
                       }}
-                      className="px-1.5"
+                      className="px-1"
                     >
                       {({ pressed }) => (
                         <StyledIonicons
                           name={isCurrentFavorited ? "heart" : "heart-outline"}
-                          size={18}
+                          size={20}
                           color={
                             isCurrentFavorited || pressed
                               ? "#ef4444"
@@ -1890,12 +1902,12 @@ export const PlayerBar = () => {
                         e.stopPropagation();
                         handleOpenQueue();
                       }}
-                      className="px-1.5"
+                      className="px-1"
                     >
                       {({ pressed }) => (
                         <StyledIonicons
                           name="list"
-                          size={18}
+                          size={20}
                           color={pressed ? "#60a5fa" : themeColorForeground}
                         />
                       )}
@@ -1903,7 +1915,7 @@ export const PlayerBar = () => {
                   </StyledView>
 
                   {nextTrack && (
-                    <StyledView className="flex-row items-center gap-1">
+                    <StyledView className="flex-row items-center justify-end gap-1">
                       <StyledText
                         className="text-[11px] opacity-60 font-bold select-none"
                         style={{ color: themeColorForeground }}
