@@ -16,27 +16,18 @@ export interface AudioCacheProgress {
   updatedAt: number;
 }
 
-const CHUNK_DURATION_SEC = 40;
-const WINDOW_AHEAD_SEC = 60;
-const CACHE_VERSION = "v2";
+const CACHE_VERSION = "v3";
 const META_CACHE_NAME = `hififlow-audio-meta-${CACHE_VERSION}`;
-const CHUNK_CACHE_NAME = `hififlow-audio-chunks-${CACHE_VERSION}`;
+const FULL_CACHE_NAME = `hififlow-audio-full-${CACHE_VERSION}`;
 const AUDIO_STREAM_PATH = "/__hififlow_audio_stream";
 
 const progressByUrl = new Map<string, AudioCacheProgress>();
 const urlListeners = new Set<(url: string) => void>();
 const progressListeners = new Set<(progress: AudioCacheProgress) => void>();
-const lastWindowRequestAt = new Map<string, number>();
 let swListenerReady = false;
 
 function getMetaKey(url: string) {
   return new Request(`/__hififlow_audio_meta?u=${encodeURIComponent(url)}`);
-}
-
-function getChunkKey(url: string, chunkIndex: number) {
-  return new Request(
-    `/__hififlow_audio_chunk?u=${encodeURIComponent(url)}&i=${chunkIndex}`
-  );
 }
 
 function initServiceWorkerListeners() {
@@ -86,6 +77,19 @@ function buildStreamProxyUrl(url: string) {
   return `${AUDIO_STREAM_PATH}?u=${encodeURIComponent(url)}`;
 }
 
+function isStreamProxyUrl(url: string) {
+  try {
+    const base =
+      typeof location !== "undefined" && location.origin
+        ? location.origin
+        : "http://localhost";
+    const u = new URL(url, base);
+    return u.pathname === AUDIO_STREAM_PATH && u.searchParams.has("u");
+  } catch {
+    return url.startsWith(`${AUDIO_STREAM_PATH}?u=`);
+  }
+}
+
 async function postToServiceWorker(message: any) {
   if (typeof navigator === "undefined" || !("serviceWorker" in navigator)) {
     return;
@@ -101,7 +105,11 @@ async function postToServiceWorker(message: any) {
   } catch {}
 }
 
-async function upsertMeta(url: string, metadata?: AudioMetadata) {
+async function upsertMeta(
+  url: string,
+  metadata?: AudioMetadata,
+  extra?: { cachedFull?: boolean; sizeBytes?: number; contentType?: string }
+) {
   if (typeof caches === "undefined") return;
   try {
     const cache = await caches.open(META_CACHE_NAME);
@@ -125,9 +133,22 @@ async function upsertMeta(url: string, metadata?: AudioMetadata) {
           }
         : prev?.metadata,
       timestamp: Date.now(),
-      cachedChunks:
-        typeof prev?.cachedChunks === "number" ? prev.cachedChunks : 0,
-      totalChunks: typeof prev?.totalChunks === "number" ? prev.totalChunks : 0,
+      cachedFull:
+        typeof extra?.cachedFull === "boolean"
+          ? extra.cachedFull
+          : Boolean(prev?.cachedFull),
+      sizeBytes:
+        typeof extra?.sizeBytes === "number"
+          ? extra.sizeBytes
+          : typeof prev?.sizeBytes === "number"
+          ? prev.sizeBytes
+          : undefined,
+      contentType:
+        typeof extra?.contentType === "string" && extra.contentType
+          ? extra.contentType
+          : typeof prev?.contentType === "string" && prev.contentType
+          ? prev.contentType
+          : undefined,
     };
     await cache.put(
       key,
@@ -136,18 +157,6 @@ async function upsertMeta(url: string, metadata?: AudioMetadata) {
       })
     );
   } catch {}
-}
-
-async function deleteChunksForUrl(url: string) {
-  if (typeof caches === "undefined") return;
-  const encoded = encodeURIComponent(url);
-  const cache = await caches.open(CHUNK_CACHE_NAME);
-  const keys = await cache.keys();
-  await Promise.all(
-    keys
-      .filter((k) => k.url.includes(`/__hififlow_audio_chunk?u=${encoded}`))
-      .map((k) => cache.delete(k))
-  );
 }
 
 async function readMeta(url: string): Promise<any | null> {
@@ -161,103 +170,19 @@ async function readMeta(url: string): Promise<any | null> {
     return null;
   }
 }
-
-async function hasChunk(url: string, chunkIndex: number): Promise<boolean> {
-  if (typeof caches === "undefined") return false;
-  try {
-    const cache = await caches.open(CHUNK_CACHE_NAME);
-    const match = await cache.match(getChunkKey(url, chunkIndex));
-    return Boolean(match);
-  } catch {
-    return false;
-  }
-}
-
-async function waitForChunks(
-  url: string,
-  chunkIndexes: number[],
-  options: { timeoutMs: number }
-): Promise<boolean> {
-  const timeoutMs = Math.max(0, options.timeoutMs);
-  const start = Date.now();
-
-  while (Date.now() - start < timeoutMs) {
-    const checks = await Promise.all(chunkIndexes.map((i) => hasChunk(url, i)));
-    if (checks.every(Boolean)) return true;
-    await new Promise((r) => setTimeout(r, 125));
-  }
-
-  const finalChecks = await Promise.all(
-    chunkIndexes.map((i) => hasChunk(url, i))
-  );
-  return finalChecks.every(Boolean);
-}
-
 export class ChunkedAudioLoader {
   constructor(private url: string) {}
 
-  async getAudioUrl(metadata?: AudioMetadata): Promise<string> {
+  async getAudioUrl(_metadata?: AudioMetadata): Promise<string> {
     initServiceWorkerListeners();
-    await upsertMeta(this.url, metadata);
-    const durationSec = metadata?.durationSec;
-    await postToServiceWorker({
-      type: "AUDIO_META",
-      url: this.url,
-      durationSec,
-      metadata: metadata
-        ? {
-            id: metadata.id,
-            title: metadata.title,
-            artist: metadata.artist,
-            artwork: metadata.artwork,
-          }
-        : undefined,
-    });
-    await postToServiceWorker({
-      type: "AUDIO_CACHE_WINDOW",
-      url: this.url,
-      positionSec: 0,
-    });
-
-    if (
-      typeof navigator !== "undefined" &&
-      "serviceWorker" in navigator &&
-      !navigator.serviceWorker.controller
-    ) {
-      try {
-        await navigator.serviceWorker.ready;
-      } catch {}
-      for (let i = 0; i < 10; i += 1) {
-        if (navigator.serviceWorker.controller) break;
-        await new Promise((r) => setTimeout(r, 50));
-      }
-    }
-    if (canUseAudioStreamProxy()) {
+    if (canUseAudioStreamProxy() && !isStreamProxyUrl(this.url)) {
       return buildStreamProxyUrl(this.url);
     }
     return this.url;
   }
 
   async cacheFullAudio(metadata?: AudioMetadata): Promise<void> {
-    initServiceWorkerListeners();
-    await upsertMeta(this.url, metadata);
-    await postToServiceWorker({
-      type: "AUDIO_META",
-      url: this.url,
-      durationSec: metadata?.durationSec,
-      metadata: metadata
-        ? {
-            id: metadata.id,
-            title: metadata.title,
-            artist: metadata.artist,
-            artwork: metadata.artwork,
-          }
-        : undefined,
-    });
-    await postToServiceWorker({
-      type: "AUDIO_CACHE_FULL",
-      url: this.url,
-    });
+    await audioCacheService.cacheUrl(this.url, metadata);
   }
 }
 
@@ -291,86 +216,22 @@ export const audioCacheService = {
     }
   },
 
-  cacheWindow: async (
-    url: string,
-    options?: { positionSec?: number; metadata?: AudioMetadata }
-  ) => {
-    initServiceWorkerListeners();
-    const now = Date.now();
-    const last = lastWindowRequestAt.get(url) ?? 0;
-    if (now - last < 750) return;
-    lastWindowRequestAt.set(url, now);
-
-    await upsertMeta(url, options?.metadata);
-    if (options?.metadata?.durationSec) {
-      await postToServiceWorker({
-        type: "AUDIO_META",
-        url,
-        durationSec: options.metadata.durationSec,
-        metadata: {
-          id: options.metadata.id,
-          title: options.metadata.title,
-          artist: options.metadata.artist,
-          artwork: options.metadata.artwork,
-        },
-      });
-    }
-    await postToServiceWorker({
-      type: "AUDIO_CACHE_WINDOW",
-      url,
-      positionSec: options?.positionSec ?? 0,
-    });
+  cacheWindow: async (_url: string, _options?: any) => {
+    return;
   },
 
   ensureCachedSeconds: async (
-    url: string,
-    options?: {
-      positionSec?: number;
-      seconds?: number;
-      timeoutMs?: number;
-      metadata?: AudioMetadata;
-    }
+    _url: string,
+    _options?: any
   ): Promise<boolean> => {
-    initServiceWorkerListeners();
-    const positionSec = options?.positionSec ?? 0;
-    const seconds = Math.max(0, options?.seconds ?? CHUNK_DURATION_SEC);
-    const timeoutMs = Math.max(0, options?.timeoutMs ?? 2500);
-
-    await upsertMeta(url, options?.metadata);
-    if (options?.metadata?.durationSec) {
-      await postToServiceWorker({
-        type: "AUDIO_META",
-        url,
-        durationSec: options.metadata.durationSec,
-        metadata: {
-          id: options.metadata.id,
-          title: options.metadata.title,
-          artist: options.metadata.artist,
-          artwork: options.metadata.artwork,
-        },
-      });
-    }
-
-    await postToServiceWorker({
-      type: "AUDIO_CACHE_WINDOW",
-      url,
-      positionSec,
-    });
-
-    const neededChunks = Math.max(1, Math.ceil(seconds / CHUNK_DURATION_SEC));
-    const startChunkIndex = Math.max(
-      0,
-      Math.floor(positionSec / CHUNK_DURATION_SEC)
-    );
-    const chunkIndexes = Array.from(
-      { length: neededChunks },
-      (_, idx) => startChunkIndex + idx
-    );
-    return waitForChunks(url, chunkIndexes, { timeoutMs });
+    return false;
   },
 
-  isChunkCached: async (url: string, chunkIndex: number): Promise<boolean> => {
-    return hasChunk(url, chunkIndex);
+  isChunkCached: async (
+    _url: string,
+    _chunkIndex: number
+  ): Promise<boolean> => {
+    return false;
   },
 
   getCachedMeta: async (
@@ -394,14 +255,8 @@ export const audioCacheService = {
       url: (parsed as any).url,
       metadata: (parsed as any).metadata,
       timestamp: (parsed as any).timestamp,
-      cachedChunks:
-        typeof (parsed as any).cachedChunks === "number"
-          ? (parsed as any).cachedChunks
-          : undefined,
-      totalChunks:
-        typeof (parsed as any).totalChunks === "number"
-          ? (parsed as any).totalChunks
-          : undefined,
+      cachedChunks: (parsed as any).cachedFull ? 1 : 0,
+      totalChunks: 1,
     };
   },
 
@@ -419,7 +274,7 @@ export const audioCacheService = {
             parsed?.metadata?.id &&
             String(parsed.metadata.id) === String(trackId)
           ) {
-            if (typeof parsed?.url === "string") {
+            if (typeof parsed?.url === "string" && parsed?.cachedFull) {
               return parsed.url;
             }
           }
@@ -432,23 +287,124 @@ export const audioCacheService = {
   },
 
   resolveUrl: async (url: string, metadata?: AudioMetadata) => {
-    const loader = new ChunkedAudioLoader(url);
-    return loader.getAudioUrl(metadata);
+    initServiceWorkerListeners();
+    const next =
+      canUseAudioStreamProxy() && !isStreamProxyUrl(url)
+        ? buildStreamProxyUrl(url)
+        : url;
+    if (metadata) {
+      void postToServiceWorker({
+        type: "AUDIO_META",
+        url,
+        durationSec: metadata?.durationSec,
+        metadata: {
+          id: metadata.id,
+          title: metadata.title,
+          artist: metadata.artist,
+          artwork: metadata.artwork,
+        },
+      });
+    }
+    return next;
   },
 
   cacheUrl: async (url: string, metadata?: AudioMetadata) => {
-    const loader = new ChunkedAudioLoader(url);
-    await loader.cacheFullAudio(metadata);
-    urlListeners.forEach((l) => {
+    if (!url || typeof caches === "undefined") return;
+    initServiceWorkerListeners();
+
+    const inProgress: AudioCacheProgress = {
+      url,
+      windowStartSec: 0,
+      windowEndSec: metadata?.durationSec ?? 0,
+      cachedChunks: 0,
+      totalChunks: 1,
+      cachedSecondsAhead: 0,
+      updatedAt: Date.now(),
+    };
+    progressByUrl.set(url, inProgress);
+    progressListeners.forEach((l) => {
       try {
-        l(url);
+        l(inProgress);
       } catch {}
     });
+
+    let ok = false;
+    try {
+      await upsertMeta(url, metadata, { cachedFull: false });
+
+      const cache = await caches.open(FULL_CACHE_NAME);
+      const existing = await cache.match(url);
+      if (existing) {
+        await upsertMeta(url, metadata, { cachedFull: true });
+        ok = true;
+        return;
+      }
+
+      if (canUseAudioStreamProxy()) {
+        void postToServiceWorker({ type: "AUDIO_CACHE_FULL", url });
+        const start = Date.now();
+        while (Date.now() - start < 120_000) {
+          try {
+            const cached = await audioCacheService.isCached(url);
+            if (cached) {
+              ok = true;
+              break;
+            }
+          } catch {}
+          await new Promise((r) => setTimeout(r, 250));
+        }
+        if (ok) {
+          await upsertMeta(url, metadata, { cachedFull: true });
+        }
+        return;
+      }
+
+      try {
+        const resp = await fetch(url, { cache: "no-store" });
+        if (resp.status && resp.status >= 400) {
+          return;
+        }
+        await cache.put(url, resp.clone());
+        await upsertMeta(url, metadata, {
+          cachedFull: true,
+          contentType: resp.headers.get("content-type") || undefined,
+        });
+        ok = true;
+      } catch {
+        return;
+      }
+    } finally {
+      const done: AudioCacheProgress = {
+        url,
+        windowStartSec: 0,
+        windowEndSec: metadata?.durationSec ?? 0,
+        cachedChunks: ok ? 1 : 0,
+        totalChunks: 1,
+        cachedSecondsAhead: ok ? metadata?.durationSec ?? 0 : 0,
+        updatedAt: Date.now(),
+      };
+      progressByUrl.set(url, done);
+      progressListeners.forEach((l) => {
+        try {
+          l(done);
+        } catch {}
+      });
+      if (ok) {
+        urlListeners.forEach((l) => {
+          try {
+            l(url);
+          } catch {}
+        });
+      }
+    }
   },
 
   evictUrl: async (url: string) => {
     if (typeof caches === "undefined") return;
-    await deleteChunksForUrl(url);
+    try {
+      const full = await caches.open(FULL_CACHE_NAME);
+      await full.delete(url);
+    } catch {}
     const metaCache = await caches.open(META_CACHE_NAME);
     await metaCache.delete(getMetaKey(url));
     urlListeners.forEach((l) => {
@@ -461,19 +417,14 @@ export const audioCacheService = {
   isCached: async (url: string) => {
     if (typeof caches === "undefined") return false;
     try {
+      const full = await caches.open(FULL_CACHE_NAME);
+      const existing = await full.match(url);
+      if (existing) return true;
       const metaCache = await caches.open(META_CACHE_NAME);
       const meta = await metaCache.match(getMetaKey(url));
       if (!meta) return false;
       const parsed = (await meta.json()) as any;
-      if (typeof parsed?.cachedChunks === "number") {
-        return parsed.cachedChunks > 0;
-      }
-      const chunkCache = await caches.open(CHUNK_CACHE_NAME);
-      const keys = await chunkCache.keys();
-      const encoded = encodeURIComponent(url);
-      return keys.some((k) =>
-        k.url.includes(`/__hififlow_audio_chunk?u=${encoded}`)
-      );
+      return Boolean(parsed?.cachedFull);
     } catch {
       return false;
     }
@@ -498,7 +449,8 @@ export const audioCacheService = {
           const parsed = (await resp.json()) as any;
           if (
             typeof parsed?.url === "string" &&
-            typeof parsed?.timestamp === "number"
+            typeof parsed?.timestamp === "number" &&
+            parsed?.cachedFull
           ) {
             results.push({
               url: parsed.url,
@@ -518,14 +470,14 @@ export const audioCacheService = {
     if (typeof caches === "undefined") return;
     await Promise.all([
       caches.delete(META_CACHE_NAME),
-      caches.delete(CHUNK_CACHE_NAME),
+      caches.delete(FULL_CACHE_NAME),
     ]);
   },
 
-  chunkDurationSec: CHUNK_DURATION_SEC,
-  windowAheadSec: WINDOW_AHEAD_SEC,
+  chunkDurationSec: 0,
+  windowAheadSec: 0,
   metaCacheName: META_CACHE_NAME,
-  chunkCacheName: CHUNK_CACHE_NAME,
+  chunkCacheName: FULL_CACHE_NAME,
   getMetaKey,
-  getChunkKey,
+  getChunkKey: (url: string, _chunkIndex: number) => new Request(url),
 };

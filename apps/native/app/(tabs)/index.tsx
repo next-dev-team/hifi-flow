@@ -898,7 +898,7 @@ export default function Home() {
               .filter(
                 (key) =>
                   key.startsWith("hififlow-audio-meta-") ||
-                  key.startsWith("hififlow-audio-chunks-")
+                  key.startsWith("hififlow-audio-full-")
               )
               .map((key) => caches.delete(key))
           );

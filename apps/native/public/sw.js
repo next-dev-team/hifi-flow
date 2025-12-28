@@ -117,31 +117,19 @@ if (workbox) {
     })
   );
 
-  const AUDIO_CACHE_VERSION = "v2";
+  const AUDIO_CACHE_VERSION = "v3";
   const AUDIO_META_CACHE = `hififlow-audio-meta-${AUDIO_CACHE_VERSION}`;
-  const AUDIO_CHUNK_CACHE = `hififlow-audio-chunks-${AUDIO_CACHE_VERSION}`;
+  const AUDIO_FULL_CACHE = `hififlow-audio-full-${AUDIO_CACHE_VERSION}`;
   const AUDIO_META_PATH = "/__hififlow_audio_meta";
-  const AUDIO_CHUNK_PATH = "/__hififlow_audio_chunk";
   const AUDIO_STREAM_PATH = "/__hififlow_audio_stream";
-  const CHUNK_DURATION_SEC = 40;
-  const WINDOW_AHEAD_SEC = 60; // keep the 60-second look-ahead
-  const MIN_CHUNK_BYTES = 524_288; // 0.5 MB – big enough so ~4 min audio lands in 2–3 chunks
-  const DEFAULT_CHUNK_BYTES = 1_048_576; // 1 MB – preferred chunk size
-  const MAX_META_ENTRIES = 100;
 
-  const jobByUrl = new Map();
   const metaInFlight = new Map();
+  const cacheFullInFlight = new Map();
   const metaProbeCooldownUntilByUrl = new Map();
   const META_PROBE_COOLDOWN_MS = 60_000;
 
   const buildMetaRequest = (url) => {
     return new Request(`${AUDIO_META_PATH}?u=${encodeURIComponent(url)}`);
-  };
-
-  const buildChunkRequest = (url, chunkIndex) => {
-    return new Request(
-      `${AUDIO_CHUNK_PATH}?u=${encodeURIComponent(url)}&i=${chunkIndex}`
-    );
   };
 
   const parseRangeHeader = (rangeHeader) => {
@@ -265,34 +253,10 @@ if (workbox) {
         }
       }
 
-      const durationSec =
-        typeof existing.metadata?.durationSec === "number"
-          ? existing.metadata.durationSec
-          : typeof existing.durationSec === "number"
-          ? existing.durationSec
-          : 0;
-
-      let chunkByteSize =
-        typeof existing.chunkByteSize === "number" ? existing.chunkByteSize : 0;
-      if (!chunkByteSize) {
-        if (totalBytes > 0 && durationSec > 0) {
-          const bytesPerSecond = totalBytes / durationSec;
-          chunkByteSize = Math.floor(bytesPerSecond * CHUNK_DURATION_SEC);
-        } else {
-          chunkByteSize = DEFAULT_CHUNK_BYTES;
-        }
-        chunkByteSize = Math.max(MIN_CHUNK_BYTES, chunkByteSize);
-      }
-
-      const totalChunks =
-        totalBytes > 0 ? Math.ceil(totalBytes / chunkByteSize) : 0;
-
       const next = {
         ...existing,
         totalBytes,
         contentType: contentType || "audio/mpeg",
-        chunkByteSize,
-        totalChunks,
         supportsRange: supportsRange ?? false,
         timestamp: Date.now(),
       };
@@ -309,348 +273,140 @@ if (workbox) {
     }
   };
 
-  const cacheWholeFileAsChunkZero = async (url, cache, options) => {
-    const key = buildChunkRequest(url, 0);
-    const existing = await cache.match(key);
-    if (existing) {
-      return { cached: false, size: 0 };
-    }
-
-    const resp = await fetch(url, { signal: options?.signal });
-    if (!resp || resp.status >= 400) {
-      return { cached: false, size: 0 };
-    }
-    const buffer = await resp.arrayBuffer();
-    const headers = new Headers(resp.headers);
-    headers.set("content-length", String(buffer.byteLength));
-    headers.set("x-hififlow-cached-at", String(Date.now()));
-    await cache.put(
-      key,
-      new Response(buffer, {
-        status: resp.status,
-        headers,
-      })
-    );
-    return { cached: true, size: buffer.byteLength };
+  const upsertMeta = async (url, patch) => {
+    try {
+      const prev = (await loadMeta(url)) || { url };
+      const merged = {
+        ...prev,
+        ...patch,
+        url,
+        metadata: {
+          ...(prev.metadata || {}),
+          ...(patch?.metadata || {}),
+        },
+        timestamp: Date.now(),
+      };
+      await saveMeta(url, merged);
+    } catch {}
   };
 
-  const countCachedChunks = async (url) => {
-    const encoded = encodeURIComponent(url);
-    const cache = await caches.open(AUDIO_CHUNK_CACHE);
-    const keys = await cache.keys();
-    return keys.filter((k) =>
-      k.url.includes(`${AUDIO_CHUNK_PATH}?u=${encoded}`)
-    ).length;
-  };
-
-  const enforceMetaLimit = async () => {
-    const cache = await caches.open(AUDIO_META_CACHE);
-    const keys = await cache.keys();
-    if (keys.length <= MAX_META_ENTRIES) return;
-    const entries = [];
-    for (const key of keys) {
-      const resp = await cache.match(key);
-      if (!resp) continue;
-      try {
-        const meta = await resp.json();
-        if (meta?.url) {
-          entries.push({ key, url: meta.url, ts: meta.timestamp || 0 });
-        }
-      } catch {}
-    }
-    entries.sort((a, b) => a.ts - b.ts);
-    const extra = entries.slice(
-      0,
-      Math.max(0, entries.length - MAX_META_ENTRIES)
-    );
-    const chunkCache = await caches.open(AUDIO_CHUNK_CACHE);
-    for (const item of extra) {
-      try {
-        await cache.delete(item.key);
-      } catch {}
-      try {
-        const encoded = encodeURIComponent(item.url);
-        const chunkKeys = await chunkCache.keys();
-        for (const ck of chunkKeys) {
-          if (ck.url.includes(`${AUDIO_CHUNK_PATH}?u=${encoded}`)) {
-            try {
-              await chunkCache.delete(ck);
-            } catch {}
-          }
-        }
-      } catch {}
-    }
-  };
-
-  const cacheWindowForUrl = async (url, positionSec) => {
-    const requestedStartChunkIndex = Math.max(
-      0,
-      Math.floor((positionSec || 0) / CHUNK_DURATION_SEC)
-    );
-    const prevJob = jobByUrl.get(url);
-    if (prevJob?.startChunkIndex === requestedStartChunkIndex && prevJob?.job) {
-      return;
-    }
-    if (prevJob?.abortController) {
-      try {
-        prevJob.abortController.abort();
-      } catch {}
+  const cacheFullForUrl = async (url) => {
+    const existingInFlight = cacheFullInFlight.get(url);
+    if (existingInFlight) {
+      return await existingInFlight;
     }
 
-    const abortController = new AbortController();
     const job = (async () => {
-      const meta = await ensureMetaDetails(url);
-      if (!meta?.chunkByteSize) return;
+      try {
+        const meta = await ensureMetaDetails(url);
+        const durationSec =
+          typeof meta?.metadata?.durationSec === "number"
+            ? meta.metadata.durationSec
+            : typeof meta?.durationSec === "number"
+            ? meta.durationSec
+            : 0;
 
-      await enforceMetaLimit();
-
-      const totalChunksInWindow = Math.ceil(
-        WINDOW_AHEAD_SEC / CHUNK_DURATION_SEC
-      );
-      const startChunkIndex = Math.max(
-        0,
-        Math.floor((positionSec || 0) / CHUNK_DURATION_SEC)
-      );
-
-      const cache = await caches.open(AUDIO_CHUNK_CACHE);
-      let cachedInWindow = 0;
-      let updatedMeta = meta;
-
-      for (let offset = 0; offset < totalChunksInWindow; offset += 1) {
-        if (abortController.signal.aborted) return;
-        const chunkIndex = startChunkIndex + offset;
-        const startByte = chunkIndex * updatedMeta.chunkByteSize;
-        if (
-          updatedMeta.totalBytes &&
-          startByte > Math.max(0, updatedMeta.totalBytes - 1)
-        ) {
-          break;
-        }
-        const endByte =
-          updatedMeta.totalBytes && updatedMeta.totalBytes > 0
-            ? Math.min(
-                startByte + updatedMeta.chunkByteSize - 1,
-                updatedMeta.totalBytes - 1
-              )
-            : startByte + updatedMeta.chunkByteSize - 1;
-        const key = buildChunkRequest(url, chunkIndex);
-        const existing = await cache.match(key);
+        const fullCache = await caches.open(AUDIO_FULL_CACHE);
+        const existing = await fullCache.match(url);
         if (existing) {
-          cachedInWindow += 1;
-          continue;
-        }
-
-        try {
-          const resp = await fetch(url, {
-            headers: { Range: `bytes=${startByte}-${endByte}` },
-            signal: abortController.signal,
-          });
-          if (resp && resp.status === 416) {
-            break;
-          }
-          if (!(resp && (resp.status === 206 || resp.status === 200))) {
-            continue;
-          }
-          if (
-            resp.status === 200 &&
-            !(resp.headers.get("content-range") || "")
-          ) {
-            const whole = await cacheWholeFileAsChunkZero(url, cache, {
-              signal: abortController.signal,
-            });
-            const cachedChunks = await countCachedChunks(url);
-            if (whole.cached) {
-              cachedInWindow = Math.max(cachedInWindow, 1);
-            }
-            updatedMeta = {
-              ...updatedMeta,
-              totalBytes: whole.size > 0 ? whole.size : updatedMeta.totalBytes,
-              chunkByteSize:
-                whole.size > 0 ? whole.size : updatedMeta.chunkByteSize,
-              totalChunks: whole.size > 0 ? 1 : updatedMeta.totalChunks,
-              cachedChunks,
-              supportsRange: false,
-              timestamp: Date.now(),
-            };
-            await saveMeta(url, updatedMeta);
-            if (whole.cached) {
-              await postToClients({ type: "AUDIO_CACHED_URL", url });
-              await postToClients({
-                type: "AUDIO_CACHE_PROGRESS",
-                progress: {
-                  url,
-                  windowStartSec: startChunkIndex * CHUNK_DURATION_SEC,
-                  windowEndSec:
-                    startChunkIndex * CHUNK_DURATION_SEC +
-                    totalChunksInWindow * CHUNK_DURATION_SEC,
-                  cachedChunks: cachedInWindow,
-                  totalChunks: totalChunksInWindow,
-                  cachedSecondsAhead: cachedInWindow * CHUNK_DURATION_SEC,
-                  updatedAt: Date.now(),
-                },
-              });
-            }
-            break;
-          }
-          const buffer = await resp.arrayBuffer();
-          const headers = new Headers(resp.headers);
-          headers.set("content-length", String(buffer.byteLength));
-          headers.set("x-hififlow-cached-at", String(Date.now()));
-          await cache.put(
-            key,
-            new Response(buffer, {
-              status: 206,
-              headers,
-            })
-          );
-          cachedInWindow += 1;
-
-          const cachedChunks = await countCachedChunks(url);
-          const contentRange = resp.headers.get("content-range") || "";
-          const m = contentRange.match(/\/(\d+)$/);
-          const totalFromRange = m ? parseInt(m[1], 10) : 0;
-          updatedMeta = {
-            ...updatedMeta,
-            totalBytes:
-              !updatedMeta.totalBytes &&
-              Number.isFinite(totalFromRange) &&
-              totalFromRange > 0
-                ? totalFromRange
-                : updatedMeta.totalBytes,
-            cachedChunks,
-            timestamp: Date.now(),
-          };
-          await saveMeta(url, updatedMeta);
-
+          await upsertMeta(url, { cachedFull: true });
+          await postToClients({ type: "AUDIO_CACHED_URL", url });
           await postToClients({
             type: "AUDIO_CACHE_PROGRESS",
             progress: {
               url,
-              windowStartSec: startChunkIndex * CHUNK_DURATION_SEC,
-              windowEndSec:
-                startChunkIndex * CHUNK_DURATION_SEC +
-                totalChunksInWindow * CHUNK_DURATION_SEC,
-              cachedChunks: cachedInWindow,
-              totalChunks: totalChunksInWindow,
-              cachedSecondsAhead: cachedInWindow * CHUNK_DURATION_SEC,
+              windowStartSec: 0,
+              windowEndSec: durationSec,
+              cachedChunks: 1,
+              totalChunks: 1,
+              cachedSecondsAhead: durationSec,
               updatedAt: Date.now(),
             },
           });
-          await postToClients({ type: "AUDIO_CACHED_URL", url });
-        } catch {}
+          return true;
+        }
+
+        await postToClients({
+          type: "AUDIO_CACHE_PROGRESS",
+          progress: {
+            url,
+            windowStartSec: 0,
+            windowEndSec: durationSec,
+            cachedChunks: 0,
+            totalChunks: 1,
+            cachedSecondsAhead: 0,
+            updatedAt: Date.now(),
+          },
+        });
+
+        const resp = await fetch(url, { cache: "no-store" });
+        if (!resp || resp.status >= 400) return false;
+
+        await fullCache.put(url, resp.clone());
+        await upsertMeta(url, {
+          cachedFull: true,
+          contentType: resp.headers.get("content-type") || undefined,
+        });
+
+        await postToClients({ type: "AUDIO_CACHED_URL", url });
+        await postToClients({
+          type: "AUDIO_CACHE_PROGRESS",
+          progress: {
+            url,
+            windowStartSec: 0,
+            windowEndSec: durationSec,
+            cachedChunks: 1,
+            totalChunks: 1,
+            cachedSecondsAhead: durationSec,
+            updatedAt: Date.now(),
+          },
+        });
+        return true;
+      } catch {
+        return false;
       }
     })();
 
-    jobByUrl.set(url, {
-      abortController,
-      job,
-      startChunkIndex: requestedStartChunkIndex,
-    });
+    cacheFullInFlight.set(url, job);
     try {
-      await job;
+      return await job;
     } finally {
-      const current = jobByUrl.get(url);
-      if (current?.abortController === abortController) {
-        jobByUrl.delete(url);
-      }
+      cacheFullInFlight.delete(url);
     }
   };
 
-  const cacheFullForUrl = async (url) => {
-    const meta = await ensureMetaDetails(url);
-    if (!meta?.totalBytes || !meta.chunkByteSize) return;
-    const cache = await caches.open(AUDIO_CHUNK_CACHE);
-    for (let chunkIndex = 0; chunkIndex < meta.totalChunks; chunkIndex += 1) {
-      const startByte = chunkIndex * meta.chunkByteSize;
-      if (startByte > meta.totalBytes - 1) break;
-      const endByte = Math.min(
-        startByte + meta.chunkByteSize - 1,
-        meta.totalBytes - 1
-      );
-      const key = buildChunkRequest(url, chunkIndex);
-      const existing = await cache.match(key);
-      if (existing) continue;
-      try {
-        const resp = await fetch(url, {
-          headers: { Range: `bytes=${startByte}-${endByte}` },
-        });
-        if (!(resp && (resp.status === 206 || resp.status === 200))) {
-          continue;
-        }
-        const buffer = await resp.arrayBuffer();
-        const headers = new Headers(resp.headers);
-        headers.set("content-length", String(buffer.byteLength));
-        headers.set("x-hififlow-cached-at", String(Date.now()));
-        await cache.put(
-          key,
-          new Response(buffer, {
-            status: 206,
-            headers,
-          })
-        );
-      } catch {}
-    }
+  const tryServeRangeFromFull = async (url, start, end) => {
     try {
-      const cachedChunks = await countCachedChunks(url);
-      await saveMeta(url, { ...meta, cachedChunks, timestamp: Date.now() });
-      await postToClients({ type: "AUDIO_CACHED_URL", url });
-    } catch {}
-  };
-
-  const tryServeRangeFromChunks = async (url, start, end) => {
-    const meta = await ensureMetaDetails(url);
-    if (!meta?.chunkByteSize) return null;
-    const impliedEnd =
-      end === null
-        ? meta.totalBytes && meta.totalBytes > 0
-          ? meta.totalBytes - 1
-          : start + meta.chunkByteSize - 1
-        : end;
-    const rangeEnd =
-      meta.totalBytes && meta.totalBytes > 0
-        ? Math.min(impliedEnd, meta.totalBytes - 1)
-        : Math.max(impliedEnd, start);
-    const rangeStart = Math.min(start, rangeEnd);
-
-    const firstChunk = Math.floor(rangeStart / meta.chunkByteSize);
-    const lastChunk = Math.floor(rangeEnd / meta.chunkByteSize);
-    const cache = await caches.open(AUDIO_CHUNK_CACHE);
-
-    const buffers = [];
-    for (
-      let chunkIndex = firstChunk;
-      chunkIndex <= lastChunk;
-      chunkIndex += 1
-    ) {
-      const resp = await cache.match(buildChunkRequest(url, chunkIndex));
+      const fullCache = await caches.open(AUDIO_FULL_CACHE);
+      const resp = await fullCache.match(url);
       if (!resp) return null;
-      const buf = await resp.arrayBuffer();
-      const chunkStartByte = chunkIndex * meta.chunkByteSize;
-      const sliceStart = Math.max(0, rangeStart - chunkStartByte);
-      const sliceEnd = Math.min(buf.byteLength, rangeEnd - chunkStartByte + 1);
-      buffers.push(new Uint8Array(buf.slice(sliceStart, sliceEnd)));
-    }
+      const buffer = await resp.arrayBuffer();
+      const totalBytes = buffer.byteLength;
+      if (!totalBytes) return null;
 
-    let totalLength = 0;
-    for (const b of buffers) totalLength += b.byteLength;
-    const joined = new Uint8Array(totalLength);
-    let offset = 0;
-    for (const b of buffers) {
-      joined.set(b, offset);
-      offset += b.byteLength;
-    }
+      const rangeStart = Math.max(0, Math.min(start, totalBytes - 1));
+      const rangeEnd =
+        end === null
+          ? totalBytes - 1
+          : Math.max(rangeStart, Math.min(end, totalBytes - 1));
+      const sliced = buffer.slice(rangeStart, rangeEnd + 1);
 
-    const headers = new Headers();
-    headers.set("Content-Type", meta.contentType || "audio/mpeg");
-    headers.set("Accept-Ranges", "bytes");
-    headers.set(
-      "Content-Range",
-      `bytes ${rangeStart}-${rangeEnd}/${
-        meta.totalBytes && meta.totalBytes > 0 ? meta.totalBytes : "*"
-      }`
-    );
-    headers.set("Content-Length", String(joined.byteLength));
-    return new Response(joined, { status: 206, headers });
+      const headers = new Headers();
+      headers.set(
+        "Content-Type",
+        resp.headers.get("content-type") || "audio/mpeg"
+      );
+      headers.set("Accept-Ranges", "bytes");
+      headers.set(
+        "Content-Range",
+        `bytes ${rangeStart}-${rangeEnd}/${totalBytes}`
+      );
+      headers.set("Content-Length", String(sliced.byteLength));
+
+      return new Response(sliced, { status: 206, headers });
+    } catch {
+      return null;
+    }
   };
 
   self.addEventListener("message", (event) => {
@@ -689,13 +445,6 @@ if (workbox) {
       return;
     }
 
-    if (type === "AUDIO_CACHE_WINDOW") {
-      const positionSec =
-        typeof data.positionSec === "number" ? data.positionSec : 0;
-      event.waitUntil(cacheWindowForUrl(url, positionSec));
-      return;
-    }
-
     if (type === "AUDIO_CACHE_FULL") {
       event.waitUntil(cacheFullForUrl(url));
     }
@@ -726,96 +475,12 @@ if (workbox) {
         const parsed = parseRangeHeader(rangeHeader);
         if (parsed) {
           try {
-            const cached = await tryServeRangeFromChunks(
+            const cached = await tryServeRangeFromFull(
               sourceUrl,
               parsed.start,
               parsed.end
             );
             if (cached) return cached;
-          } catch {}
-
-          try {
-            const meta = await ensureMetaDetails(sourceUrl);
-            if (meta?.chunkByteSize) {
-              const inferredEnd =
-                parsed.end === null
-                  ? parsed.start + meta.chunkByteSize - 1
-                  : parsed.end;
-              const rangeEnd = Math.max(inferredEnd, parsed.start);
-              const firstChunk = Math.floor(parsed.start / meta.chunkByteSize);
-              const lastChunk = Math.floor(rangeEnd / meta.chunkByteSize);
-              const cache = await caches.open(AUDIO_CHUNK_CACHE);
-
-              for (
-                let chunkIndex = firstChunk;
-                chunkIndex <= lastChunk;
-                chunkIndex += 1
-              ) {
-                const key = buildChunkRequest(sourceUrl, chunkIndex);
-                const existing = await cache.match(key);
-                if (existing) continue;
-
-                const startByte = chunkIndex * meta.chunkByteSize;
-                const endByte =
-                  meta.totalBytes && meta.totalBytes > 0
-                    ? Math.min(
-                        startByte + meta.chunkByteSize - 1,
-                        meta.totalBytes - 1
-                      )
-                    : startByte + meta.chunkByteSize - 1;
-                const resp = await fetch(sourceUrl, {
-                  headers: { Range: `bytes=${startByte}-${endByte}` },
-                });
-                if (resp && resp.status === 416) break;
-                if (!(resp && (resp.status === 206 || resp.status === 200))) {
-                  continue;
-                }
-                if (
-                  resp.status === 200 &&
-                  !(resp.headers.get("content-range") || "")
-                ) {
-                  const whole = await cacheWholeFileAsChunkZero(
-                    sourceUrl,
-                    cache
-                  );
-                  if (whole.cached) {
-                    try {
-                      const cachedChunks = await countCachedChunks(sourceUrl);
-                      await saveMeta(sourceUrl, {
-                        ...meta,
-                        totalBytes:
-                          whole.size > 0 ? whole.size : meta.totalBytes,
-                        chunkByteSize:
-                          whole.size > 0 ? whole.size : meta.chunkByteSize,
-                        totalChunks: whole.size > 0 ? 1 : meta.totalChunks,
-                        cachedChunks,
-                        supportsRange: false,
-                        timestamp: Date.now(),
-                      });
-                    } catch {}
-                  }
-                  break;
-                }
-                const buffer = await resp.arrayBuffer();
-                const headers = new Headers(resp.headers);
-                headers.set("content-length", String(buffer.byteLength));
-                headers.set("x-hififlow-cached-at", String(Date.now()));
-                await cache.put(
-                  key,
-                  new Response(buffer, {
-                    status: 206,
-                    headers,
-                  })
-                );
-              }
-
-              const cachedAfter = await tryServeRangeFromChunks(
-                sourceUrl,
-                parsed.start,
-                parsed.end
-              );
-              if (cachedAfter) return cachedAfter;
-            }
           } catch {}
         }
       }
@@ -869,7 +534,7 @@ if (workbox) {
         if (rangeHeader) {
           const parsed = parseRangeHeader(rangeHeader);
           if (parsed) {
-            const cached = await tryServeRangeFromChunks(
+            const cached = await tryServeRangeFromFull(
               sourceUrl,
               parsed.start,
               parsed.end
@@ -877,6 +542,12 @@ if (workbox) {
             if (cached) return cached;
           }
         }
+
+        try {
+          const fullCache = await caches.open(AUDIO_FULL_CACHE);
+          const cached = await fullCache.match(sourceUrl);
+          if (cached) return cached;
+        } catch {}
         return new Response("", { status: 503 });
       }
     }
@@ -914,9 +585,9 @@ if (workbox) {
               .filter(
                 (k) =>
                   k.startsWith("hififlow-audio-meta-") ||
-                  k.startsWith("hififlow-audio-chunks-")
+                  k.startsWith("hififlow-audio-full-")
               )
-              .filter((k) => k !== AUDIO_META_CACHE && k !== AUDIO_CHUNK_CACHE)
+              .filter((k) => k !== AUDIO_META_CACHE && k !== AUDIO_FULL_CACHE)
               .map((k) => caches.delete(k))
           );
         } catch {}

@@ -174,8 +174,6 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
 
   const currentStreamUrlRef = useRef<string | null>(null);
   const currentBaseStreamUrlRef = useRef<string | null>(null);
-  const lastCachePositionSecRef = useRef<number>(0);
-  const lastCacheUrlRef = useRef<string | null>(null);
 
   // ==================== Queue State ====================
   const [queue, setQueue, isQueueLoaded] = usePersistentState<Track[]>(
@@ -217,6 +215,9 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
   const { showToast } = useToast();
   const isOffline = useOfflineStatus();
 
+  const prevFavoriteIdsRef = useRef<Set<string>>(new Set());
+  const pendingFavoriteCacheIdsRef = useRef<Set<string>>(new Set());
+
   // ==================== Refs for single-player control ====================
   // CRITICAL: Only ONE active player at any time
   const activePlayerRef = useRef<AudioPlayer | null>(null);
@@ -232,11 +233,9 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
   } | null>(null);
 
   const cachedUrlByTrackIdRef = useRef<Map<string, string>>(new Map());
-  // Stream URL cache
-  const streamUrlCacheRef = useRef<
-    Map<string, { url: string; timestamp: number }>
-  >(new Map());
-  const STREAM_URL_CACHE_TTL = 30 * 60 * 1000; // 30 minutes
+  const streamUrlInFlightRef = useRef<Map<string, Promise<string | null>>>(
+    new Map()
+  );
   // Shuffle state
   const shuffleHistoryRef = useRef<number[]>([]);
   // Sleep timer handles
@@ -264,37 +263,6 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
   useEffect(() => {
     currentStreamUrlRef.current = currentStreamUrl;
   }, [currentStreamUrl]);
-
-  useEffect(() => {
-    if (Platform.OS !== "web") return;
-    if (!isPlaying) return;
-    if (!currentTrack) return;
-    const baseUrl = currentBaseStreamUrlRef.current ?? currentStreamUrl;
-    if (!baseUrl) return;
-    const positionSec = status?.currentTime ?? 0;
-
-    const lastUrl = lastCacheUrlRef.current;
-    const lastPos = lastCachePositionSecRef.current;
-    const isNewTrack = lastUrl !== baseUrl;
-    const isSeek = !isNewTrack && Math.abs(positionSec - lastPos) >= 8;
-    const isTick =
-      isNewTrack || isSeek || Math.abs(positionSec - lastPos) >= 15;
-    if (!isTick) return;
-
-    lastCacheUrlRef.current = baseUrl;
-    lastCachePositionSecRef.current = positionSec;
-
-    void audioCacheService.cacheWindow(baseUrl, {
-      positionSec,
-      metadata: {
-        id: String(currentTrack.id),
-        title: currentTrack.title,
-        artist: currentTrack.artist,
-        artwork: currentTrack.artwork,
-        durationSec: currentTrack.duration,
-      },
-    });
-  }, [isPlaying, currentTrack, currentStreamUrl, status?.currentTime]);
 
   // ==================== Audio Mode Configuration ====================
   useEffect(() => {
@@ -594,17 +562,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
     }
   }, []);
 
-  // Clean expired cache entries
-  const cleanStreamUrlCache = useCallback(() => {
-    const now = Date.now();
-    for (const [key, value] of streamUrlCacheRef.current.entries()) {
-      if (now - value.timestamp > STREAM_URL_CACHE_TTL) {
-        streamUrlCacheRef.current.delete(key);
-      }
-    }
-  }, []);
-
-  // Get stream URL with caching
+  // Get stream URL with in-flight de-duplication
   const getStreamUrlForTrack = useCallback(
     async (
       track: Track,
@@ -614,10 +572,9 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
       const trackId = Number(track.id);
       const cacheKey = `${trackIdStr}:${currentQuality}`;
 
-      // Check cache first
-      const cached = streamUrlCacheRef.current.get(cacheKey);
-      if (cached && Date.now() - cached.timestamp < STREAM_URL_CACHE_TTL) {
-        return cached.url;
+      const existingInFlight = streamUrlInFlightRef.current.get(cacheKey);
+      if (existingInFlight) {
+        return await existingInFlight;
       }
 
       // Check saved tracks
@@ -627,12 +584,8 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
 
       if (savedTrack?.streamUrl) {
         if (Platform.OS === "web" && savedTrack.streamUrl.startsWith("blob:")) {
-          streamUrlCacheRef.current.delete(cacheKey);
+          return track.url || null;
         } else {
-          streamUrlCacheRef.current.set(cacheKey, {
-            url: savedTrack.streamUrl,
-            timestamp: Date.now(),
-          });
           return savedTrack.streamUrl;
         }
       }
@@ -643,39 +596,27 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
             trackIdStr
           );
           if (cachedUrl) {
-            streamUrlCacheRef.current.set(cacheKey, {
-              url: cachedUrl,
-              timestamp: Date.now(),
-            });
             return cachedUrl;
           }
         } catch {}
       }
 
-      // Fetch from API
-      let streamUrl: string | null = null;
-      if (!isOffline && Number.isFinite(trackId)) {
-        try {
-          streamUrl = await losslessAPI.getStreamUrl(trackId, currentQuality);
-        } catch {
-          streamUrl = null;
+      const job = (async () => {
+        if (!isOffline && Number.isFinite(trackId)) {
+          try {
+            const url = await losslessAPI.getStreamUrl(trackId, currentQuality);
+            if (url) return url;
+          } catch {}
         }
-      }
+        return track.url || null;
+      })();
 
-      // Fallback to track URL
-      if (!streamUrl && track.url) {
-        streamUrl = track.url;
+      streamUrlInFlightRef.current.set(cacheKey, job);
+      try {
+        return await job;
+      } finally {
+        streamUrlInFlightRef.current.delete(cacheKey);
       }
-
-      // Cache the result
-      if (streamUrl) {
-        streamUrlCacheRef.current.set(cacheKey, {
-          url: streamUrl,
-          timestamp: Date.now(),
-        });
-      }
-
-      return streamUrl;
     },
     [recentlyPlayed, favorites, isOffline]
   );
@@ -837,8 +778,6 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
             ? Math.max(0, savedPosSec)
             : 0;
 
-        const chunkDurationSec = audioCacheService.chunkDurationSec ?? 5;
-
         const offlineWeb = Platform.OS === "web" && isOffline;
 
         for (
@@ -848,7 +787,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
         ) {
           const attemptQuality: AudioQuality =
             attemptQualities[attemptIndex] ?? preferredQuality;
-          const cacheKey = `${trackIdStr}:${attemptQuality}`;
+          if (offlineWeb && attemptIndex > 0) break;
           if (
             allowPreBuffered &&
             preBufferedPlayerRef.current?.trackId === trackIdStr &&
@@ -911,7 +850,6 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
                 } catch {}
               }
               await clearWebCachesForUrl(baseUrl || url);
-              streamUrlCacheRef.current.delete(cacheKey);
             } else if (!offlineWeb && Platform.OS === "web") {
               await clearWebCachesForUrl(baseUrl || url);
             }
@@ -942,15 +880,8 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
               return false;
             }
 
-            const startChunkIndex = Math.max(
-              0,
-              Math.floor(startPositionSec / chunkDurationSec)
-            );
-            const hasStartChunk = await audioCacheService.isChunkCached(
-              baseStreamUrl,
-              startChunkIndex
-            );
-            if (!hasStartChunk) {
+            const cached = await audioCacheService.isCached(baseStreamUrl);
+            if (!cached) {
               return false;
             }
           } else {
@@ -963,10 +894,6 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
                   trackId,
                   attemptQuality
                 );
-                streamUrlCacheRef.current.set(cacheKey, {
-                  url: baseStreamUrl,
-                  timestamp: Date.now(),
-                });
               } catch {
                 baseStreamUrl = null;
               }
@@ -977,17 +904,6 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
           if (!baseStreamUrl) {
             console.warn(`[Player] No stream URL for track ${track.id}`);
             return false;
-          }
-
-          if (!offlineWeb && Platform.OS === "web") {
-            try {
-              await audioCacheService.ensureCachedSeconds(baseStreamUrl, {
-                positionSec: startPositionSec,
-                seconds: 5,
-                timeoutMs: 2500,
-                metadata: trackMetadata,
-              });
-            } catch {}
           }
 
           let streamUrl = baseStreamUrl;
@@ -1042,7 +958,6 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
                 } catch {}
               }
               await clearWebCachesForUrl(baseStreamUrl);
-              streamUrlCacheRef.current.delete(cacheKey);
               if (attemptIndex < attemptQualities.length - 1) {
                 await new Promise((r) => setTimeout(r, 100));
                 continue;
@@ -1116,7 +1031,6 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
               } catch {}
             }
             await clearWebCachesForUrl(baseStreamUrl);
-            streamUrlCacheRef.current.delete(cacheKey);
             if (
               Platform.OS === "web" &&
               (quality === "LOSSLESS" || quality === "HI_RES_LOSSLESS") &&
@@ -1135,7 +1049,6 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
             attemptIndex === 0
           ) {
             await clearWebCachesForUrl(baseStreamUrl);
-            streamUrlCacheRef.current.delete(cacheKey);
           }
 
           if (attemptIndex < attemptQualities.length - 1) {
@@ -1276,23 +1189,6 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
         artwork: nextTrack.artwork,
         durationSec: nextTrack.duration,
       });
-
-      if (Platform.OS === "web") {
-        try {
-          await audioCacheService.ensureCachedSeconds(baseStreamUrl, {
-            positionSec: 0,
-            seconds: 5,
-            timeoutMs: 2500,
-            metadata: {
-              id: String(nextTrack.id),
-              title: nextTrack.title,
-              artist: nextTrack.artist,
-              artwork: nextTrack.artwork,
-              durationSec: nextTrack.duration,
-            },
-          });
-        } catch {}
-      }
 
       // Clean up ANY existing pre-buffered player (including from race conditions)
       if (preBufferedPlayerRef.current) {
@@ -1772,7 +1668,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
             const effectiveQuality =
               quality === "HI_RES_LOSSLESS" ? "LOSSLESS" : quality;
             const cacheKey = `${String(currentTrack.id)}:${effectiveQuality}`;
-            streamUrlCacheRef.current.delete(cacheKey);
+            streamUrlInFlightRef.current.delete(cacheKey);
 
             const urlToClear = currentStreamUrl;
             const baseUrlToClear = currentBaseStreamUrlRef.current;
@@ -2013,9 +1909,8 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
 
   // ==================== Cache Cleanup ====================
   useEffect(() => {
-    const interval = setInterval(cleanStreamUrlCache, 5 * 60 * 1000);
-    return () => clearInterval(interval);
-  }, [cleanStreamUrlCache]);
+    return;
+  }, []);
 
   // ==================== Media Session Integration ====================
   // Update media session player reference for native lock screen controls
@@ -2120,6 +2015,9 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
               }))
             : parsed;
         setFavorites(sanitized);
+        prevFavoriteIdsRef.current = new Set(
+          sanitized.map((t) => normalizeFavoriteId(t.id))
+        );
       } catch {}
     });
     readPersistentValue(RECENTLY_PLAYED_STORAGE_KEY).then((val) => {
@@ -2423,6 +2321,128 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
     },
     [playTrack]
   );
+
+  useEffect(() => {
+    const currentIds = new Set(favorites.map((f) => normalizeFavoriteId(f.id)));
+    const prevIds = prevFavoriteIdsRef.current;
+
+    const added: SavedTrack[] = [];
+    for (const item of favorites) {
+      const id = normalizeFavoriteId(item.id);
+      if (!prevIds.has(id)) {
+        added.push(item);
+      }
+    }
+
+    const removed: string[] = [];
+    for (const prevId of prevIds) {
+      if (!currentIds.has(prevId)) {
+        removed.push(prevId);
+      }
+    }
+
+    prevFavoriteIdsRef.current = currentIds;
+
+    removed.forEach((id) => pendingFavoriteCacheIdsRef.current.delete(id));
+
+    const effectiveQuality: AudioQuality =
+      quality === "HI_RES_LOSSLESS" ? "LOSSLESS" : quality;
+
+    void (async () => {
+      await Promise.all(
+        removed.map(async (id) => {
+          try {
+            const cachedUrl = await audioCacheService.findCachedUrlByTrackId(
+              id
+            );
+            if (cachedUrl) {
+              await audioCacheService.evictUrl(cachedUrl);
+            }
+          } catch {}
+        })
+      );
+
+      if (added.length === 0) return;
+      if (isOffline) {
+        added.forEach((t) =>
+          pendingFavoriteCacheIdsRef.current.add(normalizeFavoriteId(t.id))
+        );
+        return;
+      }
+
+      await Promise.all(
+        added.map(async (saved) => {
+          const id = normalizeFavoriteId(saved.id);
+          try {
+            const trackId = Number(saved.id);
+            const baseUrl =
+              Number.isFinite(trackId) && !isOffline
+                ? await losslessAPI.getStreamUrl(trackId, effectiveQuality)
+                : saved.streamUrl;
+            if (!baseUrl) {
+              pendingFavoriteCacheIdsRef.current.add(id);
+              return;
+            }
+            await audioCacheService.cacheUrl(baseUrl, {
+              id: String(saved.id),
+              title: saved.title,
+              artist: saved.artist,
+              artwork: saved.artwork,
+              durationSec: undefined,
+            });
+            pendingFavoriteCacheIdsRef.current.delete(id);
+          } catch {
+            pendingFavoriteCacheIdsRef.current.add(id);
+            showToast({
+              message: "Failed to download for offline playback",
+              type: "error",
+            });
+          }
+        })
+      );
+    })();
+  }, [favorites, isOffline, quality, showToast]);
+
+  useEffect(() => {
+    if (isOffline) return;
+    const pendingIds = Array.from(pendingFavoriteCacheIdsRef.current);
+    if (pendingIds.length === 0) return;
+
+    const byId = new Map(
+      favorites.map((f) => [normalizeFavoriteId(f.id), f] as const)
+    );
+    const effectiveQuality: AudioQuality =
+      quality === "HI_RES_LOSSLESS" ? "LOSSLESS" : quality;
+
+    void (async () => {
+      await Promise.all(
+        pendingIds.map(async (id) => {
+          const saved = byId.get(id);
+          if (!saved) {
+            pendingFavoriteCacheIdsRef.current.delete(id);
+            return;
+          }
+          try {
+            const trackId = Number(saved.id);
+            if (!Number.isFinite(trackId)) return;
+            const baseUrl = await losslessAPI.getStreamUrl(
+              trackId,
+              effectiveQuality
+            );
+            if (!baseUrl) return;
+            await audioCacheService.cacheUrl(baseUrl, {
+              id: String(saved.id),
+              title: saved.title,
+              artist: saved.artist,
+              artwork: saved.artwork,
+              durationSec: undefined,
+            });
+            pendingFavoriteCacheIdsRef.current.delete(id);
+          } catch {}
+        })
+      );
+    })();
+  }, [favorites, isOffline, quality]);
 
   // ==================== Sleep Timer ====================
   const startSleepTimer = useCallback(
