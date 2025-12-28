@@ -62,6 +62,7 @@ export default function TabLayout() {
       <Tabs.Screen
         name="podcast"
         options={{
+          href: null,
           title: "Podcast",
           tabBarIcon: ({ color }: { color: string }) => (
             <Ionicons name="mic" size={20} color={color} />
@@ -74,6 +75,15 @@ export default function TabLayout() {
           title: "Library",
           tabBarIcon: ({ color }: { color: string }) => (
             <Ionicons name="library" size={20} color={color} />
+          ),
+        }}
+      />
+      <Tabs.Screen
+        name="welearn"
+        options={{
+          title: "WeLearn",
+          tabBarIcon: ({ color }: { color: string }) => (
+            <Ionicons name="school" size={20} color={color} />
           ),
         }}
       />
