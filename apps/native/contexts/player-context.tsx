@@ -103,6 +103,7 @@ interface PlayerContextType {
   cachedTrackIds: Set<string>;
   // New: Pre-buffer status for next track
   nextTrackBufferStatus: PreBufferStatus;
+  nextTrack: Track | null;
 }
 
 const PlayerContext = createContext<PlayerContextType | undefined>(undefined);
@@ -211,6 +212,25 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
   // ==================== Pre-buffer State ====================
   const [nextTrackBufferStatus, setNextTrackBufferStatus] =
     useState<PreBufferStatus>("none");
+
+  const nextTrack = useMemo(() => {
+    if (!currentTrack || queue.length === 0) return null;
+    const currentIndex = queue.findIndex(
+      (t) => String(t.id) === String(currentTrack.id)
+    );
+    if (currentIndex === -1) return null;
+
+    let nextIndex;
+    if (shuffleEnabled) {
+      // In shuffle mode, we don't easily know the next one without shuffleHistoryRef
+      // But we can just show the next one in the queue array as a fallback
+      nextIndex = (currentIndex + 1) % queue.length;
+    } else {
+      nextIndex = (currentIndex + 1) % queue.length;
+      if (nextIndex === 0 && repeatMode !== "all") return null;
+    }
+    return queue[nextIndex] || null;
+  }, [currentTrack, queue, shuffleEnabled, repeatMode]);
 
   const { showToast } = useToast();
   const isOffline = useOfflineStatus();
@@ -2544,6 +2564,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
     loadingTrackId,
     cachedTrackIds,
     nextTrackBufferStatus,
+    nextTrack,
   };
 
   return (

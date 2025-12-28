@@ -956,6 +956,7 @@ export const PlayerBar = () => {
     audioAnalysis,
     loadingTrackId,
     currentStreamUrl,
+    nextTrack,
   } = usePlayer();
   const isCached = currentStreamUrl?.startsWith("blob:") || false;
 
@@ -1539,7 +1540,9 @@ export const PlayerBar = () => {
                   right: 0,
                   bottom: 0,
                   height: 2,
-                  backgroundColor: "rgba(255,255,255,0.15)",
+                  backgroundColor: isDark
+                    ? "rgba(255,255,255,0.1)"
+                    : "rgba(0,0,0,0.05)",
                 }}
               />
               <View
@@ -1600,7 +1603,8 @@ export const PlayerBar = () => {
                         e.stopPropagation();
                         setIsCollapsed(!isCollapsed);
                       }}
-                      className="bg-blue-500 rounded-full w-5 h-5 items-center justify-center border-2 border-black active:scale-90 transition-transform"
+                      className="bg-blue-500 rounded-full w-5 h-5 items-center justify-center border-2 active:scale-90 transition-transform"
+                      style={{ borderColor: isDark ? "#000" : "#fff" }}
                     >
                       {({ pressed }) => (
                         <Animated.View
@@ -1633,7 +1637,8 @@ export const PlayerBar = () => {
                         e.stopPropagation();
                         setIsCollapsed(!isCollapsed);
                       }}
-                      className="bg-blue-500 rounded-full w-5 h-5 items-center justify-center border-2 border-black active:scale-90 transition-transform"
+                      className="bg-blue-500 rounded-full w-5 h-5 items-center justify-center border-2 active:scale-90 transition-transform"
+                      style={{ borderColor: isDark ? "#000" : "#fff" }}
                     >
                       {({ pressed }) => (
                         <Animated.View
@@ -1657,7 +1662,7 @@ export const PlayerBar = () => {
                     width: 50,
                     height: 50,
                     borderRadius: 25,
-                    backgroundColor: "#525252",
+                    backgroundColor: isDark ? "#262626" : "#e5e5e5",
                     alignItems: "center",
                     justifyContent: "center",
                   }}
@@ -1755,130 +1760,149 @@ export const PlayerBar = () => {
             </Animated.View>
 
             <Animated.View
-              className="flex-1 flex-row items-center"
+              className="flex-1"
               style={animatedContentStyle}
               pointerEvents={isCollapsed ? "none" : "auto"}
             >
-              <StyledView className="flex-1 mr-2 items-start justify-center">
-                <StyledText
-                  className="font-bold text-[13px] text-left select-none"
-                  style={{ color: themeColorForeground }}
-                  numberOfLines={1}
-                  selectable={false}
-                >
-                  {currentTrack.title}
-                </StyledText>
-                <StyledView className="flex-row items-center gap-1 max-w-full">
-                  {isCached && (
-                    <StyledIonicons name="flash" size={10} color="#4ade80" />
-                  )}
+              <StyledView className="flex-1 flex-row items-center">
+                <StyledView className="flex-1 mr-2 items-start justify-center">
                   <StyledText
-                    className="opacity-70 text-[11px] text-left select-none shrink"
+                    className="font-bold text-[13px] text-left select-none"
                     style={{ color: themeColorForeground }}
                     numberOfLines={1}
                     selectable={false}
                   >
-                    {currentTrack.artist}
+                    {currentTrack.title}
                   </StyledText>
+                  <StyledView className="flex-row items-center gap-1 max-w-full">
+                    {isCached && (
+                      <StyledIonicons name="flash" size={10} color="#4ade80" />
+                    )}
+                    <StyledText
+                      className="opacity-70 text-[11px] text-left select-none shrink"
+                      style={{ color: themeColorForeground }}
+                      numberOfLines={1}
+                      selectable={false}
+                    >
+                      {currentTrack.artist}
+                    </StyledText>
+                  </StyledView>
+                </StyledView>
+
+                <StyledView className="items-center">
+                  <StyledView className="flex-row items-center">
+                    <StyledPressable
+                      onPress={(e) => {
+                        e.stopPropagation();
+                        playPrevious();
+                      }}
+                      className="p-2"
+                      disabled={controlsDisabled}
+                    >
+                      {({ pressed }) => (
+                        <StyledIonicons
+                          name="play-skip-back"
+                          size={20}
+                          color={pressed ? "#ef4444" : themeColorForeground}
+                          style={{ opacity: controlsDisabled ? 0.35 : 1 }}
+                        />
+                      )}
+                    </StyledPressable>
+
+                    <StyledPressable
+                      onPress={(e) => {
+                        e.stopPropagation();
+                        (isPlaying ? pauseTrack : resumeTrack)();
+                      }}
+                      className="p-2"
+                      disabled={isLoading || isTrackLoading}
+                    >
+                      {({ pressed }) =>
+                        isLoading || isTrackLoading ? (
+                          <ActivityIndicator
+                            size="small"
+                            color={themeColorForeground}
+                          />
+                        ) : (
+                          <StyledIonicons
+                            name={isPlaying ? "pause" : "play"}
+                            size={28}
+                            color={pressed ? "#ef4444" : themeColorForeground}
+                            style={{ marginLeft: isPlaying ? 0 : 2 }}
+                          />
+                        )
+                      }
+                    </StyledPressable>
+
+                    <StyledPressable
+                      onPress={(e) => {
+                        e.stopPropagation();
+                        playNext();
+                      }}
+                      className="p-2"
+                      disabled={controlsDisabled}
+                    >
+                      {({ pressed }) => (
+                        <StyledIonicons
+                          name="play-skip-forward"
+                          size={20}
+                          color={pressed ? "#ef4444" : themeColorForeground}
+                          style={{ opacity: controlsDisabled ? 0.35 : 1 }}
+                        />
+                      )}
+                    </StyledPressable>
+
+                    <StyledPressable
+                      onPress={(e) => {
+                        e.stopPropagation();
+                        void toggleCurrentFavorite(resolvedArtwork);
+                      }}
+                      className="p-2"
+                    >
+                      {({ pressed }) => (
+                        <StyledIonicons
+                          name={isCurrentFavorited ? "heart" : "heart-outline"}
+                          size={20}
+                          color={
+                            isCurrentFavorited || pressed
+                              ? "#ef4444"
+                              : themeColorForeground
+                          }
+                        />
+                      )}
+                    </StyledPressable>
+
+                    <StyledPressable
+                      onPress={(e) => {
+                        e.stopPropagation();
+                        handleOpenQueue();
+                      }}
+                      className="p-2 mr-1"
+                    >
+                      {({ pressed }) => (
+                        <StyledIonicons
+                          name="list"
+                          size={20}
+                          color={pressed ? "#60a5fa" : themeColorForeground}
+                        />
+                      )}
+                    </StyledPressable>
+                  </StyledView>
+
+                  {nextTrack && (
+                    <StyledView className="-mt-1 mb-0.5">
+                      <StyledText
+                        className="text-[8px] opacity-60 uppercase tracking-[0.8px] font-bold max-w-[160px]"
+                        style={{ color: themeColorForeground }}
+                        numberOfLines={1}
+                        ellipsizeMode="tail"
+                      >
+                        Up Next Track: {nextTrack.title}
+                      </StyledText>
+                    </StyledView>
+                  )}
                 </StyledView>
               </StyledView>
-
-              <StyledPressable
-                onPress={(e) => {
-                  e.stopPropagation();
-                  playPrevious();
-                }}
-                className="p-2"
-                disabled={controlsDisabled}
-              >
-                {({ pressed }) => (
-                  <StyledIonicons
-                    name="play-skip-back"
-                    size={20}
-                    color={pressed ? "#ef4444" : themeColorForeground}
-                    style={{ opacity: controlsDisabled ? 0.35 : 1 }}
-                  />
-                )}
-              </StyledPressable>
-
-              <StyledPressable
-                onPress={(e) => {
-                  e.stopPropagation();
-                  (isPlaying ? pauseTrack : resumeTrack)();
-                }}
-                className="p-2"
-                disabled={isLoading || isTrackLoading}
-              >
-                {({ pressed }) =>
-                  isLoading || isTrackLoading ? (
-                    <ActivityIndicator
-                      size="small"
-                      color={themeColorForeground}
-                    />
-                  ) : (
-                    <StyledIonicons
-                      name={isPlaying ? "pause" : "play"}
-                      size={28}
-                      color={pressed ? "#ef4444" : themeColorForeground}
-                      style={{ marginLeft: isPlaying ? 0 : 2 }}
-                    />
-                  )
-                }
-              </StyledPressable>
-
-              <StyledPressable
-                onPress={(e) => {
-                  e.stopPropagation();
-                  playNext();
-                }}
-                className="p-2"
-                disabled={controlsDisabled}
-              >
-                {({ pressed }) => (
-                  <StyledIonicons
-                    name="play-skip-forward"
-                    size={20}
-                    color={pressed ? "#ef4444" : themeColorForeground}
-                    style={{ opacity: controlsDisabled ? 0.35 : 1 }}
-                  />
-                )}
-              </StyledPressable>
-
-              <StyledPressable
-                onPress={(e) => {
-                  e.stopPropagation();
-                  void toggleCurrentFavorite(resolvedArtwork);
-                }}
-                className="p-2"
-              >
-                {({ pressed }) => (
-                  <StyledIonicons
-                    name={isCurrentFavorited ? "heart" : "heart-outline"}
-                    size={20}
-                    color={
-                      isCurrentFavorited || pressed
-                        ? "#ef4444"
-                        : themeColorForeground
-                    }
-                  />
-                )}
-              </StyledPressable>
-
-              <StyledPressable
-                onPress={(e) => {
-                  e.stopPropagation();
-                  handleOpenQueue();
-                }}
-                className="p-2 mr-1"
-              >
-                {({ pressed }) => (
-                  <StyledIonicons
-                    name="list"
-                    size={20}
-                    color={pressed ? "#60a5fa" : themeColorForeground}
-                  />
-                )}
-              </StyledPressable>
             </Animated.View>
           </Animated.View>
         </Pressable>
@@ -2103,6 +2127,24 @@ export const PlayerBar = () => {
                       {currentTrack.artist}
                     </StyledText>
                   </StyledView>
+
+                  {nextTrack && (
+                    <StyledView className="items-center mt-2 px-10">
+                      <StyledText
+                        className="text-[11px] opacity-50 uppercase tracking-[2px] font-bold mb-0.5"
+                        style={{ color: themeColorForeground }}
+                      >
+                        Up Next Track
+                      </StyledText>
+                      <StyledText
+                        className="text-sm font-semibold opacity-70"
+                        style={{ color: themeColorForeground }}
+                        numberOfLines={1}
+                      >
+                        {nextTrack.title}
+                      </StyledText>
+                    </StyledView>
+                  )}
                 </StyledView>
 
                 <View className="items-center">
@@ -2341,8 +2383,8 @@ export const PlayerBar = () => {
                   </StyledView>
                 </View>
 
-                <StyledView className="w-full flex-row items-center justify-center px-6 mt-6">
-                  <StyledView className="flex-row items-center justify-center flex-1">
+                <StyledView className="w-full px-6 mt-6">
+                  <StyledView className="flex-row items-center justify-center">
                     <StyledTouchableOpacity
                       onPress={playPrevious}
                       className="p-4"
@@ -2358,7 +2400,7 @@ export const PlayerBar = () => {
 
                     <StyledTouchableOpacity
                       onPress={isPlaying ? pauseTrack : resumeTrack}
-                      className="w-20 h-20 rounded-full items-center justify-center shadow-lg"
+                      className="w-20 h-20 rounded-full items-center justify-center shadow-lg mx-4"
                       style={{ backgroundColor: themeColorForeground }}
                       disabled={isLoading || isTrackLoading}
                     >
@@ -2392,6 +2434,24 @@ export const PlayerBar = () => {
                       />
                     </StyledTouchableOpacity>
                   </StyledView>
+
+                  {nextTrack && (
+                    <StyledView className="items-center mt-8">
+                      <StyledText
+                        className="text-[10px] opacity-40 uppercase font-bold tracking-[2px] mb-1.5"
+                        style={{ color: themeColorForeground }}
+                      >
+                        Up Next
+                      </StyledText>
+                      <StyledText
+                        className="text-sm font-semibold opacity-60 px-10"
+                        style={{ color: themeColorForeground }}
+                        numberOfLines={1}
+                      >
+                        {nextTrack.title}
+                      </StyledText>
+                    </StyledView>
+                  )}
                 </StyledView>
 
                 <View className="h-6" />
