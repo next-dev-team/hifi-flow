@@ -1184,8 +1184,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
                   attemptQualities.includes("LOW"))
               ) {
                 showToast({
-                  message:
-                    "Stream format not supported, trying lower quality…",
+                  message: "Stream format not supported, trying lower quality…",
                   type: "error",
                 });
               }
