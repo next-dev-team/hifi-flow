@@ -57,21 +57,31 @@ export default function Layout() {
       });
 
       if ("serviceWorker" in navigator) {
-        const registerServiceWorker = () => {
-          navigator.serviceWorker
-            .register("/sw.js")
-            .then((registration) => {
-              console.log(
-                "Service Worker registered with scope:",
-                registration.scope
-              );
-            })
-            .catch((error) => {
-              console.error("Service Worker registration failed:", error);
-            });
-        };
+        void (async () => {
+          try {
+            const regs = await navigator.serviceWorker.getRegistrations();
+            await Promise.all(regs.map((r) => r.unregister()));
+          } catch {}
 
-        registerServiceWorker();
+          try {
+            if ("caches" in window) {
+              const keys = await caches.keys();
+              await Promise.all(
+                keys
+                  .filter(
+                    (key) =>
+                      key === "pages-cache" ||
+                      key === "assets-cache" ||
+                      key === "fonts-cache" ||
+                      key === "image-cache" ||
+                      key.startsWith("hififlow-audio-meta-") ||
+                      key.startsWith("hififlow-audio-full-")
+                  )
+                  .map((key) => caches.delete(key))
+              );
+            }
+          } catch {}
+        })();
       }
     }
   }, []);

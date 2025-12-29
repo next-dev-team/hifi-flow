@@ -1,10 +1,6 @@
 {
   "rewrites": [
     {
-      "source": "/__hififlow_audio_stream",
-      "destination": "/index.html"
-    },
-    {
       "source": "/((?!.*\\..*).*)",
       "destination": "/index.html"
     }

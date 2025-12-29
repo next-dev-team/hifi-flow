@@ -68,10 +68,6 @@ import { useOfflineStatus } from "@/hooks/use-offline-status";
 import { usePersistentState } from "@/hooks/use-persistent-state";
 import { detectThemeVoiceAction } from "@/utils/ai";
 import { getSuggestedArtists, losslessAPI } from "@/utils/api";
-import {
-  type AudioCacheProgress,
-  audioCacheService,
-} from "@/utils/audio-cache";
 import { getSheetMargin } from "@/utils/layout";
 import { resolveArtwork, resolveName } from "@/utils/resolvers";
 
@@ -85,19 +81,6 @@ type SuggestedArtist = {
   era?: string;
 };
 
-function formatBytes(value: number): string {
-  if (!Number.isFinite(value) || value <= 0) return "0 B";
-  const units = ["B", "KB", "MB", "GB", "TB"];
-  const exponent = Math.min(
-    units.length - 1,
-    Math.floor(Math.log(value) / Math.log(1024))
-  );
-  const scaled = value / 1024 ** exponent;
-  const rounded =
-    scaled >= 100 ? Math.round(scaled) : Math.round(scaled * 10) / 10;
-  return `${rounded} ${units[exponent]}`;
-}
-
 const StyledSafeAreaView = withUniwind(SafeAreaView);
 const StyledView = withUniwind(View);
 const StyledText = withUniwind(Text);
@@ -107,26 +90,6 @@ const StyledTouchableOpacity = withUniwind(TouchableOpacity);
 
 export default function Home() {
   const isOffline = useOfflineStatus();
-  const [cachedTrackIds, setCachedTrackIds] = useState<Set<string>>(new Set());
-  const [audioCacheEstimate, setAudioCacheEstimate] =
-    useState<StorageEstimate | null>(null);
-  const [audioCacheTrackCount, setAudioCacheTrackCount] = useState(0);
-  const [currentAudioCacheProgress, setCurrentAudioCacheProgress] =
-    useState<AudioCacheProgress | null>(null);
-
-  useEffect(() => {
-    if (isOffline) {
-      audioCacheService.getAllCachedTracks().then((cachedFiles) => {
-        const ids = new Set<string>();
-        cachedFiles.forEach((file) => {
-          if (file.metadata?.id) {
-            ids.add(String(file.metadata.id));
-          }
-        });
-        setCachedTrackIds(ids);
-      });
-    }
-  }, [isOffline]);
 
   const {
     playQueue,
@@ -152,7 +115,6 @@ export default function Home() {
   const themeColorBackground = useThemeColor("background");
   const themeColorForeground = useThemeColor("foreground");
   const themeColorDanger = useThemeColor("danger");
-  const themeColorSuccess = useThemeColor("success");
   const themeColorAccent = useThemeColor("accent");
 
   // Desktop max-width container style for sheets
@@ -181,76 +143,6 @@ export default function Home() {
   const [debouncedQuery, setDebouncedQuery] = useState("");
   const [favViewMode, setFavViewMode] = useState<"songs" | "artists">("songs");
   const [favArtistFilter, setFavArtistFilter] = useState<string | null>(null);
-  const [isPwaSupported, setIsPwaSupported] = useState(false);
-
-  const refreshAudioCacheInfo = useCallback(async () => {
-    if (Platform.OS !== "web") return;
-    try {
-      const [estimate, cachedTracks] = await Promise.all([
-        audioCacheService.getStorageEstimate(),
-        audioCacheService.getAllCachedTracks(),
-      ]);
-      setAudioCacheEstimate(estimate);
-      setAudioCacheTrackCount(cachedTracks.length);
-    } catch {
-      setAudioCacheEstimate(null);
-    }
-  }, []);
-
-  useEffect(() => {
-    if (
-      Platform.OS === "web" &&
-      typeof navigator !== "undefined" &&
-      "serviceWorker" in navigator
-    ) {
-      // Check if controller is active (already controlled) or ready
-      if (navigator.serviceWorker.controller) {
-        setIsPwaSupported(true);
-      } else {
-        navigator.serviceWorker.ready.then(() => {
-          setIsPwaSupported(true);
-        });
-      }
-    }
-  }, []);
-
-  useEffect(() => {
-    if (Platform.OS !== "web") return;
-    if (!isPwaSupported) return;
-    void refreshAudioCacheInfo();
-  }, [isPwaSupported, refreshAudioCacheInfo]);
-
-  useEffect(() => {
-    if (Platform.OS !== "web") return;
-    if (!currentStreamUrl) {
-      setCurrentAudioCacheProgress(null);
-      return;
-    }
-    setCurrentAudioCacheProgress(
-      audioCacheService.getProgress(currentStreamUrl)
-    );
-  }, [currentStreamUrl]);
-
-  useEffect(() => {
-    if (Platform.OS !== "web") return;
-    if (!isPwaSupported) return;
-
-    const unsubscribeCached = audioCacheService.addListener(() => {
-      void refreshAudioCacheInfo();
-    });
-    const unsubscribeProgress = audioCacheService.addProgressListener(
-      (progress) => {
-        if (progress.url && progress.url === currentStreamUrl) {
-          setCurrentAudioCacheProgress(progress);
-        }
-      }
-    );
-
-    return () => {
-      unsubscribeCached();
-      unsubscribeProgress();
-    };
-  }, [currentStreamUrl, isPwaSupported, refreshAudioCacheInfo]);
 
   useSpeechRecognitionEvent("start", () => {
     if (!voiceActionOwnerRef.current) return;
@@ -681,17 +573,6 @@ export default function Home() {
 
     let filtered = listData;
 
-    if (isOffline) {
-      // Filter out non-cached items
-      filtered = listData.filter((item) => {
-        const id = item.id || item.videoId;
-        // Check if we have this track in cache
-        // Note: The audio cache might store URLs or IDs.
-        // Ideally we match by ID if metadata was saved correctly.
-        return cachedTrackIds.has(String(id));
-      });
-    }
-
     return filtered.map((item, index): Track => {
       const id = item.id || item.videoId || `track-${index}`;
       return {
@@ -702,7 +583,7 @@ export default function Home() {
         url: item.url || `https://www.youtube.com/watch?v=${id}`,
       };
     });
-  }, [listData, filter, isOffline, cachedTrackIds]);
+  }, [listData, filter]);
 
   const artists = useMemo(() => {
     if (filter === "songs") return [];
@@ -884,49 +765,6 @@ export default function Home() {
         </TouchableOpacity>
       </Card>
     );
-  };
-
-  const handleClearCache = async () => {
-    try {
-      if (Platform.OS === "web") {
-        await audioCacheService.clearCache();
-
-        if ("caches" in window) {
-          const keys = await caches.keys();
-          await Promise.all(
-            keys
-              .filter(
-                (key) =>
-                  key.startsWith("hififlow-audio-meta-") ||
-                  key.startsWith("hififlow-audio-full-")
-              )
-              .map((key) => caches.delete(key))
-          );
-        }
-
-        void refreshAudioCacheInfo();
-
-        showToast({
-          message:
-            speechLang === "en-US"
-              ? "Audio cache cleared."
-              : "បានសម្អាតឃ្លាំងសម្ងាត់។",
-          type: "success",
-        });
-      } else {
-        // Native implementation if needed
-        showToast({
-          message: "Not available on native yet",
-          type: "info",
-        });
-      }
-    } catch (e) {
-      console.error("Failed to clear cache", e);
-      showToast({
-        message: "Failed to clear cache",
-        type: "error",
-      });
-    }
   };
 
   return (
@@ -1743,85 +1581,6 @@ export default function Home() {
             </View>
 
             <View className="px-4 pt-2">
-              {isPwaSupported && (
-                <>
-                  <View className="flex-row items-center justify-between py-3 border-b border-default-200">
-                    <Text className="text-base text-foreground font-medium">
-                      {speechLang === "en-US"
-                        ? "Offline Ready"
-                        : "ការប្រើប្រាស់ក្រៅបណ្តាញ"}
-                    </Text>
-                    <View className="flex-row items-center">
-                      <Ionicons
-                        name="cloud-done-outline"
-                        size={20}
-                        color={themeColorSuccess}
-                        style={{ marginRight: 6 }}
-                      />
-                      <Text
-                        style={{ color: themeColorSuccess }}
-                        className="font-medium text-sm"
-                      >
-                        {speechLang === "en-US" ? "Active" : "សកម្ម"}
-                      </Text>
-                    </View>
-                  </View>
-
-                  <View className="py-3 border-b border-default-200">
-                    <View className="flex-row items-center justify-between">
-                      <Text className="text-base text-foreground font-medium">
-                        {speechLang === "en-US"
-                          ? "Audio cache"
-                          : "ឃ្លាំងសម្ងាត់បទចម្រៀង"}
-                      </Text>
-                      <StyledText className="text-foreground text-sm opacity-60">
-                        {audioCacheTrackCount}{" "}
-                        {speechLang === "en-US" ? "tracks" : "បទ"}
-                      </StyledText>
-                    </View>
-                    {typeof audioCacheEstimate?.usage === "number" &&
-                      typeof audioCacheEstimate?.quota === "number" && (
-                        <StyledText className="text-foreground text-sm mt-1 opacity-60">
-                          {formatBytes(audioCacheEstimate.usage)} /{" "}
-                          {formatBytes(audioCacheEstimate.quota)}
-                        </StyledText>
-                      )}
-                    {currentTrack && currentAudioCacheProgress && (
-                      <StyledText
-                        className="text-foreground text-sm mt-1 opacity-60"
-                        numberOfLines={1}
-                      >
-                        {speechLang === "en-US"
-                          ? `Caching: ${currentTrack.title} (+${Math.floor(
-                              currentAudioCacheProgress.cachedSecondsAhead
-                            )}s)`
-                          : `កំពុងរក្សាទុក៖ ${
-                              currentTrack.title
-                            } (+${Math.floor(
-                              currentAudioCacheProgress.cachedSecondsAhead
-                            )}វិនាទី)`}
-                      </StyledText>
-                    )}
-                  </View>
-
-                  <TouchableOpacity
-                    className="flex-row items-center justify-between py-3 border-b border-default-200 active:opacity-70"
-                    onPress={handleClearCache}
-                  >
-                    <Text className="text-base text-red-500 font-medium">
-                      {speechLang === "en-US"
-                        ? "Clear audio cache"
-                        : "សម្អាតឃ្លាំងសម្ងាត់បទចម្រៀង"}
-                    </Text>
-                    <Ionicons
-                      name="trash-outline"
-                      size={20}
-                      color={themeColorDanger}
-                    />
-                  </TouchableOpacity>
-                </>
-              )}
-
               <View className="flex-row items-center justify-between py-3 border-b border-default-200">
                 <Text className="text-base text-foreground font-medium">
                   {speechLang === "en-US" ? "Dark mode" : "មុខងារងងឹត"}

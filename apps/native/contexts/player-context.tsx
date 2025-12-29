@@ -627,6 +627,21 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
     } catch {}
   }, []);
 
+  const isWebStreamUrlForbidden = useCallback(async (url: string) => {
+    if (Platform.OS !== "web") return false;
+    try {
+      const resp = await fetch(url, {
+        cache: "no-store",
+        headers: {
+          Range: "bytes=0-1",
+        },
+      });
+      return resp.status === 401 || resp.status === 403;
+    } catch {
+      return false;
+    }
+  }, []);
+
   const isTrackBroken = useCallback((trackId: string) => {
     const expiresAt = brokenTrackIdsRef.current.get(trackId);
     if (!expiresAt) {
@@ -682,6 +697,13 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
       if (savedTrack?.streamUrl) {
         if (Platform.OS === "web" && savedTrack.streamUrl.startsWith("blob:")) {
           return track.url || null;
+        }
+
+        if (!isOffline && Number.isFinite(trackId)) {
+          const forbidden = await isWebStreamUrlForbidden(savedTrack.streamUrl);
+          if (!forbidden) {
+            return savedTrack.streamUrl;
+          }
         } else {
           return savedTrack.streamUrl;
         }
@@ -715,7 +737,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
         streamUrlInFlightRef.current.delete(cacheKey);
       }
     },
-    [recentlyPlayed, favorites, isOffline]
+    [recentlyPlayed, favorites, isOffline, isWebStreamUrlForbidden]
   );
 
   // ==================== Player Control - SINGLE PLAYER PATTERN ====================
@@ -954,206 +976,234 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
             allowPreBuffered = false;
           }
 
-          destroyAllPlayers();
+          let refreshedForbidden = false;
 
-          let baseStreamUrl: string | null = null;
+          while (true) {
+            destroyAllPlayers();
 
-          if (offlineWeb) {
-            baseStreamUrl =
-              cachedUrlByTrackIdRef.current.get(trackIdStr) ?? null;
-            if (!baseStreamUrl) {
-              const fromLibrary =
-                recentlyPlayed.find((t) => String(t.id) === trackIdStr)
-                  ?.streamUrl ||
-                favorites.find((t) => String(t.id) === trackIdStr)?.streamUrl;
-              baseStreamUrl = fromLibrary || null;
-            }
-            if (!baseStreamUrl) {
-              baseStreamUrl = await audioCacheService.findCachedUrlByTrackId(
-                trackIdStr
-              );
-            }
-            if (!baseStreamUrl) {
-              return false;
-            }
+            let baseStreamUrl: string | null = null;
 
-            const cached = await audioCacheService.isCached(baseStreamUrl);
-            if (!cached) {
-              return false;
-            }
-          } else {
-            const forceRefresh = attemptIndex > 0;
-            if (!forceRefresh) {
-              baseStreamUrl = await getStreamUrlForTrack(track, attemptQuality);
-            } else if (!isOffline && Number.isFinite(trackId)) {
-              try {
-                baseStreamUrl = await losslessAPI.getStreamUrl(
-                  trackId,
-                  attemptQuality
+            if (offlineWeb) {
+              baseStreamUrl =
+                cachedUrlByTrackIdRef.current.get(trackIdStr) ?? null;
+              if (!baseStreamUrl) {
+                const fromLibrary =
+                  recentlyPlayed.find((t) => String(t.id) === trackIdStr)
+                    ?.streamUrl ||
+                  favorites.find((t) => String(t.id) === trackIdStr)?.streamUrl;
+                baseStreamUrl = fromLibrary || null;
+              }
+              if (!baseStreamUrl) {
+                baseStreamUrl = await audioCacheService.findCachedUrlByTrackId(
+                  trackIdStr
                 );
-              } catch {
-                baseStreamUrl = null;
+              }
+              if (!baseStreamUrl) {
+                return false;
+              }
+
+              const cached = await audioCacheService.isCached(baseStreamUrl);
+              if (!cached) {
+                return false;
               }
             } else {
-              baseStreamUrl = await getStreamUrlForTrack(track, attemptQuality);
-            }
-          }
-          if (!baseStreamUrl) {
-            console.warn(`[Player] No stream URL for track ${track.id}`);
-            return false;
-          }
-
-          let streamUrl = baseStreamUrl;
-          try {
-            streamUrl = await audioCacheService.resolveUrl(
-              baseStreamUrl,
-              trackMetadata
-            );
-          } catch (e) {
-            console.warn(
-              "[Player] Cache resolution failed, using original URL:",
-              e
-            );
-            streamUrl = baseStreamUrl;
-          }
-
-          if (
-            Platform.OS === "web" &&
-            streamUrl !== baseStreamUrl &&
-            streamUrl.includes("/__hififlow_audio_stream")
-          ) {
-            const ok = await canLoadWebProxyUrl(streamUrl);
-            if (!ok) {
-              console.warn(
-                "[Player] Proxy stream failed preflight, using direct URL"
-              );
-              streamUrl = baseStreamUrl;
-            }
-          }
-
-          if (Platform.OS === "web" && streamUrl.startsWith("blob:")) {
-            try {
-              const response = await fetch(streamUrl);
-              if (!response.ok) {
-                throw new Error("Blob URL inaccessible");
+              const forceRefresh = attemptIndex > 0 || refreshedForbidden;
+              if (!forceRefresh) {
+                baseStreamUrl = await getStreamUrlForTrack(
+                  track,
+                  attemptQuality
+                );
+              } else if (!isOffline && Number.isFinite(trackId)) {
+                try {
+                  baseStreamUrl = await losslessAPI.getStreamUrl(
+                    trackId,
+                    attemptQuality
+                  );
+                } catch {
+                  baseStreamUrl = null;
+                }
+              } else {
+                baseStreamUrl = await getStreamUrlForTrack(
+                  track,
+                  attemptQuality
+                );
               }
-            } catch {
+            }
+            if (!baseStreamUrl) {
+              console.warn(`[Player] No stream URL for track ${track.id}`);
+              return false;
+            }
+
+            let streamUrl = baseStreamUrl;
+            try {
+              streamUrl = await audioCacheService.resolveUrl(
+                baseStreamUrl,
+                trackMetadata
+              );
+            } catch (e) {
+              console.warn(
+                "[Player] Cache resolution failed, using original URL:",
+                e
+              );
               streamUrl = baseStreamUrl;
             }
-          }
 
-          if (Platform.OS === "web" && !offlineWeb) {
-            const contentType = await getWebContentType(streamUrl);
-            if (contentType && !canPlayWebContentType(contentType)) {
-              console.warn(
-                "[Player] Browser cannot play content-type, trying next quality:",
-                contentType
-              );
+            if (
+              Platform.OS === "web" &&
+              streamUrl !== baseStreamUrl &&
+              streamUrl.includes("/__hififlow_audio_stream")
+            ) {
+              const ok = await canLoadWebProxyUrl(streamUrl);
+              if (!ok) {
+                console.warn(
+                  "[Player] Proxy stream failed preflight, using direct URL"
+                );
+                streamUrl = baseStreamUrl;
+              }
+            }
+
+            if (Platform.OS === "web" && streamUrl.startsWith("blob:")) {
+              try {
+                const response = await fetch(streamUrl);
+                if (!response.ok) {
+                  throw new Error("Blob URL inaccessible");
+                }
+              } catch {
+                streamUrl = baseStreamUrl;
+              }
+            }
+
+            if (Platform.OS === "web" && !offlineWeb) {
+              const contentType = await getWebContentType(streamUrl);
+              if (contentType && !canPlayWebContentType(contentType)) {
+                console.warn(
+                  "[Player] Browser cannot play content-type, trying next quality:",
+                  contentType
+                );
+                if (streamUrl.startsWith("blob:")) {
+                  try {
+                    URL.revokeObjectURL(streamUrl);
+                  } catch {}
+                }
+                await clearWebCachesForUrl(baseStreamUrl);
+                if (attemptIndex < attemptQualities.length - 1) {
+                  await new Promise((r) => setTimeout(r, 100));
+                  break;
+                }
+                return false;
+              }
+            }
+
+            console.log("[Player] Creating new player for:", track.title);
+            const newPlayer = createAudioPlayer(streamUrl, {
+              downloadFirst: false,
+              updateInterval: 250,
+            });
+
+            const savedPos = savedPositions[trackIdStr];
+            if (savedPos && savedPos > 5) {
+              try {
+                const seekResult = (newPlayer as any).seekTo?.(savedPos);
+                if (seekResult && typeof seekResult.then === "function") {
+                  void seekResult.catch((e: unknown) => {
+                    console.warn("[Player] Restore seek failed", e);
+                  });
+                }
+              } catch (e) {
+                console.warn("[Player] Restore seek threw", e);
+              }
+            }
+
+            newPlayer.volume = volume;
+            let playError: unknown = null;
+            try {
+              const playResult = (newPlayer as any).play?.();
+              if (playResult && typeof playResult.then === "function") {
+                await playResult.catch((e: unknown) => {
+                  playError = e;
+                });
+              }
+            } catch (e) {
+              playError = e;
+            }
+
+            const startResult = playError
+              ? {
+                  ok: false as const,
+                  reason: isNotSupportedPlaybackError(playError)
+                    ? ("not_supported" as const)
+                    : ("error" as const),
+                }
+              : await waitForPlaybackStart(newPlayer, 15000);
+            if (startResult.ok) {
+              activePlayerRef.current = newPlayer;
+              setPlayer(newPlayer);
+              setCurrentStreamUrl(streamUrl);
+              currentBaseStreamUrlRef.current = baseStreamUrl;
+              consecutiveFailuresRef.current = 0;
+              if (!skipRecentlyPlayed) {
+                void addToRecentlyPlayed(track, baseStreamUrl);
+              }
+              return true;
+            }
+
+            try {
+              newPlayer.pause();
+              newPlayer.remove();
+            } catch {}
+
+            if (
+              !refreshedForbidden &&
+              !offlineWeb &&
+              Platform.OS === "web" &&
+              Number.isFinite(trackId) &&
+              startResult.reason === "error"
+            ) {
+              const forbidden = await isWebStreamUrlForbidden(baseStreamUrl);
+              if (forbidden) {
+                const cacheKey = `${trackIdStr}:${attemptQuality}`;
+                streamUrlInFlightRef.current.delete(cacheKey);
+                refreshedForbidden = true;
+                await new Promise((r) => setTimeout(r, 100));
+                continue;
+              }
+            }
+
+            if (startResult.reason === "not_supported") {
               if (streamUrl.startsWith("blob:")) {
                 try {
                   URL.revokeObjectURL(streamUrl);
                 } catch {}
               }
               await clearWebCachesForUrl(baseStreamUrl);
-              if (attemptIndex < attemptQualities.length - 1) {
-                await new Promise((r) => setTimeout(r, 100));
-                continue;
-              }
-              return false;
-            }
-          }
-
-          console.log("[Player] Creating new player for:", track.title);
-          const newPlayer = createAudioPlayer(streamUrl, {
-            downloadFirst: false,
-            updateInterval: 250,
-          });
-
-          const savedPos = savedPositions[trackIdStr];
-          if (savedPos && savedPos > 5) {
-            try {
-              const seekResult = (newPlayer as any).seekTo?.(savedPos);
-              if (seekResult && typeof seekResult.then === "function") {
-                void seekResult.catch((e: unknown) => {
-                  console.warn("[Player] Restore seek failed", e);
+              if (
+                Platform.OS === "web" &&
+                (quality === "LOSSLESS" || quality === "HI_RES_LOSSLESS") &&
+                attemptQuality === preferredQuality &&
+                (attemptQualities.includes("HIGH") ||
+                  attemptQualities.includes("LOW"))
+              ) {
+                showToast({
+                  message:
+                    "Stream format not supported, trying lower quality…",
+                  type: "error",
                 });
               }
-            } catch (e) {
-              console.warn("[Player] Restore seek threw", e);
-            }
-          }
-
-          newPlayer.volume = volume;
-          let playError: unknown = null;
-          try {
-            const playResult = (newPlayer as any).play?.();
-            if (playResult && typeof playResult.then === "function") {
-              await playResult.catch((e: unknown) => {
-                playError = e;
-              });
-            }
-          } catch (e) {
-            playError = e;
-          }
-
-          const startResult = playError
-            ? {
-                ok: false as const,
-                reason: isNotSupportedPlaybackError(playError)
-                  ? ("not_supported" as const)
-                  : ("error" as const),
-              }
-            : await waitForPlaybackStart(newPlayer, 15000);
-          if (startResult.ok) {
-            activePlayerRef.current = newPlayer;
-            setPlayer(newPlayer);
-            setCurrentStreamUrl(streamUrl);
-            currentBaseStreamUrlRef.current = baseStreamUrl;
-            consecutiveFailuresRef.current = 0;
-            if (!skipRecentlyPlayed) {
-              void addToRecentlyPlayed(track, baseStreamUrl);
-            }
-            return true;
-          }
-
-          try {
-            newPlayer.pause();
-            newPlayer.remove();
-          } catch {}
-
-          if (startResult.reason === "not_supported") {
-            if (streamUrl.startsWith("blob:")) {
-              try {
-                URL.revokeObjectURL(streamUrl);
-              } catch {}
-            }
-            await clearWebCachesForUrl(baseStreamUrl);
-            if (
+            } else if (
+              !offlineWeb &&
               Platform.OS === "web" &&
-              (quality === "LOSSLESS" || quality === "HI_RES_LOSSLESS") &&
-              attemptQuality === preferredQuality &&
-              (attemptQualities.includes("HIGH") ||
-                attemptQualities.includes("LOW"))
+              attemptIndex === 0
             ) {
-              showToast({
-                message: "Stream format not supported, trying lower quality…",
-                type: "error",
-              });
+              await clearWebCachesForUrl(baseStreamUrl);
             }
-          } else if (
-            !offlineWeb &&
-            Platform.OS === "web" &&
-            attemptIndex === 0
-          ) {
-            await clearWebCachesForUrl(baseStreamUrl);
+
+            break;
           }
 
           if (attemptIndex < attemptQualities.length - 1) {
-            if (startResult.reason === "not_supported") {
-              await new Promise((r) => setTimeout(r, 150));
-            } else {
-              await new Promise((r) => setTimeout(r, 250));
-            }
+            await new Promise((r) =>
+              setTimeout(r, refreshedForbidden ? 100 : 250)
+            );
           }
         }
 
