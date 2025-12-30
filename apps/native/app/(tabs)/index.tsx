@@ -629,7 +629,7 @@ export default function Home() {
           title: saved.title,
           artist: saved.artist as any,
           artwork: saved.artwork,
-          url: saved.streamUrl || "",
+          url: Number.isFinite(Number(saved.id)) ? "" : saved.streamUrl || "",
         } as any)
     );
   }, [favorites]);

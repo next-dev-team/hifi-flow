@@ -36,6 +36,11 @@ function isPodcastTrackId(id: unknown): boolean {
   return String(id ?? "").startsWith("podcast:");
 }
 
+function shouldPersistStreamUrl(id: unknown): boolean {
+  const n = Number(id);
+  return !Number.isFinite(n);
+}
+
 interface Track {
   id: string | number;
   title: string;
@@ -689,26 +694,6 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
         return await existingInFlight;
       }
 
-      // Check saved tracks
-      const savedTrack =
-        recentlyPlayed.find((t) => String(t.id) === trackIdStr) ||
-        favorites.find((t) => String(t.id) === trackIdStr);
-
-      if (savedTrack?.streamUrl) {
-        if (Platform.OS === "web" && savedTrack.streamUrl.startsWith("blob:")) {
-          return track.url || null;
-        }
-
-        if (!isOffline && Number.isFinite(trackId)) {
-          const forbidden = await isWebStreamUrlForbidden(savedTrack.streamUrl);
-          if (!forbidden) {
-            return savedTrack.streamUrl;
-          }
-        } else {
-          return savedTrack.streamUrl;
-        }
-      }
-
       if (isOffline) {
         try {
           const cachedUrl = await audioCacheService.findCachedUrlByTrackId(
@@ -737,7 +722,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
         streamUrlInFlightRef.current.delete(cacheKey);
       }
     },
-    [recentlyPlayed, favorites, isOffline, isWebStreamUrlForbidden]
+    [isOffline]
   );
 
   // ==================== Player Control - SINGLE PLAYER PATTERN ====================
@@ -813,7 +798,10 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
   }, [currentTrack, savePosition]);
 
   // Add to recently played
-  const addToRecentlyPlayed = useCallback((track: Track, streamUrl: string) => {
+  const addToRecentlyPlayed = useCallback((track: Track) => {
+    const persistUrl = shouldPersistStreamUrl(track.id)
+      ? track.url || null
+      : null;
     setRecentlyPlayed((prev) => {
       const existingIndex = prev.findIndex(
         (t) => String(t.id) === String(track.id)
@@ -823,7 +811,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
         title: track.title,
         artist: track.artist,
         artwork: track.artwork,
-        streamUrl: streamUrl,
+        streamUrl: persistUrl,
         addedAt: Date.now(),
       };
 
@@ -952,7 +940,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
               consecutiveFailuresRef.current = 0;
               setNextTrackBufferStatus("none");
               if (!skipRecentlyPlayed) {
-                void addToRecentlyPlayed(track, baseUrl || url);
+                void addToRecentlyPlayed(track);
               }
               return true;
             }
@@ -986,13 +974,6 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
             if (offlineWeb) {
               baseStreamUrl =
                 cachedUrlByTrackIdRef.current.get(trackIdStr) ?? null;
-              if (!baseStreamUrl) {
-                const fromLibrary =
-                  recentlyPlayed.find((t) => String(t.id) === trackIdStr)
-                    ?.streamUrl ||
-                  favorites.find((t) => String(t.id) === trackIdStr)?.streamUrl;
-                baseStreamUrl = fromLibrary || null;
-              }
               if (!baseStreamUrl) {
                 baseStreamUrl = await audioCacheService.findCachedUrlByTrackId(
                   trackIdStr
@@ -1142,7 +1123,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
               currentBaseStreamUrlRef.current = baseStreamUrl;
               consecutiveFailuresRef.current = 0;
               if (!skipRecentlyPlayed) {
-                void addToRecentlyPlayed(track, baseStreamUrl);
+                void addToRecentlyPlayed(track);
               }
               return true;
             }
@@ -2224,14 +2205,20 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
         const parsed = JSON.parse(val) as SavedTrack[];
         const sanitized =
           Platform.OS === "web"
-            ? parsed.map((t) => ({
-                ...t,
-                streamUrl:
+            ? parsed.map((t) => {
+                const withoutBlob =
                   t.streamUrl && t.streamUrl.startsWith("blob:")
                     ? null
-                    : t.streamUrl,
-              }))
-            : parsed;
+                    : t.streamUrl;
+                const withoutSigned = shouldPersistStreamUrl(t.id)
+                  ? withoutBlob
+                  : null;
+                return { ...t, streamUrl: withoutSigned };
+              })
+            : parsed.map((t) => ({
+                ...t,
+                streamUrl: shouldPersistStreamUrl(t.id) ? t.streamUrl : null,
+              }));
         setFavorites(sanitized);
         prevFavoriteIdsRef.current = new Set(
           sanitized.map((t) => normalizeFavoriteId(t.id))
@@ -2244,14 +2231,20 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
         const parsed = JSON.parse(val) as SavedTrack[];
         const sanitized =
           Platform.OS === "web"
-            ? parsed.map((t) => ({
-                ...t,
-                streamUrl:
+            ? parsed.map((t) => {
+                const withoutBlob =
                   t.streamUrl && t.streamUrl.startsWith("blob:")
                     ? null
-                    : t.streamUrl,
-              }))
-            : parsed;
+                    : t.streamUrl;
+                const withoutSigned = shouldPersistStreamUrl(t.id)
+                  ? withoutBlob
+                  : null;
+                return { ...t, streamUrl: withoutSigned };
+              })
+            : parsed.map((t) => ({
+                ...t,
+                streamUrl: shouldPersistStreamUrl(t.id) ? t.streamUrl : null,
+              }));
         setRecentlyPlayed(sanitized);
       } catch {}
     });
@@ -2394,10 +2387,13 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
         next = favorites.filter((f) => normalizeFavoriteId(f.id) !== id);
         showToast({ message: "Removed from favorites", type: "info" });
       } else {
-        const persistUrl =
+        const candidateUrl =
           Platform.OS === "web" && currentStreamUrl.startsWith("blob:")
             ? currentBaseStreamUrlRef.current
             : currentStreamUrl;
+        const persistUrl = shouldPersistStreamUrl(currentTrack.id)
+          ? candidateUrl || currentTrack.url || null
+          : null;
         next = [
           {
             id: String(currentTrack.id),
@@ -2430,11 +2426,14 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
         // Use current stream URL if it's the current track, otherwise use track.url or null
         const playingCurrent =
           currentTrack?.id === track.id && currentStreamUrl;
-        const streamUrl = playingCurrent
+        const candidateUrl = playingCurrent
           ? Platform.OS === "web" && currentStreamUrl.startsWith("blob:")
             ? currentBaseStreamUrlRef.current || track.url || null
             : currentStreamUrl
           : track.url || null;
+        const streamUrl = shouldPersistStreamUrl(track.id)
+          ? candidateUrl
+          : null;
 
         next = [
           {
@@ -2490,7 +2489,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
             title: t.title,
             artist: t.artist,
             artwork: t.artwork,
-            streamUrl: t.url || null,
+            streamUrl: shouldPersistStreamUrl(t.id) ? t.url || null : null,
             addedAt: timestamp,
           }));
 
