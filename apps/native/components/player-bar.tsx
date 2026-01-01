@@ -1800,7 +1800,7 @@ export const PlayerBar = () => {
                         e.stopPropagation();
                         playPrevious();
                       }}
-                      style={{ paddingHorizontal: 2 }}
+                      style={{ paddingHorizontal: 6 }}
                       disabled={controlsDisabled}
                     >
                       {({ pressed }) => (
@@ -1808,7 +1808,7 @@ export const PlayerBar = () => {
                           name="play-skip-back"
                           size={20}
                           color={pressed ? "#ef4444" : themeColorForeground}
-                          style={{ opacity: controlsDisabled ? 0.35 : 1 }}
+                          style={{ opacity: controlsDisabled || pressed ? 0.3 : 1 }}
                         />
                       )}
                     </StyledPressable>
@@ -1818,7 +1818,7 @@ export const PlayerBar = () => {
                         e.stopPropagation();
                         (isPlaying ? pauseTrack : resumeTrack)();
                       }}
-                      style={{ paddingHorizontal: 2 }}
+                      style={{ paddingHorizontal: 6 }}
                       disabled={isLoading || isTrackLoading}
                     >
                       {({ pressed }) =>
@@ -1833,7 +1833,7 @@ export const PlayerBar = () => {
                             name={isPlaying ? "pause" : "play"}
                             size={28}
                             color={pressed ? "#ef4444" : themeColorForeground}
-                            style={{ marginLeft: isPlaying ? 0 : 2 }}
+                            style={{ marginLeft: isPlaying ? 0 : 2, opacity: pressed ? 0.3 : 1 }}
                           />
                         )
                       }
@@ -1844,7 +1844,7 @@ export const PlayerBar = () => {
                         e.stopPropagation();
                         playNext();
                       }}
-                      style={{ paddingHorizontal: 2 }}
+                      style={{ paddingHorizontal: 6 }}
                       disabled={controlsDisabled}
                     >
                       {({ pressed }) => (
@@ -1852,7 +1852,7 @@ export const PlayerBar = () => {
                           name="play-skip-forward"
                           size={20}
                           color={pressed ? "#ef4444" : themeColorForeground}
-                          style={{ opacity: controlsDisabled ? 0.35 : 1 }}
+                          style={{ opacity: controlsDisabled || pressed ? 0.3 : 1 }}
                         />
                       )}
                     </StyledPressable>
@@ -1862,7 +1862,7 @@ export const PlayerBar = () => {
                         e.stopPropagation();
                         void toggleCurrentFavorite(resolvedArtwork);
                       }}
-                      style={{ paddingHorizontal: 2 }}
+                      style={{ paddingHorizontal: 6 }}
                     >
                       {({ pressed }) => (
                         <StyledIonicons
@@ -1873,6 +1873,7 @@ export const PlayerBar = () => {
                               ? "#ef4444"
                               : themeColorForeground
                           }
+                          style={{ opacity: pressed ? 0.3 : 1 }}
                         />
                       )}
                     </StyledPressable>
@@ -1882,13 +1883,14 @@ export const PlayerBar = () => {
                         e.stopPropagation();
                         handleOpenQueue();
                       }}
-                      style={{ paddingHorizontal: 2 }}
+                      style={{ paddingHorizontal: 6 }}
                     >
                       {({ pressed }) => (
                         <StyledIonicons
                           name="list"
                           size={20}
                           color={pressed ? "#60a5fa" : themeColorForeground}
+                          style={{ opacity: pressed ? 0.3 : 1 }}
                         />
                       )}
                     </StyledPressable>

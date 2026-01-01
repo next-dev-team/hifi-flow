@@ -120,6 +120,12 @@ interface PlayerContextType {
   removeFromMixed: (id: string) => Promise<void>;
   removeFromRecentlyPlayed: (id: string) => Promise<void>;
   playSaved: (saved: SavedTrack) => Promise<void>;
+  addCustomFavorite: (input: {
+    title: string;
+    coverUrl?: string;
+    streamUrl: string;
+    artist?: string;
+  }) => Promise<void>;
   volume: number;
   setVolume: (volume: number) => Promise<void>;
   loadingTrackId: string | null;
@@ -2613,12 +2619,48 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
         title: saved.title,
         artist: saved.artist,
         artwork: saved.artwork,
-        url: "",
+        url: saved.streamUrl || "",
       };
       // Skip adding to recently played since we're already playing from recently played
       await playTrack(track, { skipRecentlyPlayed: true });
     },
     [playTrack]
+  );
+
+  const addCustomFavorite = useCallback(
+    async (input: {
+      title: string;
+      coverUrl?: string;
+      streamUrl: string;
+      artist?: string;
+    }) => {
+      const title = input.title.trim();
+      const streamUrl = input.streamUrl.trim();
+      const coverUrl = input.coverUrl?.trim();
+      const artist = input.artist?.trim() || "Local";
+
+      if (!title || !streamUrl) {
+        showToast({ message: "Title and stream URL are required", type: "error" });
+        return;
+      }
+
+      const newId = `saved:${Date.now()}:${Math.random().toString(16).slice(2)}`;
+
+      const entry: SavedTrack = {
+        id: newId,
+        title,
+        artist,
+        artwork: coverUrl || undefined,
+        streamUrl,
+        addedAt: Date.now(),
+      };
+
+      const next = [entry, ...favorites];
+      setFavorites(next);
+      await writePersistentValue(FAVORITES_STORAGE_KEY, JSON.stringify(next));
+      showToast({ message: "Added to favorites", type: "success" });
+    },
+    [favorites, showToast]
   );
 
   useEffect(() => {
@@ -2844,6 +2886,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
     removeFromMixed,
     removeFromRecentlyPlayed,
     playSaved,
+    addCustomFavorite,
     volume,
     setVolume,
     loadingTrackId,

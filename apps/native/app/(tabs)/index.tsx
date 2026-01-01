@@ -97,6 +97,7 @@ export default function Home() {
     currentStreamUrl,
     favorites,
     removeFavorite,
+    addCustomFavorite,
     quality,
     setQuality,
     sleepTimerEndsAt,
@@ -368,8 +369,10 @@ export default function Home() {
   }, [artistDetails]);
 
   const favoritesSheetRef = useRef<BottomSheetModal | null>(null);
+  const addTrackSheetRef = useRef<BottomSheetModal | null>(null);
   const settingsSheetRef = useRef<BottomSheetModal | null>(null);
   const favoritesSnapPoints = useMemo(() => ["100%"], []);
+  const addTrackSnapPoints = useMemo(() => ["75%"], []);
   const settingsSnapPoints = useMemo(() => ["55%"], []);
   const aiHelpSheetRef = useRef<BottomSheetModal | null>(null);
   const aiHelpSnapPoints = useMemo(() => ["80%"], []);
@@ -481,26 +484,29 @@ export default function Home() {
     return () => clearTimeout(timeout);
   }, [query]);
 
+  const isSearchEmpty = query.trim().length === 0;
+
   const params = useMemo(() => {
+    if (isSearchEmpty) return undefined;
+
     const base: SearchSearchGetQueryParams = {};
-    const effectiveQuery = debouncedQuery || "trending";
+    const q = debouncedQuery;
 
     if (filter === "songs") {
-      base.s = debouncedQuery || "new music";
+      base.s = q;
     } else if (filter === "artists") {
-      base.a = effectiveQuery;
+      base.a = q;
     } else if (filter === "albums") {
-      base.al = effectiveQuery;
+      base.al = q;
     } else if (filter === "playlists") {
-      base.p = effectiveQuery;
+      base.p = q;
     }
     return base;
-  }, [debouncedQuery, filter]);
+  }, [debouncedQuery, filter, isSearchEmpty]);
 
   const shouldFetchMainQuery = useMemo(() => {
-    if (filter === "playlists" && !query) return false;
-    return true;
-  }, [filter, query]);
+    return !isSearchEmpty;
+  }, [isSearchEmpty]);
 
   const { data, isLoading, error } = useSearchSearchGet(params, {
     query: { enabled: shouldFetchMainQuery },
@@ -536,6 +542,7 @@ export default function Home() {
   ];
 
   const listData: SearchResultItem[] = (() => {
+    if (isSearchEmpty) return [];
     if (!data) return [];
     if (Array.isArray(data)) return data as SearchResultItem[];
 
@@ -633,6 +640,66 @@ export default function Home() {
         } as any)
     );
   }, [favorites]);
+
+  const [newTrackTitle, setNewTrackTitle] = useState("");
+  const [newTrackArtist, setNewTrackArtist] = useState("");
+  const [newTrackCoverUrl, setNewTrackCoverUrl] = useState("");
+  const [newTrackStreamUrl, setNewTrackStreamUrl] = useState("");
+  const [saveToFavorites, setSaveToFavorites] = useState(true);
+
+  const openAddTrackSheet = useCallback(() => {
+    setNewTrackTitle("");
+    setNewTrackArtist("");
+    setNewTrackCoverUrl("");
+    setNewTrackStreamUrl("");
+    setSaveToFavorites(true);
+    addTrackSheetRef.current?.present();
+  }, []);
+
+  const handleSaveNewTrack = useCallback(() => {
+    void (async () => {
+      const title = newTrackTitle.trim();
+      const artist = newTrackArtist.trim();
+      const coverUrl = newTrackCoverUrl.trim();
+      const streamUrl = newTrackStreamUrl.trim();
+
+      if (!title || !streamUrl) {
+        showToast({
+          message: "Title and stream URL are required",
+          type: "error",
+        });
+        return;
+      }
+
+      if (saveToFavorites) {
+        await addCustomFavorite({
+          title,
+          artist: artist || undefined,
+          coverUrl: coverUrl || undefined,
+          streamUrl,
+        });
+      } else {
+        const tempTrack: Track = {
+          id: `temp:${Date.now()}:${Math.random().toString(16).slice(2)}`,
+          title,
+          artist: artist || "Local",
+          artwork: coverUrl || undefined,
+          url: streamUrl,
+        };
+        await playQueue([tempTrack], 0, { replaceQueue: false });
+      }
+      addTrackSheetRef.current?.dismiss();
+    })();
+  }, [
+    addCustomFavorite,
+    newTrackArtist,
+    newTrackCoverUrl,
+    newTrackStreamUrl,
+    newTrackTitle,
+    playQueue,
+    saveToFavorites,
+    showToast,
+  ]);
 
   const renderItem = ({ index }: { index: number }) => {
     if (filter === "artists") {
@@ -971,7 +1038,7 @@ export default function Home() {
         </StyledView>
       </StyledView>
 
-      {filter === "playlists" && !query ? (
+      {filter === "playlists" && isSearchEmpty ? (
         <PlaylistDiscovery
           onSelect={(p) => {
             setSelectedPlaylist(p);
@@ -979,6 +1046,72 @@ export default function Home() {
           }}
           loadingPlaylistId={selectedPlaylist?.uuid || selectedPlaylist?.id}
           isPlaylistLoading={isPlaylistLoading}
+        />
+      ) : isSearchEmpty ? (
+        <FlatList
+          data={favoriteQueue}
+          keyExtractor={(item: Track, index: number) =>
+            (item.id || index).toString()
+          }
+          renderItem={({ item, index }: { item: Track; index: number }) => (
+            <View className="px-4">
+              <TrackItem
+                track={item}
+                onPress={() => {
+                  void playQueue(favoriteQueue, index).catch((e) => {
+                    console.warn("[Home] playQueue failed", e);
+                  });
+                }}
+                onRemove={() => {
+                  void removeFavorite(String(item.id));
+                }}
+                onLongPress={() => {
+                  void removeFavorite(String(item.id));
+                }}
+              />
+            </View>
+          )}
+          ListHeaderComponent={
+            <View className="px-4 pb-3">
+              <View className="flex-row items-center justify-between">
+                <View>
+                  <Text className="text-lg font-bold text-foreground">
+                    Recently added
+                  </Text>
+                  <Text className="text-foreground opacity-60 text-sm mt-1">
+                    Saved tracks and custom stream links
+                  </Text>
+                </View>
+                <TouchableOpacity
+                  onPress={openAddTrackSheet}
+                  className="flex-row items-center px-3 py-2 rounded-xl bg-black/5 dark:bg-white/5 border border-black/10 dark:border-white/10 active:opacity-70"
+                >
+                  <Ionicons name="add" size={18} color={themeColorForeground} />
+                  <Text className="text-foreground font-semibold ml-1">
+                    Add
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          }
+          ListEmptyComponent={
+            <View className="flex-1 justify-center items-center mt-10 px-6">
+              <Text className="text-foreground opacity-70 text-center">
+                No recently added tracks.
+              </Text>
+              <Text className="text-foreground opacity-60 text-center mt-2">
+                Add a stream URL to play instantly.
+              </Text>
+              <TouchableOpacity
+                onPress={openAddTrackSheet}
+                className="mt-4 px-4 py-3 rounded-xl bg-primary/15"
+                activeOpacity={0.8}
+              >
+                <Text className="text-foreground font-semibold">Add new</Text>
+              </TouchableOpacity>
+            </View>
+          }
+          contentContainerStyle={{ paddingBottom: 20 }}
         />
       ) : isLoading ? (
         <StyledView className="flex-1 justify-center items-center">
@@ -1394,6 +1527,126 @@ export default function Home() {
                 }}
               />
             )}
+          </StyledView>
+        </BottomSheetView>
+      </BottomSheetModal>
+
+      <BottomSheetModal
+        ref={addTrackSheetRef}
+        snapPoints={addTrackSnapPoints}
+        index={0}
+        enablePanDownToClose
+        enableDismissOnClose
+        backdropComponent={favoritesBackdrop}
+        animationConfigs={favoritesAnimationConfigs}
+        style={{ marginHorizontal: sheetMargin }}
+        handleIndicatorStyle={{
+          backgroundColor: isDark ? "rgba(255,255,255,0.3)" : "rgba(0,0,0,0.3)",
+        }}
+        backgroundStyle={{ backgroundColor: themeColorBackground }}
+      >
+        <BottomSheetView style={{ flex: 1 }}>
+          <StyledView className="flex-1 bg-background px-4">
+            <View className="pt-3 pb-4 flex-row items-center justify-between">
+              <View className="flex-row items-center">
+                <Ionicons
+                  name="add-circle-outline"
+                  size={20}
+                  color={themeColorAccent}
+                />
+                <Text className="text-xl font-bold text-foreground ml-2">
+                  Add new
+                </Text>
+              </View>
+              <TouchableOpacity
+                className="p-2"
+                onPress={() => addTrackSheetRef.current?.dismiss()}
+              >
+                <Ionicons name="close" size={22} color={themeColorForeground} />
+              </TouchableOpacity>
+            </View>
+
+            <View className="gap-3">
+              <View>
+                <Text className="text-foreground opacity-70 mb-2">Title *</Text>
+                <StyledTextInput
+                  value={newTrackTitle}
+                  onChangeText={setNewTrackTitle}
+                  placeholder="Song title"
+                  placeholderTextColor={themeColorForeground + "66"}
+                  className="px-4 py-3 rounded-xl bg-black/5 dark:bg-white/5 border border-black/10 dark:border-white/10 text-foreground"
+                />
+              </View>
+
+              <View>
+                <Text className="text-foreground opacity-70 mb-2">Artist</Text>
+                <StyledTextInput
+                  value={newTrackArtist}
+                  onChangeText={setNewTrackArtist}
+                  placeholder="Artist name"
+                  placeholderTextColor={themeColorForeground + "66"}
+                  className="px-4 py-3 rounded-xl bg-black/5 dark:bg-white/5 border border-black/10 dark:border-white/10 text-foreground"
+                />
+              </View>
+
+              <View>
+                <Text className="text-foreground opacity-70 mb-2">
+                  Cover URL
+                </Text>
+                <StyledTextInput
+                  value={newTrackCoverUrl}
+                  onChangeText={setNewTrackCoverUrl}
+                  placeholder="https://..."
+                  placeholderTextColor={themeColorForeground + "66"}
+                  autoCapitalize="none"
+                  className="px-4 py-3 rounded-xl bg-black/5 dark:bg-white/5 border border-black/10 dark:border-white/10 text-foreground"
+                />
+              </View>
+
+              <View>
+                <Text className="text-foreground opacity-70 mb-2">
+                  Stream URL *
+                </Text>
+                <StyledTextInput
+                  value={newTrackStreamUrl}
+                  onChangeText={setNewTrackStreamUrl}
+                  placeholder="https://file-examples.com/.../file_example.mp3"
+                  placeholderTextColor={themeColorForeground + "66"}
+                  autoCapitalize="none"
+                  className="px-4 py-3 rounded-xl bg-black/5 dark:bg-white/5 border border-black/10 dark:border-white/10 text-foreground"
+                />
+              </View>
+
+              <View className="flex-row items-center justify-between px-1">
+                <Text className="text-foreground opacity-70">
+                  Save to favorites
+                </Text>
+                <Switch
+                  value={saveToFavorites}
+                  onValueChange={setSaveToFavorites}
+                />
+              </View>
+            </View>
+
+            <View className="mt-6 mb-4">
+              <TouchableOpacity
+                onPress={handleSaveNewTrack}
+                activeOpacity={0.7}
+                className="w-full bg-primary dark:bg-primary rounded-2xl py-4 items-center justify-center shadow-lg shadow-primary/30 border border-white/10"
+              >
+                <View className="flex-row items-center">
+                  <Ionicons
+                    name="checkmark-circle"
+                    size={20}
+                    color="white"
+                    className="mr-2"
+                  />
+                  <Text className="text-white font-bold text-lg">
+                    Save track
+                  </Text>
+                </View>
+              </TouchableOpacity>
+            </View>
           </StyledView>
         </BottomSheetView>
       </BottomSheetModal>
