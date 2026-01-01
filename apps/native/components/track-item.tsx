@@ -113,6 +113,10 @@ export const TrackItem: React.FC<TrackItemProps> = ({
     resumeTrack,
     addToQueue,
     queue,
+    favorites,
+    toggleFavorite,
+    mixedTracks,
+    toggleMixed,
     nextTrackBufferStatus,
     cachedTrackIds,
   } = usePlayer();
@@ -123,6 +127,8 @@ export const TrackItem: React.FC<TrackItemProps> = ({
   const isLoading = propLoading || isPlayerLoading;
   const isActive = currentTrack?.id === String(track.id);
   const isInQueue = queue.some((t) => String(t.id) === String(track.id));
+  const isFavorited = favorites.some((f) => String(f.id) === String(track.id));
+  const isMixed = mixedTracks.some((t) => String(t.id) === String(track.id));
 
   // Determine if cached using internal check if prop not provided
   const isTrackCached =
@@ -184,6 +190,16 @@ export const TrackItem: React.FC<TrackItemProps> = ({
   const handleAddToQueuePress = (e: any) => {
     e.stopPropagation();
     addToQueue(track);
+  };
+
+  const handleFavoritePress = (e: any) => {
+    e.stopPropagation();
+    void toggleFavorite(track as any);
+  };
+
+  const handleMixedPress = (e: any) => {
+    e.stopPropagation();
+    void toggleMixed(track as any);
   };
 
   return (
@@ -282,6 +298,30 @@ export const TrackItem: React.FC<TrackItemProps> = ({
             name="add-circle-outline"
             size={20}
             color={isInQueue ? "#22c55e" : "#888"}
+          />
+        </TouchableOpacity>
+        <TouchableOpacity
+          className="pl-2 pr-1 h-10 items-center justify-center"
+          onPress={handleFavoritePress}
+          disabled={isLoading}
+        >
+          <Ionicons
+            name={isFavorited ? "heart" : "heart-outline"}
+            size={20}
+            color={isFavorited ? "#ef4444" : "#888"}
+            style={{ opacity: isFavorited ? 1 : 0.6 }}
+          />
+        </TouchableOpacity>
+        <TouchableOpacity
+          className="pl-2 pr-1 h-10 items-center justify-center"
+          onPress={handleMixedPress}
+          disabled={isLoading}
+        >
+          <Ionicons
+            name={isMixed ? "shuffle" : "shuffle-outline"}
+            size={20}
+            color={isMixed ? "#60a5fa" : "#888"}
+            style={{ opacity: isMixed ? 1 : 0.6 }}
           />
         </TouchableOpacity>
         <TouchableOpacity

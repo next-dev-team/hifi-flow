@@ -1,24 +1,35 @@
 import { Ionicons } from "@expo/vector-icons";
 import { useSearchSearchGet } from "api-hifi/src/gen/hooks";
 import { router } from "expo-router";
-import { Card } from "heroui-native";
+import { Card, useThemeColor } from "heroui-native";
 import React, { useEffect, useState } from "react";
 import { Alert, FlatList, Image, Pressable, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { useThemeColor } from "heroui-native";
 import { ApiDebug } from "@/components/api-debug";
 import { TimerStatus } from "@/components/timer-status";
 import { TrackItem } from "@/components/track-item";
 import { usePlayer } from "@/contexts/player-context";
+import { usePersistentState } from "@/hooks/use-persistent-state";
 import { type AudioMetadata, audioCacheService } from "@/utils/audio-cache";
 import { resolveArtwork, resolveName } from "@/utils/resolvers";
+
+const FAVORITE_MIXES_STORAGE_KEY = "hififlow:favorite_mixes:v1";
 
 export default function Library() {
   const { data, isLoading, error } = useSearchSearchGet({ p: "mix" });
   const themeColorForeground = useThemeColor("foreground");
-  const { recentlyPlayed, playTrack, removeFromRecentlyPlayed } = usePlayer();
-  const [viewMode, setViewMode] = useState<"mixes" | "recent" | "downloaded">(
-    "recent"
+  const {
+    recentlyPlayed,
+    mixedTracks,
+    removeFromMixed,
+    removeFromRecentlyPlayed,
+  } = usePlayer();
+  const [viewMode, setViewMode] = useState<
+    "mixes" | "recent" | "downloaded" | "mixed"
+  >("recent");
+  const [favoriteMixIds, setFavoriteMixIds] = usePersistentState<string[]>(
+    FAVORITE_MIXES_STORAGE_KEY,
+    []
   );
   const [downloadedTracks, setDownloadedTracks] = useState<
     { url: string; metadata?: AudioMetadata }[]
@@ -57,6 +68,8 @@ export default function Library() {
     const subtitle =
       item.description || item.owner?.name || item.author?.name || "";
     const trackCount = item.trackCount || item.tracks?.length;
+    const mixId = id ? String(id) : null;
+    const isFavorited = mixId ? favoriteMixIds.includes(mixId) : false;
 
     const handlePress = () => {
       if (!id) return;
@@ -91,6 +104,33 @@ export default function Library() {
               </Text>
             ) : null}
           </View>
+          <Pressable
+            disabled={!mixId}
+            onPress={(e) => {
+              if (typeof (e as any)?.stopPropagation === "function") {
+                (e as any).stopPropagation();
+              }
+              if (!mixId) return;
+              setFavoriteMixIds((prev) =>
+                prev.includes(mixId)
+                  ? prev.filter((x) => x !== mixId)
+                  : [...prev, mixId]
+              );
+            }}
+            hitSlop={10}
+            className="px-2"
+            accessibilityRole="button"
+            accessibilityLabel={
+              isFavorited ? "Remove from favorites" : "Add to favorites"
+            }
+          >
+            <Ionicons
+              name={isFavorited ? "heart" : "heart-outline"}
+              size={20}
+              color={isFavorited ? "#ef4444" : themeColorForeground}
+              style={{ opacity: isFavorited ? 1 : 0.4 }}
+            />
+          </Pressable>
           <Ionicons
             name="chevron-forward"
             size={20}
@@ -170,6 +210,24 @@ export default function Library() {
             Downloaded
           </Text>
         </Pressable>
+        <Pressable
+          onPress={() => setViewMode("mixed")}
+          className={`px-3 py-2 rounded-lg border ${
+            viewMode === "mixed"
+              ? "bg-foreground border-foreground shadow-sm"
+              : "bg-black/5 dark:bg-white/5 border-black/10 dark:border-white/10"
+          }`}
+        >
+          <Text
+            className={
+              viewMode === "mixed"
+                ? "text-background font-semibold"
+                : "text-foreground font-semibold"
+            }
+          >
+            Mixed
+          </Text>
+        </Pressable>
       </View>
 
       {viewMode === "mixes" ? (
@@ -193,6 +251,35 @@ export default function Library() {
               data={listData}
               keyExtractor={(item, index) => (item.id || index).toString()}
               renderItem={renderItem}
+              ListHeaderComponent={() =>
+                mixedTracks.length === 0 ? null : (
+                  <View className="mb-3">
+                    <Text className="text-foreground font-semibold text-base mb-2">
+                      Mixed Tracks
+                    </Text>
+                    {mixedTracks.map((t) => {
+                      const handleRemove = () => {
+                        void removeFromMixed(t.id);
+                      };
+
+                      return (
+                        <TrackItem
+                          key={t.id}
+                          track={{
+                            id: t.id,
+                            title: t.title,
+                            artist: t.artist,
+                            artwork: t.artwork,
+                            url: t.streamUrl || "",
+                          }}
+                          onLongPress={handleRemove}
+                          onRemove={handleRemove}
+                        />
+                      );
+                    })}
+                  </View>
+                )
+              }
               contentContainerStyle={{
                 paddingHorizontal: 16,
                 paddingBottom: 100,
@@ -227,6 +314,38 @@ export default function Library() {
             </View>
           }
         />
+      ) : viewMode === "mixed" ? (
+        <FlatList
+          data={mixedTracks}
+          keyExtractor={(item, index) => (item.id || index).toString()}
+          renderItem={({ item }) => {
+            const handleRemove = () => {
+              void removeFromMixed(item.id);
+            };
+
+            return (
+              <TrackItem
+                track={{
+                  id: item.id,
+                  title: item.title,
+                  artist: item.artist,
+                  artwork: item.artwork,
+                  url: item.streamUrl || "",
+                }}
+                onLongPress={handleRemove}
+                onRemove={handleRemove}
+              />
+            );
+          }}
+          contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 100 }}
+          ListEmptyComponent={
+            <View className="flex-1 justify-center items-center mt-10">
+              <Text className="text-foreground opacity-70">
+                No mixed tracks.
+              </Text>
+            </View>
+          }
+        />
       ) : (
         <FlatList
           data={recentlyPlayed}
@@ -243,7 +362,7 @@ export default function Library() {
                   title: item.title,
                   artist: item.artist,
                   artwork: item.artwork,
-                  url: Number.isFinite(Number(item.id)) ? "" : item.streamUrl || "",
+                  url: "",
                 }}
                 onLongPress={handleRemove}
                 onRemove={handleRemove}

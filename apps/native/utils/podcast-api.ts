@@ -1,5 +1,13 @@
-import type { Track } from "@/components/track-item";
 import { podcaseWeAnd } from "@/utils/podcase";
+
+export type PodcastTrack = {
+  id: string;
+  title: string;
+  artist: string;
+  artwork?: string;
+  url: string;
+  duration?: number;
+};
 
 export type PodcastTabKey = "weand";
 
@@ -15,14 +23,14 @@ export type PodcastEpisode = {
 };
 
 export type PodcastPage = {
-  items: Track[];
+  items: PodcastTrack[];
   nextCursor: number | null;
   total: number;
 };
 
 const DEFAULT_LIMIT = 20;
 
-function toPodcastTrack(episode: PodcastEpisode): Track {
+function toPodcastTrack(episode: PodcastEpisode): PodcastTrack {
   return {
     id: `podcast:weand:${episode.id}`,
     title: episode.title,
@@ -30,6 +38,22 @@ function toPodcastTrack(episode: PodcastEpisode): Track {
     artwork: episode.cover,
     url: episode.audioUrl,
   };
+}
+
+function parsePodcastWeAndId(trackId: string): number | null {
+  const parts = String(trackId).split(":");
+  if (parts.length !== 3) return null;
+  if (parts[0] !== "podcast" || parts[1] !== "weand") return null;
+  const id = Number(parts[2]);
+  return Number.isFinite(id) ? id : null;
+}
+
+export function getPodcastTrackById(trackId: string): PodcastTrack | null {
+  const id = parsePodcastWeAndId(trackId);
+  if (!id) return null;
+  const episode = getWeAndData().find((e) => e.id === id) ?? null;
+  if (!episode) return null;
+  return toPodcastTrack(episode);
 }
 
 function getWeAndData(): PodcastEpisode[] {

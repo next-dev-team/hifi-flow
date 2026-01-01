@@ -26,6 +26,7 @@ import { usePersistentState } from "@/hooks/use-persistent-state";
 import { losslessAPI } from "@/utils/api";
 import { audioCacheService } from "@/utils/audio-cache";
 import { mediaSessionService } from "@/utils/media-session";
+import { getPodcastTrackById } from "@/utils/podcast-api";
 import type { AudioQuality as ApiAudioQuality } from "@/utils/types";
 
 type AudioQuality = ApiAudioQuality;
@@ -108,12 +109,15 @@ interface PlayerContextType {
   playNext: () => Promise<void>;
   playPrevious: () => Promise<void>;
   favorites: SavedTrack[];
+  mixedTracks: SavedTrack[];
   recentlyPlayed: SavedTrack[];
   isCurrentFavorited: boolean;
   toggleCurrentFavorite: (artwork?: string) => Promise<void>;
   toggleFavorite: (track: Track) => Promise<void>;
+  toggleMixed: (track: Track) => Promise<void>;
   toggleTracksFavorites: (tracks: Track[]) => Promise<void>;
   removeFavorite: (id: string) => Promise<void>;
+  removeFromMixed: (id: string) => Promise<void>;
   removeFromRecentlyPlayed: (id: string) => Promise<void>;
   playSaved: (saved: SavedTrack) => Promise<void>;
   volume: number;
@@ -128,6 +132,7 @@ interface PlayerContextType {
 const PlayerContext = createContext<PlayerContextType | undefined>(undefined);
 
 const FAVORITES_STORAGE_KEY = "hififlow:favorites:v1";
+const MIXED_TRACKS_STORAGE_KEY = "hififlow:mixed_tracks:v1";
 const RECENTLY_PLAYED_STORAGE_KEY = "hififlow:recently_played:v1";
 const QUALITY_STORAGE_KEY = "hififlow:quality:v1";
 const SHUFFLE_STORAGE_KEY = "hififlow:shuffle:v1";
@@ -279,6 +284,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
 
   // ==================== Library State ====================
   const [favorites, setFavorites] = useState<SavedTrack[]>([]);
+  const [mixedTracks, setMixedTracks] = useState<SavedTrack[]>([]);
   const [recentlyPlayed, setRecentlyPlayed] = useState<SavedTrack[]>([]);
 
   // ==================== Pre-buffer State ====================
@@ -292,7 +298,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
     );
     if (currentIndex === -1) return null;
 
-    let nextIndex;
+    let nextIndex: number;
     if (shuffleEnabled) {
       // In shuffle mode, we don't easily know the next one without shuffleHistoryRef
       // But we can just show the next one in the queue array as a fallback
@@ -439,7 +445,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
         queueIndexRef.current = index; // Ensure ref is synced too
       }
     }
-  }, [currentTrack, queue, setPersistedQueueIndex]);
+  }, [currentTrack, queue, setPersistedQueueIndex, queueIndexRef]);
 
   // ==================== Core Utilities ====================
 
@@ -709,9 +715,17 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
         if (!isOffline && Number.isFinite(trackId)) {
           try {
             const url = await losslessAPI.getStreamUrl(trackId, currentQuality);
-            if (url) return url;
-          } catch {}
+            return url || null;
+          } catch {
+            return null;
+          }
         }
+
+        if (isPodcastTrackId(track.id) && !track.url) {
+          const resolved = getPodcastTrackById(trackIdStr);
+          return resolved?.url || null;
+        }
+
         return track.url || null;
       })();
 
@@ -799,9 +813,6 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
 
   // Add to recently played
   const addToRecentlyPlayed = useCallback((track: Track) => {
-    const persistUrl = shouldPersistStreamUrl(track.id)
-      ? track.url || null
-      : null;
     setRecentlyPlayed((prev) => {
       const existingIndex = prev.findIndex(
         (t) => String(t.id) === String(track.id)
@@ -811,7 +822,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
         title: track.title,
         artist: track.artist,
         artwork: track.artwork,
-        streamUrl: persistUrl,
+        streamUrl: null,
         addedAt: Date.now(),
       };
 
@@ -1195,8 +1206,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
         setLoadingTrackId(null);
         playLockRef.current = false;
       }
-    },
-    [
+  }, [
       volume,
       quality,
       getStreamUrlForTrack,
@@ -1209,9 +1219,8 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
       getWebContentType,
       canPlayWebContentType,
       clearWebCachesForUrl,
+      isWebStreamUrlForbidden,
       showToast,
-      recentlyPlayed,
-      favorites,
       isOffline,
     ]
   );
@@ -1541,6 +1550,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
     showToast,
     isTrackBroken,
     markTrackBroken,
+    queueIndexRef,
   ]);
 
   // Update ref
@@ -1594,6 +1604,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
     repeatMode,
     positionMillis,
     playSoundInternal,
+    queueIndexRef,
   ]);
 
   // ==================== Public API ====================
@@ -2038,7 +2049,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
       });
       showToast({ message: "Removed from queue", type: "info" });
     },
-    [showToast, setQueueForType, activeQueueType]
+    [showToast, setQueueForType, activeQueueType, queueIndexRef]
   );
 
   const unloadSound = useCallback(async () => {
@@ -2225,7 +2236,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
         );
       } catch {}
     });
-    readPersistentValue(RECENTLY_PLAYED_STORAGE_KEY).then((val) => {
+    readPersistentValue(MIXED_TRACKS_STORAGE_KEY).then((val) => {
       if (!val) return;
       try {
         const parsed = JSON.parse(val) as SavedTrack[];
@@ -2245,7 +2256,19 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
                 ...t,
                 streamUrl: shouldPersistStreamUrl(t.id) ? t.streamUrl : null,
               }));
+        setMixedTracks(sanitized);
+      } catch {}
+    });
+    readPersistentValue(RECENTLY_PLAYED_STORAGE_KEY).then((val) => {
+      if (!val) return;
+      try {
+        const parsed = JSON.parse(val) as SavedTrack[];
+        const sanitized = parsed.map((t) => ({ ...t, streamUrl: null }));
         setRecentlyPlayed(sanitized);
+        void writePersistentValue(
+          RECENTLY_PLAYED_STORAGE_KEY,
+          JSON.stringify(sanitized)
+        );
       } catch {}
     });
   }, []);
@@ -2366,6 +2389,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
     setPersistedQueueIndex,
     setQueueForType,
     showToast,
+    queueIndexRef,
   ]);
 
   const cycleRepeatMode = useCallback(() => {
@@ -2454,6 +2478,46 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
     [favorites, currentTrack, currentStreamUrl, showToast]
   );
 
+  const toggleMixed = useCallback(
+    async (track: Track) => {
+      const id = normalizeFavoriteId(track.id);
+      const exists = mixedTracks.some((t) => normalizeFavoriteId(t.id) === id);
+      let next: SavedTrack[];
+
+      if (exists) {
+        next = mixedTracks.filter((t) => normalizeFavoriteId(t.id) !== id);
+        showToast({ message: "Removed from mix", type: "info" });
+      } else {
+        const playingCurrent =
+          currentTrack?.id === track.id && currentStreamUrl;
+        const candidateUrl = playingCurrent
+          ? Platform.OS === "web" && currentStreamUrl.startsWith("blob:")
+            ? currentBaseStreamUrlRef.current || track.url || null
+            : currentStreamUrl
+          : track.url || null;
+        const streamUrl = shouldPersistStreamUrl(track.id)
+          ? candidateUrl
+          : null;
+
+        next = [
+          {
+            id: String(track.id),
+            title: track.title,
+            artist: track.artist,
+            artwork: track.artwork,
+            streamUrl: streamUrl,
+            addedAt: Date.now(),
+          },
+          ...mixedTracks,
+        ];
+        showToast({ message: "Added to mix", type: "success" });
+      }
+      setMixedTracks(next);
+      await writePersistentValue(MIXED_TRACKS_STORAGE_KEY, JSON.stringify(next));
+    },
+    [mixedTracks, currentTrack, currentStreamUrl, showToast]
+  );
+
   const toggleTracksFavorites = useCallback(
     async (tracks: Track[]) => {
       if (tracks.length === 0) return;
@@ -2518,6 +2582,18 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
     [favorites, showToast]
   );
 
+  const removeFromMixed = useCallback(
+    async (id: string) => {
+      const next = mixedTracks.filter(
+        (t) => normalizeFavoriteId(t.id) !== normalizeFavoriteId(id)
+      );
+      setMixedTracks(next);
+      await writePersistentValue(MIXED_TRACKS_STORAGE_KEY, JSON.stringify(next));
+      showToast({ message: "Removed from mix", type: "info" });
+    },
+    [mixedTracks, showToast]
+  );
+
   const removeFromRecentlyPlayed = useCallback(
     async (id: string) => {
       const next = recentlyPlayed.filter((t) => String(t.id) !== String(id));
@@ -2537,7 +2613,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
         title: saved.title,
         artist: saved.artist,
         artwork: saved.artwork,
-        url: saved.streamUrl || "",
+        url: "",
       };
       // Skip adding to recently played since we're already playing from recently played
       await playTrack(track, { skipRecentlyPlayed: true });
@@ -2566,7 +2642,9 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
 
     prevFavoriteIdsRef.current = currentIds;
 
-    removed.forEach((id) => pendingFavoriteCacheIdsRef.current.delete(id));
+    removed.forEach((id) => {
+      pendingFavoriteCacheIdsRef.current.delete(id);
+    });
 
     const effectiveQuality: AudioQuality =
       quality === "HI_RES_LOSSLESS" ? "LOSSLESS" : quality;
@@ -2587,9 +2665,9 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
 
       if (added.length === 0) return;
       if (isOffline) {
-        added.forEach((t) =>
-          pendingFavoriteCacheIdsRef.current.add(normalizeFavoriteId(t.id))
-        );
+        added.forEach((t) => {
+          pendingFavoriteCacheIdsRef.current.add(normalizeFavoriteId(t.id));
+        });
         return;
       }
 
@@ -2745,6 +2823,7 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
     playNext,
     playPrevious,
     favorites,
+    mixedTracks,
     recentlyPlayed,
     isCurrentFavorited: useMemo(
       () =>
@@ -2759,8 +2838,10 @@ export const PlayerProvider: React.FC<{ children: React.ReactNode }> = ({
     ),
     toggleCurrentFavorite,
     toggleFavorite,
+    toggleMixed,
     toggleTracksFavorites,
     removeFavorite,
+    removeFromMixed,
     removeFromRecentlyPlayed,
     playSaved,
     volume,
